@@ -191,3 +191,16 @@ CREATE TABLE IF NOT EXISTS task_dependencies (
   CONSTRAINT fk_dep_on   FOREIGN KEY (depends_on_task_id) REFERENCES tasks(id) ON DELETE CASCADE,
   INDEX idx_dep_on (depends_on_task_id)
 );
+
+-- Task time logs (auditable hours)  (Phase 2 · Wave 7)
+CREATE TABLE IF NOT EXISTS task_time_logs (
+  id         INT AUTO_INCREMENT PRIMARY KEY,
+  task_id    INT NOT NULL,
+  user_id    INT NULL,
+  minutes    INT NOT NULL,
+  note       VARCHAR(255) NULL,
+  logged_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_ttl_task FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  CONSTRAINT fk_ttl_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_ttl_task (task_id)
+);

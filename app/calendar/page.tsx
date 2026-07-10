@@ -3,6 +3,7 @@ import { query, DbRow } from "@/lib/db";
 import AppShell from "@/components/AppShell";
 import { PageHeader } from "@/components/Cards";
 import CalendarView, { type CalEvent } from "@/components/CalendarView";
+import { istDateKey, istTime24 } from "@/lib/tz";
 
 export const dynamic = "force-dynamic";
 
@@ -54,8 +55,8 @@ export default async function CalendarPage() {
       id: `meeting-${m.id}`,
       kind: "meeting" as const,
       title: m.title as string,
-      date: String(m.start_time).slice(0, 10),
-      time: String(m.start_time).slice(11, 16) || null,
+      date: istDateKey(String(m.start_time)),
+      time: istTime24(String(m.start_time)) || null,
       location: (m.location as string) ?? null,
       projectId: m.project_id as number | null,
       projectName: (m.project_name as string) ?? null,

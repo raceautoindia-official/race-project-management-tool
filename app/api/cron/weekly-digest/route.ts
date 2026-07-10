@@ -3,6 +3,7 @@ import { query, DbRow } from "@/lib/db";
 import { json, errorResponse } from "@/lib/http";
 import { assertCron } from "@/lib/cron";
 import { sendEmail, emailLayout, appBaseUrl } from "@/lib/mailer";
+import { formatIst } from "@/lib/tz";
 
 export const dynamic = "force-dynamic";
 
@@ -62,7 +63,7 @@ export async function POST(req: NextRequest) {
       const meetingRows = meetings
         .map(
           (m) =>
-            `<li><strong>${m.start_time}</strong> — ${m.title}${
+            `<li><strong>${formatIst(String(m.start_time))}</strong> — ${m.title}${
               m.project_name ? ` (${m.project_name})` : ""
             }</li>`
         )

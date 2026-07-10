@@ -17,6 +17,7 @@ import {
   STATUS_CHART_COLORS,
 } from "@/lib/format";
 import { TASK_STATUS_LABELS, type TaskStatus } from "@/lib/types";
+import { formatIst } from "@/lib/tz";
 
 export const dynamic = "force-dynamic";
 
@@ -29,8 +30,7 @@ function statusChartData(counts: Record<TaskStatus, number>) {
 }
 
 function fmtMeeting(dt: string): string {
-  const [d, t] = String(dt).replace("T", " ").split(" ");
-  return `${d} ${t ? t.slice(0, 5) : ""}`.trim();
+  return formatIst(String(dt));
 }
 
 function MeetingList({

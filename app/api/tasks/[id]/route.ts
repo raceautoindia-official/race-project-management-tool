@@ -7,6 +7,7 @@ import { updateTaskSchema } from "@/lib/validation";
 import { logActivity, notify } from "@/lib/activity";
 import { attachTaskMeta, syncTaskLabels } from "@/lib/tasks";
 import { projectAlertRecipients } from "@/lib/recipients";
+import { sendEmail, emailLayout, appBaseUrl } from "@/lib/mailer";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -20,7 +21,8 @@ const TASK_SELECT = `
 `;
 
 // Fields a plain member (the task's assignee, but not a manager) may change.
-const MEMBER_EDITABLE = new Set(["status", "spentHours"]);
+// Hours are logged via /time-logs (not here), so status is all a member sets.
+const MEMBER_EDITABLE = new Set(["status"]);
 
 async function loadTask(taskId: number): Promise<DbRow> {
   const rows = await query<DbRow[]>(
@@ -75,6 +77,12 @@ export async function PATCH(req: NextRequest, { params }: Params) {
           "You can only update the status and logged hours of your task"
         );
       }
+      // Members submit for review; only an admin/lead marks a task Done.
+      if (data.status === "done") {
+        throw forbidden(
+          "Submit the task for review — a project lead will approve and mark it Done."
+        );
+      }
     }
 
     if (data.assigneeId) {
@@ -109,10 +117,6 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       sets.push("estimated_hours = ?");
       values.push(data.estimatedHours);
     }
-    if (data.spentHours !== undefined) {
-      sets.push("spent_hours = ?");
-      values.push(data.spentHours ?? 0);
-    }
     if (data.assigneeId !== undefined) {
       sets.push("assignee_id = ?");
       values.push(data.assigneeId);
@@ -122,23 +126,20 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       values.push(data.dueDate);
     }
 
-    // Late completion → approval gate. If a task is completed after its due
-    // date (or already flagged outstanding), it isn't closed outright; it goes
-    // to "pending approval" for an admin / project lead to sign off (#6).
-    let awaitingApproval = false;
-    if (data.status === "done" && task.status !== "done") {
-      const today = new Date().toISOString().slice(0, 10);
-      const dueStr = task.due_date ? String(task.due_date).slice(0, 10) : null;
-      const isLate = Boolean(task.outstanding) || (dueStr !== null && dueStr < today);
-      if (isLate && task.approval_status !== "approved") {
-        sets.push("approval_status = ?");
-        values.push("pending");
-        if (!task.outstanding) {
-          sets.push("outstanding = ?");
-          values.push(1);
-        }
-        awaitingApproval = true;
-      }
+    // Review-gate transitions (Wave 7).
+    const submittingReview =
+      data.status === "review" && task.status !== "review";
+    const approving = data.status === "done" && task.status !== "done";
+    const sendingBack =
+      data.status === "in_progress" && task.status === "review";
+
+    // Approving (manager marks Done) clears the overdue/outstanding flag.
+    if (approving) {
+      sets.push("outstanding = 0");
+      sets.push("approval_status = 'approved'");
+      sets.push("approved_by = ?");
+      values.push(user.id);
+      sets.push("approved_at = UTC_TIMESTAMP()");
     }
 
     if (sets.length > 0) {
@@ -146,20 +147,43 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       await query(`UPDATE tasks SET ${sets.join(", ")} WHERE id = ?`, values);
     }
 
-    if (awaitingApproval) {
+    // Submit for review → notify the project lead(s) + admins (in-app + email).
+    if (submittingReview) {
       const recipients = await projectAlertRecipients(task.project_id);
-      const link = `/outstanding`;
-      await Promise.all(
-        recipients
-          .filter((r) => r.id !== user.id)
-          .map((r) =>
-            notify(
-              r.id,
-              "approval_pending",
-              `"${task.title}" was completed late and needs your approval`,
-              link
-            )
-          )
+      const link = `/projects/${task.project_id}`;
+      for (const r of recipients.filter((r) => r.id !== user.id)) {
+        await notify(
+          r.id,
+          "review_requested",
+          `${user.name} submitted "${task.title}" for review`,
+          link
+        );
+        await sendEmail({
+          to: [r.email],
+          subject: `Review requested: ${task.title}`,
+          html: emailLayout(
+            "Task submitted for review",
+            `<p><strong>${user.name}</strong> submitted <strong>${task.title}</strong> for your review.</p>
+             <p><a href="${appBaseUrl()}${link}">Open the project →</a></p>`
+          ),
+        });
+      }
+    }
+    // Approve / send-back → notify the assignee.
+    if (approving && task.assignee_id && task.assignee_id !== user.id) {
+      await notify(
+        task.assignee_id,
+        "task_approved",
+        `Your task "${task.title}" was approved and marked done`,
+        `/projects/${task.project_id}`
+      );
+    }
+    if (sendingBack && task.assignee_id && task.assignee_id !== user.id) {
+      await notify(
+        task.assignee_id,
+        "task_sent_back",
+        `"${task.title}" was sent back for changes`,
+        `/projects/${task.project_id}`
       );
     }
     if (data.labelIds !== undefined) {

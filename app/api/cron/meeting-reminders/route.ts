@@ -4,6 +4,7 @@ import { json, errorResponse } from "@/lib/http";
 import { assertCron } from "@/lib/cron";
 import { notify } from "@/lib/activity";
 import { sendEmail, emailLayout, appBaseUrl } from "@/lib/mailer";
+import { formatIst } from "@/lib/tz";
 
 export const dynamic = "force-dynamic";
 
@@ -42,14 +43,15 @@ export async function POST(req: NextRequest) {
         [m.id]
       );
 
+      const whenIst = formatIst(String(m.start_time));
       const where = m.location ? `<p>Where: ${m.location}</p>` : "";
       const proj = m.project_name ? `<p>Project: ${m.project_name}</p>` : "";
       await sendEmail({
         to: attendees.map((a) => a.email),
-        subject: `Reminder: ${m.title} at ${m.start_time}`,
+        subject: `Reminder: ${m.title} at ${whenIst}`,
         html: emailLayout(
           "Upcoming meeting",
-          `<p><strong>${m.title}</strong> starts at <strong>${m.start_time}</strong> (UTC).</p>
+          `<p><strong>${m.title}</strong> starts at <strong>${whenIst}</strong> (IST).</p>
            ${proj}${where}
            ${m.description ? `<p>${m.description}</p>` : ""}
            <p><a href="${base}/meetings">View in PMApp →</a></p>`
@@ -60,7 +62,7 @@ export async function POST(req: NextRequest) {
         await notify(
           a.id,
           "meeting_reminder",
-          `Reminder: "${m.title}" starts at ${m.start_time}`,
+          `Reminder: "${m.title}" starts at ${whenIst}`,
           `/meetings`
         );
       }

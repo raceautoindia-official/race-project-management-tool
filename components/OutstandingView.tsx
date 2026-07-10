@@ -33,12 +33,15 @@ export default function OutstandingView({
   async function decide(id: number, decision: "approve" | "reject") {
     setBusyId(id);
     try {
-      await apiFetch(`/api/tasks/${id}/approval`, {
-        method: "POST",
-        body: JSON.stringify({ decision }),
+      // Approve = mark Done; reject = send back to In Progress (review gate).
+      await apiFetch(`/api/tasks/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: decision === "approve" ? "done" : "in_progress",
+        }),
       });
       setTasks((ts) => ts.filter((t) => t.id !== id));
-      toast(decision === "approve" ? "Approved & closed" : "Sent back to assignee");
+      toast(decision === "approve" ? "Approved & marked done" : "Sent back to assignee");
     } catch (e) {
       toast(e instanceof Error ? e.message : "Action failed", "error");
     } finally {
@@ -70,7 +73,7 @@ export default function OutstandingView({
         </thead>
         <tbody className="divide-y divide-slate-100">
           {tasks.map((t) => {
-            const pending = t.approval_status === "pending";
+            const inReview = t.status === "review";
             return (
               <tr key={t.id} className="hover:bg-slate-50">
                 <td className="px-4 py-2 font-medium text-slate-800">{t.title}</td>
@@ -94,9 +97,9 @@ export default function OutstandingView({
                   )}
                 </td>
                 <td className="px-4 py-2">
-                  {pending ? (
+                  {inReview ? (
                     <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-                      Pending approval
+                      In review
                     </span>
                   ) : (
                     <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
@@ -105,7 +108,7 @@ export default function OutstandingView({
                   )}
                 </td>
                 <td className="px-4 py-2 text-right">
-                  {pending && t.can_manage ? (
+                  {inReview && t.can_manage ? (
                     <div className="flex justify-end gap-2">
                       <button
                         onClick={() => decide(t.id, "approve")}
@@ -119,13 +122,18 @@ export default function OutstandingView({
                         disabled={busyId === t.id}
                         className="rounded-lg border border-red-200 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
                       >
-                        Reject
+                        Send back
                       </button>
                     </div>
-                  ) : pending ? (
+                  ) : inReview ? (
                     <span className="text-xs text-slate-400">Awaiting lead/admin</span>
                   ) : (
-                    <span className="text-xs text-slate-400">—</span>
+                    <Link
+                      href={`/projects/${t.project_id}`}
+                      className="text-xs text-indigo-600 hover:underline"
+                    >
+                      Open
+                    </Link>
                   )}
                 </td>
               </tr>

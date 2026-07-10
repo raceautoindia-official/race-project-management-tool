@@ -87,7 +87,6 @@ export const updateTaskSchema = z
     status: z.enum(["todo", "in_progress", "review", "done"]).optional(),
     priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
     estimatedHours: optionalHours.optional(),
-    spentHours: optionalHours.optional(),
     assigneeId: optionalId.optional(),
     dueDate: optionalDate.optional(),
     labelIds: labelIdsField,

@@ -119,6 +119,11 @@ export default function ProjectBoard({
   async function moveTask(id: number, status: TaskStatus) {
     const current = tasks.find((t) => t.id === id);
     if (!current || current.status === status) return;
+    // Members submit for review; only a lead/admin marks Done.
+    if (status === "done" && !canManage) {
+      toast("Move it to Review to submit — a lead will mark it Done.", "error");
+      return;
+    }
     const snapshot = tasks;
     setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, status } : t)));
     try {

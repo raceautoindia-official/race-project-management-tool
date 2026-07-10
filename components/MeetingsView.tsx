@@ -5,6 +5,7 @@ import Link from "next/link";
 import Modal from "@/components/Modal";
 import { apiFetch } from "@/lib/api-client";
 import { useToast } from "@/components/ToastProvider";
+import { formatIst, istInputToUtc } from "@/lib/tz";
 import type { Meeting, Role } from "@/lib/types";
 
 interface PickUser {
@@ -30,9 +31,8 @@ const REMINDER_OPTIONS: { label: string; value: string }[] = [
 ];
 
 function fmt(dt: string): string {
-  // dt is "YYYY-MM-DD HH:MM:SS" (stored UTC). Render compactly.
-  const [d, t] = dt.replace("T", " ").split(" ");
-  return `${d} ${t ? t.slice(0, 5) : ""}`.trim();
+  // dt is "YYYY-MM-DD HH:MM:SS" (stored UTC). Render in IST.
+  return formatIst(dt);
 }
 
 export default function MeetingsView({
@@ -229,7 +229,7 @@ function NewMeetingModal({
           description,
           projectId: projectId === "" ? null : Number(projectId),
           location,
-          startTime,
+          startTime: istInputToUtc(startTime),
           reminderMinutes: reminder === "" ? null : Number(reminder),
           attendeeIds,
         }),

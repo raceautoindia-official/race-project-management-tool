@@ -10,6 +10,16 @@ import { useToast } from "@/components/ToastProvider";
 import { ProgressBar } from "@/components/ProgressBar";
 import { taskProgress } from "@/lib/progress";
 import { formatDate, formatRelative, isOverdue } from "@/lib/format";
+import { formatHM, formatMinutes, formatIst } from "@/lib/tz";
+
+interface TimeLog {
+  id: number;
+  minutes: number;
+  note: string | null;
+  logged_at: string;
+  user_id: number | null;
+  user_name: string | null;
+}
 import {
   TASK_STATUS_LABELS,
   type Comment,
@@ -62,10 +72,11 @@ export default function TaskDetailModal({
   // @mention state
   const [picked, setPicked] = useState<{ id: number; name: string }[]>([]);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
-  const [spent, setSpent] = useState<string>(
-    task?.spent_hours != null ? String(task.spent_hours) : "0"
-  );
-  const [savingHours, setSavingHours] = useState(false);
+  const [timeLogs, setTimeLogs] = useState<TimeLog[]>([]);
+  const [logH, setLogH] = useState("");
+  const [logM, setLogM] = useState("");
+  const [logNote, setLogNote] = useState("");
+  const [savingLog, setSavingLog] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -77,17 +88,19 @@ export default function TaskDetailModal({
     let active = true;
     (async () => {
       try {
-        const [c, s, d] = await Promise.all([
+        const [c, s, d, tl] = await Promise.all([
           apiFetch<{ comments: Comment[] }>(`/api/tasks/${task.id}/comments`),
           apiFetch<{ subtasks: Subtask[] }>(`/api/tasks/${task.id}/subtasks`),
           apiFetch<{ dependencies: Dependency[] }>(
             `/api/tasks/${task.id}/dependencies`
           ),
+          apiFetch<{ logs: TimeLog[] }>(`/api/tasks/${task.id}/time-logs`),
         ]);
         if (active) {
           setComments(c.comments);
           setSubtasks(s.subtasks);
           setDeps(d.dependencies);
+          setTimeLogs(tl.logs);
         }
       } catch (e) {
         if (active) setError(e instanceof Error ? e.message : "Failed to load");
@@ -119,19 +132,49 @@ export default function TaskDetailModal({
     subtask_done: subDone,
   });
 
-  async function saveHours() {
-    setSavingHours(true);
+  const totalMinutes = timeLogs.reduce((s, l) => s + l.minutes, 0);
+
+  async function logTime() {
+    const minutes =
+      (parseInt(logH || "0", 10) || 0) * 60 + (parseInt(logM || "0", 10) || 0);
+    if (minutes <= 0) return;
+    setSavingLog(true);
     try {
-      const res = await apiFetch<{ task: Task }>(`/api/tasks/${currentTask.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ spentHours: spent === "" ? 0 : Number(spent) }),
+      const res = await apiFetch<{
+        log: TimeLog;
+        totalMinutes: number;
+        status: string;
+      }>(`/api/tasks/${currentTask.id}/time-logs`, {
+        method: "POST",
+        body: JSON.stringify({ minutes, note: logNote || null }),
       });
-      onChanged(res.task);
-      toast("Hours logged");
+      setTimeLogs((prev) => [res.log, ...prev]);
+      setLogH("");
+      setLogM("");
+      setLogNote("");
+      onChanged({
+        ...currentTask,
+        spent_hours: res.totalMinutes / 60,
+        status: res.status as TaskStatus,
+      });
+      toast("Time logged");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not log hours");
+      setError(e instanceof Error ? e.message : "Could not log time");
     } finally {
-      setSavingHours(false);
+      setSavingLog(false);
+    }
+  }
+
+  async function deleteLog(logId: number) {
+    try {
+      const res = await apiFetch<{ totalMinutes: number }>(
+        `/api/tasks/${currentTask.id}/time-logs?logId=${logId}`,
+        { method: "DELETE" }
+      );
+      setTimeLogs((prev) => prev.filter((l) => l.id !== logId));
+      onChanged({ ...currentTask, spent_hours: res.totalMinutes / 60 });
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not remove entry", "error");
     }
   }
 
@@ -382,62 +425,105 @@ export default function TaskDetailModal({
         />
       </div>
 
-      {/* Effort (hours) */}
-      <div className="mt-4 rounded-lg bg-slate-50 p-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="text-sm">
-            <span className="font-medium text-slate-700">Effort</span>
-            <span className="ml-2 text-slate-500">
-              {currentTask.estimated_hours != null
-                ? `${Number(currentTask.estimated_hours)}h estimated`
-                : "No estimate"}
-            </span>
+      {/* Time log */}
+      {(() => {
+        const estMin =
+          currentTask.estimated_hours != null
+            ? Math.round(Number(currentTask.estimated_hours) * 60)
+            : 0;
+        const over = estMin > 0 && totalMinutes > estMin;
+        const pct = estMin > 0 ? (totalMinutes / estMin) * 100 : 0;
+        return (
+          <div className="mt-4 rounded-lg bg-slate-50 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+              <div>
+                <span className="font-medium text-slate-700">Time</span>
+                <span className="ml-2 text-slate-500">
+                  {formatMinutes(totalMinutes)} logged
+                  {estMin > 0 ? ` of ${formatHM(currentTask.estimated_hours)} est.` : ""}
+                </span>
+              </div>
+              {over && (
+                <span className="text-xs font-medium text-amber-600">
+                  Over by {formatMinutes(totalMinutes - estMin)}
+                </span>
+              )}
+            </div>
+            {estMin > 0 && (
+              <div className="mt-2">
+                <ProgressBar value={pct} tone={over ? "green" : "indigo"} />
+              </div>
+            )}
+
+            {canEditExecution && (
+              <div className="mt-3 flex flex-wrap items-end gap-2">
+                <div>
+                  <label className="block text-xs text-slate-500">Hours</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={logH}
+                    onChange={(e) => setLogH(e.target.value)}
+                    placeholder="0"
+                    className="w-16 rounded border border-slate-300 px-2 py-1 text-sm focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500">Minutes</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="59"
+                    value={logM}
+                    onChange={(e) => setLogM(e.target.value)}
+                    placeholder="0"
+                    className="w-16 rounded border border-slate-300 px-2 py-1 text-sm focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+                <input
+                  value={logNote}
+                  onChange={(e) => setLogNote(e.target.value)}
+                  placeholder="Note (optional)"
+                  className="min-w-32 flex-1 rounded border border-slate-300 px-2 py-1 text-sm focus:border-indigo-500 focus:outline-none"
+                />
+                <button
+                  onClick={logTime}
+                  disabled={savingLog || (!logH && !logM)}
+                  className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-40"
+                >
+                  {savingLog ? "Adding…" : "Log time"}
+                </button>
+              </div>
+            )}
+
+            {timeLogs.length > 0 && (
+              <ul className="mt-3 space-y-1 border-t border-slate-200 pt-2">
+                {timeLogs.map((l) => (
+                  <li key={l.id} className="flex items-center gap-2 text-xs text-slate-600">
+                    <span className="font-medium text-slate-700">
+                      {formatMinutes(l.minutes)}
+                    </span>
+                    <span className="text-slate-400">{l.user_name ?? "—"}</span>
+                    {l.note && <span className="text-slate-500">· {l.note}</span>}
+                    <span className="ml-auto text-slate-400">
+                      {formatIst(l.logged_at)}
+                    </span>
+                    {(canManage || l.user_id === currentUser.id) && (
+                      <button
+                        onClick={() => deleteLog(l.id)}
+                        className="text-slate-300 hover:text-red-500"
+                        aria-label="Remove entry"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
-          {canEditExecution ? (
-            <div className="flex items-center gap-2">
-              <label className="text-xs text-slate-500">Logged</label>
-              <input
-                type="number"
-                min="0"
-                step="0.5"
-                value={spent}
-                onChange={(e) => setSpent(e.target.value)}
-                className="w-20 rounded border border-slate-300 px-2 py-1 text-sm focus:border-indigo-500 focus:outline-none"
-              />
-              <span className="text-xs text-slate-500">h</span>
-              <button
-                onClick={saveHours}
-                disabled={savingHours || Number(spent) === Number(currentTask.spent_hours)}
-                className="rounded-lg bg-indigo-600 px-3 py-1 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-40"
-              >
-                {savingHours ? "Saving…" : "Log"}
-              </button>
-            </div>
-          ) : (
-            <span className="text-sm text-slate-500">
-              {Number(currentTask.spent_hours)}h logged
-            </span>
-          )}
-        </div>
-        {currentTask.estimated_hours != null &&
-          Number(currentTask.estimated_hours) > 0 && (
-            <div className="mt-2">
-              <ProgressBar
-                value={
-                  (Number(currentTask.spent_hours) /
-                    Number(currentTask.estimated_hours)) *
-                  100
-                }
-                tone={
-                  Number(currentTask.spent_hours) >
-                  Number(currentTask.estimated_hours)
-                    ? "green"
-                    : "indigo"
-                }
-              />
-            </div>
-          )}
-      </div>
+        );
+      })()}
 
       {/* Blocked by (dependencies) */}
       {(deps.length > 0 || canManage) && (
@@ -536,11 +622,15 @@ export default function TaskDetailModal({
                 onChange={(e) => changeStatus(e.target.value as TaskStatus)}
                 className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none"
               >
-                {(Object.keys(TASK_STATUS_LABELS) as TaskStatus[]).map((s) => (
-                  <option key={s} value={s}>
-                    {TASK_STATUS_LABELS[s]}
-                  </option>
-                ))}
+                {(Object.keys(TASK_STATUS_LABELS) as TaskStatus[])
+                  .filter((s) => canManage || s !== "done")
+                  .map((s) => (
+                    <option key={s} value={s}>
+                      {!canManage && s === "review"
+                        ? "Review (submit)"
+                        : TASK_STATUS_LABELS[s]}
+                    </option>
+                  ))}
               </select>
             ) : (
               <span className="font-medium text-slate-700">

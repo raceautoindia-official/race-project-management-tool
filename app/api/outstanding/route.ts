@@ -15,7 +15,7 @@ export async function GET(_req: NextRequest) {
   try {
     const user = await requireUser();
 
-    const where = ["(t.outstanding = 1 OR t.approval_status = 'pending')"];
+    const where = ["(t.outstanding = 1 OR t.status = 'review')"];
     const params: unknown[] = [];
     if (user.role !== "admin") {
       where.push(`(
@@ -37,7 +37,7 @@ export async function GET(_req: NextRequest) {
          JOIN projects p ON p.id = t.project_id
          LEFT JOIN users a ON a.id = t.assignee_id
         WHERE ${where.join(" AND ")}
-        ORDER BY (t.approval_status = 'pending') DESC, t.due_date ASC`,
+        ORDER BY (t.status = 'review') DESC, t.due_date ASC`,
       params
     );
 

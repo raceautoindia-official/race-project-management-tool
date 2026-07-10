@@ -6,6 +6,7 @@ import Avatar from "@/components/Avatar";
 import { ProgressBar } from "@/components/ProgressBar";
 import { taskProgress } from "@/lib/progress";
 import { formatDate, isOverdue } from "@/lib/format";
+import { formatHM } from "@/lib/tz";
 import type { Task } from "@/lib/types";
 
 export default function TaskCard({
@@ -64,9 +65,9 @@ export default function TaskCard({
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {(est != null || spentH > 0) && (
-            <span className="text-slate-400" title="Logged / estimated hours">
-              ⏱ {spentH}
-              {est != null ? `/${est}h` : "h"}
+            <span className="text-slate-400" title="Logged / estimated time">
+              ⏱ {formatHM(spentH)}
+              {est != null ? ` / ${formatHM(est)}` : ""}
             </span>
           )}
           {subTotal > 0 && (

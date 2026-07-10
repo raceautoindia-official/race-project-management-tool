@@ -12,7 +12,8 @@ export default async function OutstandingPage() {
   const user = await requirePageUser();
   const isAdmin = user.role === "admin";
 
-  const where = ["(t.outstanding = 1 OR t.approval_status = 'pending')"];
+  // "Needs attention": overdue tasks + tasks submitted for review.
+  const where = ["(t.outstanding = 1 OR t.status = 'review')"];
   const params: unknown[] = [];
   if (!isAdmin) {
     where.push(`(
@@ -34,7 +35,7 @@ export default async function OutstandingPage() {
        JOIN projects p ON p.id = t.project_id
        LEFT JOIN users a ON a.id = t.assignee_id
       WHERE ${where.join(" AND ")}
-      ORDER BY (t.approval_status = 'pending') DESC, t.due_date ASC`,
+      ORDER BY (t.status = 'review') DESC, t.due_date ASC`,
     params
   );
 
@@ -67,7 +68,7 @@ export default async function OutstandingPage() {
     <AppShell user={user}>
       <PageHeader
         title="Outstanding tasks"
-        subtitle="Overdue work and late completions awaiting admin / project-lead approval."
+        subtitle="Overdue work and tasks submitted for review — approve or send back."
       />
       <OutstandingView initial={tasks} />
     </AppShell>
