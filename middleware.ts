@@ -40,11 +40,14 @@ const PUBLIC_PAGES = new Set(["/login"]);
 const PUBLIC_APIS = new Set(["/api/auth/login"]);
 
 // API path prefixes restricted to admins.
-const ADMIN_API_PREFIXES = ["/api/activity"];
+const ADMIN_API_PREFIXES = ["/api/activity", "/api/presence"];
 
 function isPublic(pathname: string): boolean {
   if (PUBLIC_PAGES.has(pathname)) return true;
   if (PUBLIC_APIS.has(pathname)) return true;
+  // Cron endpoints authenticate via the x-cron-secret header (see lib/cron.ts),
+  // not a session cookie, so they bypass the session gate here.
+  if (pathname.startsWith("/api/cron/")) return true;
   return false;
 }
 

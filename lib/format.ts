@@ -33,11 +33,15 @@ export function isOverdue(
   return d < today;
 }
 
+// Validated with the dataviz palette checker (light surface #ffffff):
+// CVD-safe (worst adjacent ΔE 16.2 ≥ 12) and all ≥3:1 contrast. `todo` is an
+// intentional neutral for the not-started state; identity is always reinforced
+// by the legend + counts, never colour alone.
 export const STATUS_CHART_COLORS: Record<TaskStatus, string> = {
-  todo: "#94a3b8",
-  in_progress: "#3b82f6",
-  review: "#f59e0b",
-  done: "#22c55e",
+  todo: "#64748b", // slate-500 (neutral baseline)
+  in_progress: "#2563eb", // blue-600
+  review: "#d97706", // amber-600
+  done: "#16a34a", // green-600
 };
 
 export function humanizeAction(action: string): string {

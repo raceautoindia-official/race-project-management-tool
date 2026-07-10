@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS users (
   role                 ENUM('admin','member') NOT NULL DEFAULT 'member',
   is_active            BOOLEAN NOT NULL DEFAULT TRUE,
   must_change_password BOOLEAN NOT NULL DEFAULT FALSE, -- unused (federated auth)
+  last_seen_at         DATETIME NULL,                  -- presence heartbeat
   created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
@@ -60,7 +61,16 @@ CREATE TABLE IF NOT EXISTS tasks (
   title       VARCHAR(200) NOT NULL,
   description TEXT,
   status      ENUM('todo','in_progress','review','done') NOT NULL DEFAULT 'todo',
+  outstanding     TINYINT(1) NOT NULL DEFAULT 0,  -- overdue & not done (set by cron)
+  approval_status ENUM('none','pending','approved','rejected') NOT NULL DEFAULT 'none',
+  approved_by     INT NULL,
+  approved_at     DATETIME NULL,
+  due_alert_sent  TINYINT(1) NOT NULL DEFAULT 0,
+  is_additional   TINYINT(1) NOT NULL DEFAULT 0,   -- extra work raised post-completion
+  parent_task_id  INT NULL,                        -- the task this follows up
   priority    ENUM('low','medium','high','urgent') NOT NULL DEFAULT 'medium',
+  estimated_hours DECIMAL(6,2) NULL,           -- planned effort (set by admin/lead)
+  spent_hours     DECIMAL(6,2) NOT NULL DEFAULT 0, -- actual logged by assignee
   assignee_id INT,
   created_by  INT,
   due_date    DATE,
@@ -69,6 +79,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   CONSTRAINT fk_tasks_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
   CONSTRAINT fk_tasks_assignee FOREIGN KEY (assignee_id) REFERENCES users(id) ON DELETE SET NULL,
   CONSTRAINT fk_tasks_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+  CONSTRAINT fk_tasks_approver FOREIGN KEY (approved_by) REFERENCES users(id) ON DELETE SET NULL,
+  CONSTRAINT fk_tasks_parent FOREIGN KEY (parent_task_id) REFERENCES tasks(id) ON DELETE SET NULL,
   INDEX idx_tasks_project (project_id),
   INDEX idx_tasks_assignee (assignee_id),
   INDEX idx_tasks_status (status)
@@ -141,4 +153,41 @@ CREATE TABLE IF NOT EXISTS subtasks (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_subtasks_task FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
   INDEX idx_subtasks_task (task_id)
+);
+
+-- Meetings (calendar) + reminders  (Phase 2 · Wave 2)
+CREATE TABLE IF NOT EXISTS meetings (
+  id               INT AUTO_INCREMENT PRIMARY KEY,
+  title            VARCHAR(200) NOT NULL,
+  description      TEXT,
+  project_id       INT NULL,
+  location         VARCHAR(255) NULL,
+  start_time       DATETIME NOT NULL,
+  reminder_minutes INT NULL,
+  reminder_sent    TINYINT(1) NOT NULL DEFAULT 0,
+  created_by       INT NULL,
+  created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_meetings_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL,
+  CONSTRAINT fk_meetings_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_meetings_start (start_time),
+  INDEX idx_meetings_reminder (reminder_sent, start_time)
+);
+
+CREATE TABLE IF NOT EXISTS meeting_attendees (
+  meeting_id INT NOT NULL,
+  user_id    INT NOT NULL,
+  PRIMARY KEY (meeting_id, user_id),
+  CONSTRAINT fk_ma_meeting FOREIGN KEY (meeting_id) REFERENCES meetings(id) ON DELETE CASCADE,
+  CONSTRAINT fk_ma_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Task dependencies (blocked-by)  (Phase 2 · Wave 6)
+CREATE TABLE IF NOT EXISTS task_dependencies (
+  task_id            INT NOT NULL,
+  depends_on_task_id INT NOT NULL,
+  created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (task_id, depends_on_task_id),
+  CONSTRAINT fk_dep_task FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  CONSTRAINT fk_dep_on   FOREIGN KEY (depends_on_task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  INDEX idx_dep_on (depends_on_task_id)
 );

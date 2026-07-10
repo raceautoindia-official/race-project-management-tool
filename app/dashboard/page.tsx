@@ -2,10 +2,20 @@ import Link from "next/link";
 import { requirePageUser } from "@/lib/page-guard";
 import { getAdminDashboard, getMemberDashboard } from "@/lib/dashboard";
 import AppShell from "@/components/AppShell";
-import { StatCard, SectionCard, PageHeader } from "@/components/Cards";
+import { SectionCard, PageHeader } from "@/components/Cards";
 import StatusChart from "@/components/StatusChart";
+import {
+  KpiTile,
+  ProjectProgressList,
+  HoursMeter,
+} from "@/components/DashboardWidgets";
 import { ProjectStatusBadge, TaskPriorityBadge } from "@/components/Badge";
-import { formatDate, formatRelative, humanizeAction, STATUS_CHART_COLORS } from "@/lib/format";
+import {
+  formatDate,
+  formatRelative,
+  humanizeAction,
+  STATUS_CHART_COLORS,
+} from "@/lib/format";
 import { TASK_STATUS_LABELS, type TaskStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -18,9 +28,41 @@ function statusChartData(counts: Record<TaskStatus, number>) {
   }));
 }
 
+function fmtMeeting(dt: string): string {
+  const [d, t] = String(dt).replace("T", " ").split(" ");
+  return `${d} ${t ? t.slice(0, 5) : ""}`.trim();
+}
+
+function MeetingList({
+  meetings,
+}: {
+  meetings: { id: number; title: string; start_time: string; project_name: string | null }[];
+}) {
+  if (meetings.length === 0)
+    return <p className="text-sm text-slate-400">No upcoming meetings.</p>;
+  return (
+    <ul className="divide-y divide-slate-100">
+      {meetings.map((m) => (
+        <li key={m.id} className="flex items-center justify-between gap-2 py-2">
+          <div className="min-w-0">
+            <div className="truncate text-sm font-medium text-slate-800">
+              {m.title}
+            </div>
+            {m.project_name && (
+              <div className="text-xs text-slate-400">{m.project_name}</div>
+            )}
+          </div>
+          <span className="shrink-0 text-xs font-medium text-indigo-600">
+            {fmtMeeting(m.start_time)}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export default async function DashboardPage() {
   const user = await requirePageUser();
-
   return (
     <AppShell user={user}>
       {user.role === "admin" ? (
@@ -38,29 +80,58 @@ async function AdminDashboard() {
     <>
       <PageHeader
         title="Admin Dashboard"
-        subtitle="Organization-wide overview of users, projects, and tasks."
+        subtitle="Organization-wide overview of projects, tasks, effort, and what needs attention."
       />
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Users" value={data.totals.users} />
-        <StatCard
+
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
+        <KpiTile label="Users" value={data.totals.users} />
+        <KpiTile
           label="Projects"
           value={data.totals.projects}
           hint={`${data.totals.activeProjects} active`}
         />
-        <StatCard label="Tasks" value={data.totals.tasks} />
-        <StatCard
-          label="Overdue tasks"
+        <KpiTile label="Tasks" value={data.totals.tasks} />
+        <KpiTile
+          label="Overdue"
           value={data.overdue.length}
-          accent={data.overdue.length ? "text-red-600" : "text-slate-900"}
+          href="/outstanding"
+          tone={data.overdue.length ? "danger" : "default"}
+        />
+        <KpiTile
+          label="Outstanding"
+          value={data.outstandingCount}
+          href="/outstanding"
+          tone={data.outstandingCount ? "warn" : "default"}
+        />
+        <KpiTile
+          label="Awaiting approval"
+          value={data.pendingApprovalCount}
+          href="/outstanding"
+          tone={data.pendingApprovalCount ? "warn" : "default"}
         />
       </div>
 
-      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
         <SectionCard title="Tasks by status">
           <StatusChart data={statusChartData(data.tasksByStatus)} />
         </SectionCard>
+        <SectionCard title="Active project completion">
+          <ProjectProgressList projects={data.projectProgress} />
+        </SectionCard>
+        <SectionCard title="Hours logged (all tasks)">
+          <HoursMeter estimated={data.hours.estimated} spent={data.hours.spent} />
+        </SectionCard>
+      </div>
 
-        <SectionCard title="Overdue tasks">
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <SectionCard
+          title="Overdue tasks"
+          action={
+            <Link href="/outstanding" className="text-sm font-medium text-indigo-600 hover:underline">
+              Outstanding
+            </Link>
+          }
+        >
           {data.overdue.length === 0 ? (
             <p className="text-sm text-slate-400">Nothing overdue. 🎉</p>
           ) : (
@@ -86,16 +157,26 @@ async function AdminDashboard() {
             </ul>
           )}
         </SectionCard>
+
+        <SectionCard
+          title="Upcoming meetings"
+          action={
+            <Link href="/meetings" className="text-sm font-medium text-indigo-600 hover:underline">
+              All meetings
+            </Link>
+          }
+        >
+          <MeetingList
+            meetings={data.upcomingMeetings as unknown as Parameters<typeof MeetingList>[0]["meetings"]}
+          />
+        </SectionCard>
       </div>
 
       <div className="mt-6">
         <SectionCard
           title="Recent activity"
           action={
-            <Link
-              href="/admin/activity"
-              className="text-sm font-medium text-indigo-600 hover:underline"
-            >
+            <Link href="/admin/activity" className="text-sm font-medium text-indigo-600 hover:underline">
               View all
             </Link>
           }
@@ -131,31 +212,59 @@ async function MemberDashboard({ userId, name }: { userId: number; name: string 
     <>
       <PageHeader
         title={`Welcome, ${name.split(" ")[0]}`}
-        subtitle="Your tasks and projects at a glance."
+        subtitle="Your tasks, effort, and schedule at a glance."
       />
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Open tasks" value={data.openCount} />
-        <StatCard label="In progress" value={data.tasksByStatus.in_progress} />
-        <StatCard label="Completed" value={data.tasksByStatus.done} />
-        <StatCard
+
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
+        <KpiTile label="Open tasks" value={data.openCount} />
+        <KpiTile label="In progress" value={data.tasksByStatus.in_progress} />
+        <KpiTile label="Completed" value={data.tasksByStatus.done} />
+        <KpiTile
           label="Overdue"
           value={data.overdueCount}
-          accent={data.overdueCount ? "text-red-600" : "text-slate-900"}
+          href="/outstanding"
+          tone={data.overdueCount ? "danger" : "default"}
+        />
+        <KpiTile
+          label="Outstanding"
+          value={data.outstandingCount}
+          href="/outstanding"
+          tone={data.outstandingCount ? "warn" : "default"}
+        />
+        <KpiTile
+          label="Awaiting approval"
+          value={data.pendingApprovalCount}
+          href="/outstanding"
+          tone={data.pendingApprovalCount ? "warn" : "default"}
         />
       </div>
 
-      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
         <SectionCard title="My tasks by status">
           <StatusChart data={statusChartData(data.tasksByStatus)} />
         </SectionCard>
+        <SectionCard title="My hours logged">
+          <HoursMeter estimated={data.hours.estimated} spent={data.hours.spent} />
+        </SectionCard>
+        <SectionCard
+          title="Upcoming meetings"
+          action={
+            <Link href="/meetings" className="text-sm font-medium text-indigo-600 hover:underline">
+              All
+            </Link>
+          }
+        >
+          <MeetingList
+            meetings={data.upcomingMeetings as unknown as Parameters<typeof MeetingList>[0]["meetings"]}
+          />
+        </SectionCard>
+      </div>
 
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
         <SectionCard
           title="Upcoming tasks"
           action={
-            <Link
-              href="/my-tasks"
-              className="text-sm font-medium text-indigo-600 hover:underline"
-            >
+            <Link href="/my-tasks" className="text-sm font-medium text-indigo-600 hover:underline">
               My tasks
             </Link>
           }
@@ -186,16 +295,11 @@ async function MemberDashboard({ userId, name }: { userId: number; name: string 
             </ul>
           )}
         </SectionCard>
-      </div>
 
-      <div className="mt-6">
         <SectionCard
           title="My projects"
           action={
-            <Link
-              href="/projects"
-              className="text-sm font-medium text-indigo-600 hover:underline"
-            >
+            <Link href="/projects" className="text-sm font-medium text-indigo-600 hover:underline">
               All projects
             </Link>
           }
@@ -205,7 +309,7 @@ async function MemberDashboard({ userId, name }: { userId: number; name: string 
               You are not a member of any projects yet.
             </p>
           ) : (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {data.projects.map((p) => {
                 const total = Number(p.task_count);
                 const done = Number(p.done_count);
@@ -222,7 +326,7 @@ async function MemberDashboard({ userId, name }: { userId: number; name: string 
                     </div>
                     <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-100">
                       <div
-                        className="h-full bg-indigo-500"
+                        className="h-full rounded-full bg-indigo-500"
                         style={{ width: `${pct}%` }}
                       />
                     </div>

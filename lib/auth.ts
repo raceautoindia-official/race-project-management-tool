@@ -92,12 +92,26 @@ export async function getCurrentUser(): Promise<User | null> {
   const session = await getSessionUser();
   if (!session) return null;
   const rows = await query<DbRow[]>(
-    `SELECT id, name, email, role, is_active, must_change_password, created_at, updated_at
+    `SELECT id, name, email, role, is_active, must_change_password,
+            last_seen_at, created_at, updated_at
      FROM users WHERE id = ? LIMIT 1`,
     [session.userId]
   );
   const row = rows[0];
   if (!row || !row.is_active) return null;
+
+  // Presence heartbeat: refresh last_seen at most once a minute to power the
+  // admin activity panel's online status without a write on every request.
+  const lastStr = row.last_seen_at
+    ? String(row.last_seen_at).replace(" ", "T") + "Z"
+    : null;
+  const last = lastStr ? new Date(lastStr).getTime() : 0;
+  if (!last || Date.now() - last > 60_000) {
+    query(`UPDATE users SET last_seen_at = UTC_TIMESTAMP() WHERE id = ?`, [
+      row.id,
+    ]).catch(() => {});
+  }
+
   return {
     id: row.id,
     name: row.name,

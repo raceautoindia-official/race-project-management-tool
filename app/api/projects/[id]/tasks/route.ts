@@ -2,7 +2,8 @@ import { NextRequest } from "next/server";
 import { query, DbRow, DbResult } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { json, errorResponse, ApiError } from "@/lib/http";
-import { assertProjectAccess } from "@/lib/rbac";
+import { assertProjectAccess, canManageProject } from "@/lib/rbac";
+import { forbidden } from "@/lib/http";
 import { createTaskSchema } from "@/lib/validation";
 import { logActivity, notify } from "@/lib/activity";
 import { attachTaskMeta, syncTaskLabels } from "@/lib/tasks";
@@ -11,6 +12,7 @@ type Params = { params: Promise<{ id: string }> };
 
 const TASK_SELECT = `
   t.id, t.project_id, t.title, t.description, t.status, t.priority,
+  t.estimated_hours, t.spent_hours, t.is_additional, t.parent_task_id,
   t.assignee_id, t.created_by, t.due_date, t.created_at, t.updated_at,
   a.name AS assignee_name, c.name AS creator_name,
   (SELECT COUNT(*) FROM task_comments tc WHERE tc.task_id = t.id) AS comment_count
@@ -71,7 +73,10 @@ export async function POST(req: NextRequest, { params }: Params) {
     const projectId = Number(id);
     if (!Number.isInteger(projectId)) throw new ApiError(400, "Invalid id");
 
-    await assertProjectAccess(user, projectId);
+    const { projectRole } = await assertProjectAccess(user, projectId);
+    if (!canManageProject(user, projectRole)) {
+      throw forbidden("Only an admin or project lead can create tasks");
+    }
     const body = await req.json().catch(() => ({}));
     const data = createTaskSchema.parse(body);
 
@@ -85,19 +90,36 @@ export async function POST(req: NextRequest, { params }: Params) {
       }
     }
 
+    // #7 — follow-up work: a parent must belong to the same project. Any task
+    // linked to a parent (or explicitly flagged) is marked additional.
+    if (data.parentTaskId) {
+      const p = await query<DbRow[]>(
+        `SELECT id FROM tasks WHERE id = ? AND project_id = ? LIMIT 1`,
+        [data.parentTaskId, projectId]
+      );
+      if (!p.length) {
+        throw new ApiError(400, "Parent task must be in the same project");
+      }
+    }
+    const isAdditional = data.parentTaskId != null || data.isAdditional === true;
+
     const result = (await query<DbResult>(
       `INSERT INTO tasks
-         (project_id, title, description, status, priority, assignee_id, created_by, due_date)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+         (project_id, title, description, status, priority, estimated_hours,
+          assignee_id, created_by, due_date, is_additional, parent_task_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         projectId,
         data.title,
         data.description ?? null,
         data.status ?? "todo",
         data.priority ?? "medium",
+        data.estimatedHours ?? null,
         data.assigneeId ?? null,
         user.id,
         data.dueDate ?? null,
+        isAdditional ? 1 : 0,
+        data.parentTaskId ?? null,
       ]
     )) as unknown as DbResult;
 

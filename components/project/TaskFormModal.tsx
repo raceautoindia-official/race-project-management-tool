@@ -23,6 +23,7 @@ export default function TaskFormModal({
   members,
   labels,
   task,
+  parentTask,
   onSaved,
   onLabelCreated,
 }: {
@@ -32,6 +33,7 @@ export default function TaskFormModal({
   members: ProjectMember[];
   labels: Label[];
   task?: Task | null;
+  parentTask?: Task | null;
   onSaved: (task: Task) => void;
   onLabelCreated: (label: Label) => void;
 }) {
@@ -51,6 +53,9 @@ export default function TaskFormModal({
   );
   const [assigneeId, setAssigneeId] = useState<string>(
     task?.assignee_id ? String(task.assignee_id) : ""
+  );
+  const [estimatedHours, setEstimatedHours] = useState<string>(
+    task?.estimated_hours != null ? String(task.estimated_hours) : ""
   );
   const [dueDate, setDueDate] = useState<string>(task?.due_date ?? "");
   const [labelIds, setLabelIds] = useState<number[]>(
@@ -94,9 +99,11 @@ export default function TaskFormModal({
       description,
       status,
       priority,
+      estimatedHours: estimatedHours === "" ? null : Number(estimatedHours),
       assigneeId: assigneeId === "" ? null : Number(assigneeId),
       dueDate: dueDate === "" ? null : dueDate,
       labelIds,
+      ...(parentTask && !isEdit ? { parentTaskId: parentTask.id } : {}),
     };
     try {
       const res = isEdit
@@ -119,11 +126,21 @@ export default function TaskFormModal({
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={isEdit ? "Edit task" : "New task"}>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={isEdit ? "Edit task" : parentTask ? "Add follow-up work" : "New task"}
+    >
       <form onSubmit={submit} className="space-y-4">
         {error && (
           <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}
+          </div>
+        )}
+        {parentTask && !isEdit && (
+          <div className="rounded-lg bg-violet-50 px-3 py-2 text-sm text-violet-700">
+            Follow-up to <strong>{parentTask.title}</strong> — this will be
+            flagged as additional work.
           </div>
         )}
         <div>
@@ -194,6 +211,20 @@ export default function TaskFormModal({
               type="date"
               value={dueDate}
               onChange={(e) => setDueDate(e.target.value)}
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">
+              Estimated hours
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="0.5"
+              value={estimatedHours}
+              onChange={(e) => setEstimatedHours(e.target.value)}
+              placeholder="e.g. 8"
               className={inputClass}
             />
           </div>

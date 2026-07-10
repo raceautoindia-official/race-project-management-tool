@@ -10,6 +10,7 @@ export const dynamic = "force-dynamic";
 
 const TASK_SELECT = `
   t.id, t.project_id, t.title, t.description, t.status, t.priority,
+  t.estimated_hours, t.spent_hours, t.is_additional, t.parent_task_id,
   t.assignee_id, t.created_by, t.due_date, t.created_at, t.updated_at,
   a.name AS assignee_name, c.name AS creator_name,
   (SELECT COUNT(*) FROM task_comments tc WHERE tc.task_id = t.id) AS comment_count

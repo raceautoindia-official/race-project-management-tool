@@ -3,6 +3,7 @@ export type ProjectStatus = "active" | "completed" | "archived";
 export type ProjectRole = "lead" | "member";
 export type TaskStatus = "todo" | "in_progress" | "review" | "done";
 export type TaskPriority = "low" | "medium" | "high" | "urgent";
+export type ApprovalStatus = "none" | "pending" | "approved" | "rejected";
 
 export const TASK_STATUSES: TaskStatus[] = [
   "todo",
@@ -78,7 +79,15 @@ export interface Task {
   title: string;
   description: string | null;
   status: TaskStatus;
+  outstanding?: boolean;
+  approval_status?: ApprovalStatus;
+  approved_by?: number | null;
+  approved_at?: string | null;
+  is_additional?: boolean;
+  parent_task_id?: number | null;
   priority: TaskPriority;
+  estimated_hours: number | null;
+  spent_hours: number;
   assignee_id: number | null;
   assignee_name?: string | null;
   created_by: number | null;
@@ -135,4 +144,20 @@ export interface NotificationItem {
   link: string | null;
   is_read: boolean;
   created_at: string;
+}
+
+export interface Meeting {
+  id: number;
+  title: string;
+  description: string | null;
+  project_id: number | null;
+  project_name?: string | null;
+  location: string | null;
+  start_time: string;
+  reminder_minutes: number | null;
+  reminder_sent?: boolean;
+  created_by: number | null;
+  creator_name?: string | null;
+  created_at: string;
+  attendees?: { user_id: number; name: string; email: string | null }[];
 }

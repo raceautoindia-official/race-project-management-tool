@@ -32,7 +32,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const { id } = await params;
     const projectId = Number(id);
     if (!Number.isInteger(projectId)) throw new ApiError(400, "Invalid id");
-    await assertProjectAccess(user, projectId);
+    await assertProjectManage(user, projectId);
 
     const body = await req.json().catch(() => ({}));
     const data = createLabelSchema.parse(body);

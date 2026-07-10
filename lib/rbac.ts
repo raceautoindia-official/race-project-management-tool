@@ -2,6 +2,18 @@ import { query, DbRow } from "./db";
 import { forbidden, notFound } from "./http";
 import type { ProjectRole, User } from "./types";
 
+/**
+ * Is this user a "manager" of the project — i.e. allowed to create/edit/delete
+ * tasks, manage members, and change project settings? Admins always are;
+ * otherwise only the project lead (head).
+ */
+export function canManageProject(
+  user: User,
+  projectRole: ProjectRole | null
+): boolean {
+  return user.role === "admin" || projectRole === "lead";
+}
+
 /** Does this project exist? Returns the row or null. */
 export async function findProject(projectId: number): Promise<DbRow | null> {
   const rows = await query<DbRow[]>(
@@ -52,6 +64,24 @@ export async function assertProjectManage(
   projectId: number
 ): Promise<DbRow> {
   const { project, projectRole } = await assertProjectAccess(user, projectId);
-  if (user.role === "admin" || projectRole === "lead") return project;
+  if (canManageProject(user, projectRole)) return project;
   throw forbidden("Only an admin or project lead can do this");
+}
+
+/**
+ * Ensure the user may modify a specific task's execution state (status,
+ * logged hours, checklist). Managers (admin/lead) may edit any task in the
+ * project; a plain member may edit ONLY a task assigned to them. Returns
+ * whether the caller is a manager so routes can widen what fields are allowed.
+ */
+export async function assertTaskEdit(
+  user: User,
+  task: { project_id: number; assignee_id: number | null }
+): Promise<{ manager: boolean }> {
+  const { projectRole } = await assertProjectAccess(user, task.project_id);
+  if (canManageProject(user, projectRole)) return { manager: true };
+  if (task.assignee_id === user.id) return { manager: false };
+  throw forbidden(
+    "Only an admin, the project lead, or the task's assignee can change this task"
+  );
 }

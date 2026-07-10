@@ -2,18 +2,20 @@ import { NextRequest } from "next/server";
 import { query, DbRow, DbResult } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { json, errorResponse, ApiError } from "@/lib/http";
-import { assertProjectAccess } from "@/lib/rbac";
+import { assertProjectAccess, assertTaskEdit } from "@/lib/rbac";
 import { createSubtaskSchema } from "@/lib/validation";
 
 type Params = { params: Promise<{ id: string }> };
 
-async function taskProjectId(taskId: number): Promise<number> {
+async function loadTaskRef(
+  taskId: number
+): Promise<{ project_id: number; assignee_id: number | null }> {
   const rows = await query<DbRow[]>(
-    `SELECT project_id FROM tasks WHERE id = ? LIMIT 1`,
+    `SELECT project_id, assignee_id FROM tasks WHERE id = ? LIMIT 1`,
     [taskId]
   );
   if (!rows.length) throw new ApiError(404, "Task not found");
-  return rows[0].project_id;
+  return { project_id: rows[0].project_id, assignee_id: rows[0].assignee_id };
 }
 
 function mapSubtask(r: DbRow) {
@@ -32,8 +34,8 @@ export async function GET(_req: NextRequest, { params }: Params) {
     const { id } = await params;
     const taskId = Number(id);
     if (!Number.isInteger(taskId)) throw new ApiError(400, "Invalid id");
-    const projectId = await taskProjectId(taskId);
-    await assertProjectAccess(user, projectId);
+    const ref = await loadTaskRef(taskId);
+    await assertProjectAccess(user, ref.project_id);
 
     const rows = await query<DbRow[]>(
       `SELECT id, task_id, title, is_done, position FROM subtasks
@@ -52,8 +54,8 @@ export async function POST(req: NextRequest, { params }: Params) {
     const { id } = await params;
     const taskId = Number(id);
     if (!Number.isInteger(taskId)) throw new ApiError(400, "Invalid id");
-    const projectId = await taskProjectId(taskId);
-    await assertProjectAccess(user, projectId);
+    const ref = await loadTaskRef(taskId);
+    await assertTaskEdit(user, ref);
 
     const body = await req.json().catch(() => ({}));
     const { title } = createSubtaskSchema.parse(body);

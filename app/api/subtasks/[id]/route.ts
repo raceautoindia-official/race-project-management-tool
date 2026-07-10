@@ -2,14 +2,15 @@ import { NextRequest } from "next/server";
 import { query, DbRow } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { json, errorResponse, ApiError } from "@/lib/http";
-import { assertProjectAccess } from "@/lib/rbac";
+import { assertTaskEdit } from "@/lib/rbac";
 import { updateSubtaskSchema } from "@/lib/validation";
 
 type Params = { params: Promise<{ id: string }> };
 
 async function loadSubtask(subtaskId: number): Promise<DbRow> {
   const rows = await query<DbRow[]>(
-    `SELECT s.id, s.task_id, s.title, s.is_done, s.position, t.project_id
+    `SELECT s.id, s.task_id, s.title, s.is_done, s.position,
+            t.project_id, t.assignee_id
      FROM subtasks s JOIN tasks t ON t.id = s.task_id
      WHERE s.id = ? LIMIT 1`,
     [subtaskId]
@@ -26,7 +27,10 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     if (!Number.isInteger(subtaskId)) throw new ApiError(400, "Invalid id");
 
     const sub = await loadSubtask(subtaskId);
-    await assertProjectAccess(user, sub.project_id);
+    await assertTaskEdit(user, {
+      project_id: sub.project_id,
+      assignee_id: sub.assignee_id,
+    });
 
     const body = await req.json().catch(() => ({}));
     const data = updateSubtaskSchema.parse(body);
@@ -67,7 +71,10 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
     if (!Number.isInteger(subtaskId)) throw new ApiError(400, "Invalid id");
 
     const sub = await loadSubtask(subtaskId);
-    await assertProjectAccess(user, sub.project_id);
+    await assertTaskEdit(user, {
+      project_id: sub.project_id,
+      assignee_id: sub.assignee_id,
+    });
 
     await query(`DELETE FROM subtasks WHERE id = ?`, [subtaskId]);
     return json({ ok: true });

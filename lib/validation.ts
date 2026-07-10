@@ -60,14 +60,24 @@ export const addMemberSchema = z.object({
 // ---- Tasks ----
 const labelIdsField = z.array(z.coerce.number().int().positive()).optional();
 
+// "" / null / undefined -> null; otherwise a non-negative number of hours.
+export const optionalHours = z.preprocess(
+  (v) => (v === "" || v === undefined || v === null ? null : v),
+  z.coerce.number().min(0).max(9999).nullable()
+);
+
 export const createTaskSchema = z.object({
   title: z.string().min(1).max(200),
   description: optionalText,
   status: z.enum(["todo", "in_progress", "review", "done"]).optional(),
   priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
+  estimatedHours: optionalHours.optional(),
   assigneeId: optionalId.optional(),
   dueDate: optionalDate.optional(),
   labelIds: labelIdsField,
+  // #7 — additional / follow-up work raised after a task or project completed.
+  parentTaskId: optionalId.optional(),
+  isAdditional: z.boolean().optional(),
 });
 
 export const updateTaskSchema = z
@@ -76,6 +86,8 @@ export const updateTaskSchema = z
     description: optionalText,
     status: z.enum(["todo", "in_progress", "review", "done"]).optional(),
     priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
+    estimatedHours: optionalHours.optional(),
+    spentHours: optionalHours.optional(),
     assigneeId: optionalId.optional(),
     dueDate: optionalDate.optional(),
     labelIds: labelIdsField,
@@ -112,4 +124,32 @@ export const updateProfileSchema = z.object({
 // ---- Comments ----
 export const createCommentSchema = z.object({
   body: z.string().min(1).max(5000),
+  mentionIds: z.array(z.coerce.number().int().positive()).optional(),
+});
+
+// ---- Approval (outstanding tasks) ----
+export const approvalSchema = z.object({
+  decision: z.enum(["approve", "reject"]),
+  note: z.string().max(1000).optional(),
+});
+
+// ---- Meetings ----
+// Accepts an HTML datetime-local value ("YYYY-MM-DDTHH:mm") or a full ISO string.
+export const createMeetingSchema = z.object({
+  title: z.string().min(1).max(200),
+  description: optionalText,
+  projectId: optionalId.optional(),
+  location: z.string().max(255).optional().nullable(),
+  startTime: z
+    .string()
+    .min(1, "Start time is required")
+    .regex(
+      /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?/,
+      "Expected a date and time"
+    ),
+  reminderMinutes: z.preprocess(
+    (v) => (v === "" || v === undefined || v === null ? null : v),
+    z.coerce.number().int().min(0).max(20160).nullable() // up to 14 days
+  ),
+  attendeeIds: z.array(z.coerce.number().int().positive()).optional(),
 });

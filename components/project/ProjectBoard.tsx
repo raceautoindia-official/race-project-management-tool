@@ -7,8 +7,10 @@ import LabelChip from "@/components/LabelChip";
 import Avatar from "@/components/Avatar";
 import Calendar from "@/components/Calendar";
 import ExportButton from "@/components/ExportButton";
+import { StatusBar } from "@/components/ProgressBar";
 import { apiFetch } from "@/lib/api-client";
 import { useToast } from "@/components/ToastProvider";
+import { statusCounts } from "@/lib/progress";
 import { formatDate, isOverdue } from "@/lib/format";
 import {
   TASK_STATUSES,
@@ -26,6 +28,7 @@ import TaskFormModal from "./TaskFormModal";
 import TaskDetailModal from "./TaskDetailModal";
 import MembersModal from "./MembersModal";
 import EditProjectModal from "./EditProjectModal";
+import ImportTasksModal from "./ImportTasksModal";
 
 interface PickUser {
   id: number;
@@ -77,10 +80,12 @@ export default function ProjectBoard({
 
   const [formOpen, setFormOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [followUpParent, setFollowUpParent] = useState<Task | null>(null);
   const [detailTask, setDetailTask] = useState<Task | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [draggedId, setDraggedId] = useState<number | null>(null);
 
   const [fStatus, setFStatus] = useState("");
@@ -93,6 +98,9 @@ export default function ProjectBoard({
   const total = tasks.length;
   const done = tasks.filter((t) => t.status === "done").length;
   const pct = total ? Math.round((done / total) * 100) : 0;
+  const counts = statusCounts(tasks);
+  const totalEst = tasks.reduce((s, t) => s + Number(t.estimated_hours ?? 0), 0);
+  const spentSum = tasks.reduce((s, t) => s + Number(t.spent_hours ?? 0), 0);
   const isAdmin = currentUser.role === "admin";
 
   function upsertTask(task: Task) {
@@ -127,16 +135,35 @@ export default function ProjectBoard({
 
   function openCreate() {
     setEditingTask(null);
+    setFollowUpParent(null);
     setFormOpen(true);
   }
   function openEdit(task: Task) {
     setDetailOpen(false);
     setEditingTask(task);
+    setFollowUpParent(null);
+    setFormOpen(true);
+  }
+  function openFollowUp(parent: Task) {
+    setDetailOpen(false);
+    setEditingTask(null);
+    setFollowUpParent(parent);
     setFormOpen(true);
   }
   function openDetail(task: Task) {
     setDetailTask(task);
     setDetailOpen(true);
+  }
+
+  async function reloadTasks() {
+    try {
+      const res = await apiFetch<{ tasks: Task[] }>(
+        `/api/projects/${project.id}/tasks`
+      );
+      setTasks(res.tasks);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not refresh tasks", "error");
+    }
   }
 
   const visibleList = useMemo(() => {
@@ -188,15 +215,35 @@ export default function ProjectBoard({
             )}
           </div>
           <div className="flex flex-wrap gap-2">
-            <button
-              onClick={openCreate}
-              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
-            >
-              + New task
-            </button>
+            {canManage && (
+              <button
+                onClick={openCreate}
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+              >
+                + New task
+              </button>
+            )}
             <ExportButton href={`/api/projects/${project.id}/tasks/export`} />
+            <a
+              href={`/api/projects/${project.id}/tasks/xlsx`}
+              className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+            >
+              Export Excel
+            </a>
             {canManage && (
               <>
+                <a
+                  href={`/api/projects/${project.id}/tasks/template`}
+                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                >
+                  Template
+                </a>
+                <button
+                  onClick={() => setImportOpen(true)}
+                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                >
+                  Import Excel
+                </button>
                 <button
                   onClick={() => setMembersOpen(true)}
                   className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
@@ -215,12 +262,17 @@ export default function ProjectBoard({
         </div>
 
         <div className="mt-4">
-          <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
-            <div className="h-full bg-indigo-500" style={{ width: `${pct}%` }} />
+          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+            <span>
+              {done}/{total} tasks done ({pct}%)
+            </span>
+            {totalEst > 0 && (
+              <span>
+                {spentSum}h logged / {totalEst}h estimated
+              </span>
+            )}
           </div>
-          <div className="mt-1 text-xs text-slate-400">
-            {done}/{total} tasks done ({pct}%)
-          </div>
+          <StatusBar counts={counts} />
         </div>
       </div>
 
@@ -297,13 +349,21 @@ export default function ProjectBoard({
       {view === "calendar" && <Calendar tasks={tasks} onSelect={openDetail} />}
 
       <TaskFormModal
-        key={`taskform-${formOpen ? editingTask?.id ?? "new" : "closed"}`}
+        key={`taskform-${
+          formOpen
+            ? editingTask?.id ?? (followUpParent ? `fu-${followUpParent.id}` : "new")
+            : "closed"
+        }`}
         open={formOpen}
-        onClose={() => setFormOpen(false)}
+        onClose={() => {
+          setFormOpen(false);
+          setFollowUpParent(null);
+        }}
         projectId={project.id}
         members={members}
         labels={labels}
         task={editingTask}
+        parentTask={followUpParent}
         onSaved={upsertTask}
         onLabelCreated={(l) => setLabels((prev) => [...prev, l])}
       />
@@ -314,10 +374,25 @@ export default function ProjectBoard({
         task={detailTask}
         currentUser={currentUser}
         canManage={canManage}
+        members={members}
+        projectTasks={tasks.map((t) => ({
+          id: t.id,
+          title: t.title,
+          status: t.status,
+        }))}
         onEdit={openEdit}
+        onAddFollowUp={openFollowUp}
         onChanged={upsertTask}
         onDeleted={removeTask}
       />
+      {canManage && (
+        <ImportTasksModal
+          open={importOpen}
+          onClose={() => setImportOpen(false)}
+          projectId={project.id}
+          onImported={reloadTasks}
+        />
+      )}
       {canManage && (
         <>
           <MembersModal
