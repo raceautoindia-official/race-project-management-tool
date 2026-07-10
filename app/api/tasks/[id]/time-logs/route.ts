@@ -142,7 +142,16 @@ export async function DELETE(req: NextRequest, { params }: Params) {
       `SELECT COALESCE(SUM(minutes),0) AS total FROM task_time_logs WHERE task_id = ?`,
       [taskId]
     );
-    return json({ ok: true, totalMinutes: Number(total) });
+
+    // Removing the last log undoes the auto-advance: an in-progress task with
+    // no time logged and no work returns to To Do.
+    let newStatus = task.status as string;
+    if (Number(total) === 0 && task.status === "in_progress") {
+      await query(`UPDATE tasks SET status = 'todo' WHERE id = ?`, [taskId]);
+      newStatus = "todo";
+    }
+
+    return json({ ok: true, totalMinutes: Number(total), status: newStatus });
   } catch (err) {
     return errorResponse(err);
   }

@@ -130,6 +130,8 @@ export default function TaskDetailModal({
     status: currentTask.status,
     subtask_total: subtasks.length,
     subtask_done: subDone,
+    estimated_hours: currentTask.estimated_hours,
+    spent_hours: currentTask.spent_hours,
   });
 
   const totalMinutes = timeLogs.reduce((s, l) => s + l.minutes, 0);
@@ -167,12 +169,16 @@ export default function TaskDetailModal({
 
   async function deleteLog(logId: number) {
     try {
-      const res = await apiFetch<{ totalMinutes: number }>(
+      const res = await apiFetch<{ totalMinutes: number; status: string }>(
         `/api/tasks/${currentTask.id}/time-logs?logId=${logId}`,
         { method: "DELETE" }
       );
       setTimeLogs((prev) => prev.filter((l) => l.id !== logId));
-      onChanged({ ...currentTask, spent_hours: res.totalMinutes / 60 });
+      onChanged({
+        ...currentTask,
+        spent_hours: res.totalMinutes / 60,
+        status: res.status as TaskStatus,
+      });
     } catch (e) {
       toast(e instanceof Error ? e.message : "Could not remove entry", "error");
     }

@@ -14,11 +14,21 @@ export const STATUS_PROGRESS: Record<TaskStatus, number> = {
  * 100%.
  */
 export function taskProgress(
-  task: Pick<Task, "status" | "subtask_total" | "subtask_done">
+  task: Pick<
+    Task,
+    "status" | "subtask_total" | "subtask_done" | "estimated_hours" | "spent_hours"
+  >
 ): number {
   if (task.status === "done") return 100;
+  // Prefer a real signal: checklist ratio, else logged-vs-estimated hours.
   const total = task.subtask_total ?? 0;
   if (total > 0) return Math.round(((task.subtask_done ?? 0) / total) * 100);
+  const est = Number(task.estimated_hours ?? 0);
+  if (est > 0) {
+    const spent = Number(task.spent_hours ?? 0);
+    return Math.min(100, Math.round((spent / est) * 100));
+  }
+  // No estimate and no checklist → fall back to a nominal status step.
   return STATUS_PROGRESS[task.status];
 }
 
