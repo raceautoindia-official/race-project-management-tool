@@ -4,14 +4,14 @@ import { query, DbRow } from "@/lib/db";
 import AppShell from "@/components/AppShell";
 import ProjectBoard from "@/components/project/ProjectBoard";
 import { attachTaskMeta } from "@/lib/tasks";
-import type { Label, ProjectMember, Task } from "@/lib/types";
+import type { Label, Milestone, ProjectMember, Task } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 const TASK_SELECT = `
   t.id, t.project_id, t.title, t.description, t.status, t.priority,
   t.estimated_hours, t.spent_hours, t.is_additional, t.parent_task_id,
-  t.assignee_id, t.created_by, t.due_date, t.created_at, t.updated_at,
+  t.assignee_id, t.created_by, t.due_date, t.start_date, t.created_at, t.updated_at,
   a.name AS assignee_name, c.name AS creator_name,
   (SELECT COUNT(*) FROM task_comments tc WHERE tc.task_id = t.id) AS comment_count
 `;
@@ -80,6 +80,17 @@ export default async function ProjectDetailPage({
   );
   const members = memberRows as unknown as ProjectMember[];
 
+  const milestoneRows = await query<DbRow[]>(
+    `SELECT id, project_id, name, due_date, is_done, created_by
+     FROM milestones WHERE project_id = ?
+     ORDER BY (due_date IS NULL), due_date ASC, id ASC`,
+    [projectId]
+  );
+  const milestones = milestoneRows.map((m) => ({
+    ...m,
+    is_done: Boolean(m.is_done),
+  })) as unknown as Milestone[];
+
   let allUsers: DbRow[] = [];
   if (canManage) {
     allUsers = await query<DbRow[]>(
@@ -101,6 +112,7 @@ export default async function ProjectDetailPage({
         initialTasks={tasks}
         initialMembers={members}
         initialLabels={labels}
+        initialMilestones={milestones}
         allUsers={allUsers.map((u) => ({ id: u.id, name: u.name, email: u.email }))}
         currentUser={{ id: user.id, role: user.role }}
         canManage={canManage}

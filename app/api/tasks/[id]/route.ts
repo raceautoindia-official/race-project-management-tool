@@ -15,7 +15,7 @@ const TASK_SELECT = `
   t.id, t.project_id, t.title, t.description, t.status, t.priority,
   t.outstanding, t.approval_status, t.approved_by, t.approved_at,
   t.estimated_hours, t.spent_hours, t.is_additional, t.parent_task_id,
-  t.assignee_id, t.created_by, t.due_date, t.created_at, t.updated_at,
+  t.assignee_id, t.created_by, t.due_date, t.start_date, t.created_at, t.updated_at,
   a.name AS assignee_name, c.name AS creator_name, p.name AS project_name,
   (SELECT COUNT(*) FROM task_comments tc WHERE tc.task_id = t.id) AS comment_count
 `;
@@ -125,6 +125,10 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       sets.push("due_date = ?");
       values.push(data.dueDate);
     }
+    if (data.startDate !== undefined) {
+      sets.push("start_date = ?");
+      values.push(data.startDate);
+    }
 
     // Review-gate transitions (Wave 7).
     const submittingReview =
@@ -133,13 +137,20 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     const sendingBack =
       data.status === "in_progress" && task.status === "review";
 
-    // Approving (manager marks Done) clears the overdue/outstanding flag.
+    // Approving (manager marks Done) clears the overdue/outstanding flag and
+    // stamps the completion time (used for on-time performance stats).
     if (approving) {
       sets.push("outstanding = 0");
       sets.push("approval_status = 'approved'");
       sets.push("approved_by = ?");
       values.push(user.id);
       sets.push("approved_at = UTC_TIMESTAMP()");
+      sets.push("completed_at = UTC_TIMESTAMP()");
+    }
+    // Reopening a done task clears the completion stamp + approval.
+    if (data.status !== undefined && data.status !== "done" && task.status === "done") {
+      sets.push("completed_at = NULL");
+      sets.push("approval_status = 'none'");
     }
 
     if (sets.length > 0) {

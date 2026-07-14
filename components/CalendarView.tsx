@@ -20,11 +20,12 @@ import { TASK_STATUS_LABELS, type TaskStatus } from "@/lib/types";
 
 export interface CalEvent {
   id: string;
-  kind: "task" | "meeting";
+  kind: "task" | "meeting" | "reminder";
   title: string;
   date: string; // YYYY-MM-DD
-  time?: string | null; // HH:MM (meetings)
+  time?: string | null; // HH:MM (meetings/reminders)
   status?: TaskStatus;
+  category?: string; // reminders
   location?: string | null;
   projectId?: number | null;
   projectName?: string | null;
@@ -33,11 +34,20 @@ export interface CalEvent {
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MEETING_COLOR = "#7c3aed"; // violet-600
+const REMINDER_COLORS: Record<string, string> = {
+  payment: "#059669",
+  renewal: "#2563eb",
+  follow_up: "#d97706",
+  meeting: "#7c3aed",
+  general: "#0d9488",
+  custom: "#db2777",
+};
 
 function eventColor(e: CalEvent): string {
-  return e.kind === "meeting"
-    ? MEETING_COLOR
-    : STATUS_CHART_COLORS[(e.status ?? "todo") as TaskStatus];
+  if (e.kind === "reminder")
+    return REMINDER_COLORS[e.category ?? "general"] ?? "#0d9488";
+  if (e.kind === "meeting") return MEETING_COLOR;
+  return STATUS_CHART_COLORS[(e.status ?? "todo") as TaskStatus];
 }
 
 export default function CalendarView({ events }: { events: CalEvent[] }) {
@@ -45,6 +55,7 @@ export default function CalendarView({ events }: { events: CalEvent[] }) {
   const [view, setView] = useState<"month" | "agenda">("month");
   const [showTasks, setShowTasks] = useState(true);
   const [showMeetings, setShowMeetings] = useState(true);
+  const [showReminders, setShowReminders] = useState(true);
   const [selected, setSelected] = useState<string | null>(null);
 
   const filtered = useMemo(
@@ -52,9 +63,10 @@ export default function CalendarView({ events }: { events: CalEvent[] }) {
       events.filter(
         (e) =>
           (e.kind === "task" && showTasks) ||
-          (e.kind === "meeting" && showMeetings)
+          (e.kind === "meeting" && showMeetings) ||
+          (e.kind === "reminder" && showReminders)
       ),
-    [events, showTasks, showMeetings]
+    [events, showTasks, showMeetings, showReminders]
   );
 
   const byDate = useMemo(() => {
@@ -125,6 +137,15 @@ export default function CalendarView({ events }: { events: CalEvent[] }) {
               className="h-4 w-4 rounded border-slate-300"
             />
             Meetings
+          </label>
+          <label className="flex items-center gap-1.5 text-sm text-slate-600">
+            <input
+              type="checkbox"
+              checked={showReminders}
+              onChange={(e) => setShowReminders(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300"
+            />
+            Reminders
           </label>
           {/* View toggle */}
           <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1 text-sm">
@@ -220,6 +241,13 @@ export default function CalendarView({ events }: { events: CalEvent[] }) {
             style={{ background: MEETING_COLOR }}
           />
           Meeting
+        </span>
+        <span className="flex items-center gap-1">
+          <span
+            className="inline-block h-2 w-2 rounded-sm"
+            style={{ background: REMINDER_COLORS.general }}
+          />
+          Reminder
         </span>
       </div>
 

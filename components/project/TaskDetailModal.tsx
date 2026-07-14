@@ -22,6 +22,7 @@ interface TimeLog {
 }
 import {
   TASK_STATUS_LABELS,
+  type Attachment,
   type Comment,
   type ProjectMember,
   type Role,
@@ -35,6 +36,12 @@ interface Dependency {
   title: string;
   status: TaskStatus;
   done: boolean;
+}
+
+function fmtBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
 export default function TaskDetailModal({
@@ -77,6 +84,10 @@ export default function TaskDetailModal({
   const [logM, setLogM] = useState("");
   const [logNote, setLogNote] = useState("");
   const [savingLog, setSavingLog] = useState(false);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editBody, setEditBody] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -88,19 +99,23 @@ export default function TaskDetailModal({
     let active = true;
     (async () => {
       try {
-        const [c, s, d, tl] = await Promise.all([
+        const [c, s, d, tl, at] = await Promise.all([
           apiFetch<{ comments: Comment[] }>(`/api/tasks/${task.id}/comments`),
           apiFetch<{ subtasks: Subtask[] }>(`/api/tasks/${task.id}/subtasks`),
           apiFetch<{ dependencies: Dependency[] }>(
             `/api/tasks/${task.id}/dependencies`
           ),
           apiFetch<{ logs: TimeLog[] }>(`/api/tasks/${task.id}/time-logs`),
+          apiFetch<{ attachments: Attachment[] }>(
+            `/api/tasks/${task.id}/attachments`
+          ),
         ]);
         if (active) {
           setComments(c.comments);
           setSubtasks(s.subtasks);
           setDeps(d.dependencies);
           setTimeLogs(tl.logs);
+          setAttachments(at.attachments);
         }
       } catch (e) {
         if (active) setError(e instanceof Error ? e.message : "Failed to load");
@@ -301,6 +316,66 @@ export default function TaskDetailModal({
       setError(e instanceof Error ? e.message : "Could not add comment");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function saveEditComment(commentId: number) {
+    if (!editBody.trim()) return;
+    try {
+      const res = await apiFetch<{ comment: Comment }>(
+        `/api/comments/${commentId}`,
+        { method: "PATCH", body: JSON.stringify({ body: editBody }) }
+      );
+      setComments((prev) =>
+        prev.map((c) => (c.id === commentId ? res.comment : c))
+      );
+      setEditingId(null);
+      setEditBody("");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not edit comment", "error");
+    }
+  }
+
+  async function deleteComment(commentId: number) {
+    try {
+      await apiFetch(`/api/comments/${commentId}`, { method: "DELETE" });
+      setComments((prev) => prev.filter((c) => c.id !== commentId));
+      onChanged({
+        ...currentTask,
+        comment_count: Math.max(0, (currentTask.comment_count ?? 1) - 1),
+      });
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not delete comment", "error");
+    }
+  }
+
+  async function uploadFile(file: File) {
+    setUploading(true);
+    setError("");
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`/api/tasks/${currentTask.id}/attachments`, {
+        method: "POST",
+        body: fd,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Upload failed");
+      setAttachments((prev) => [data.attachment, ...prev]);
+      toast("File attached");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function deleteAttachment(attId: number) {
+    try {
+      await apiFetch(`/api/attachments/${attId}`, { method: "DELETE" });
+      setAttachments((prev) => prev.filter((a) => a.id !== attId));
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not remove file", "error");
     }
   }
 
@@ -707,6 +782,58 @@ export default function TaskDetailModal({
         )}
       </div>
 
+      {/* Attachments */}
+      <div className="mt-6 border-t border-slate-100 pt-4">
+        <h3 className="mb-3 text-sm font-semibold text-slate-700">
+          Attachments ({attachments.length})
+        </h3>
+        {attachments.length > 0 && (
+          <ul className="mb-3 space-y-1">
+            {attachments.map((a) => (
+              <li
+                key={a.id}
+                className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-1.5 text-sm"
+              >
+                <span className="text-slate-400">📎</span>
+                <a
+                  href={`/api/attachments/${a.id}`}
+                  className="truncate font-medium text-indigo-600 hover:underline"
+                >
+                  {a.filename}
+                </a>
+                <span className="text-xs text-slate-400">
+                  {fmtBytes(Number(a.size_bytes))}
+                  {a.uploader_name ? ` · ${a.uploader_name}` : ""}
+                </span>
+                {(canManage || a.uploaded_by === currentUser.id) && (
+                  <button
+                    onClick={() => deleteAttachment(a.id)}
+                    className="ml-auto text-xs text-slate-300 hover:text-red-500"
+                    aria-label="Remove attachment"
+                  >
+                    ✕
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
+          {uploading ? "Uploading…" : "+ Attach file"}
+          <input
+            type="file"
+            className="hidden"
+            disabled={uploading}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) uploadFile(f);
+              e.target.value = "";
+            }}
+          />
+        </label>
+        <span className="ml-2 text-xs text-slate-400">Max 10 MB</span>
+      </div>
+
       {/* Comments */}
       <div className="mt-6 border-t border-slate-100 pt-4">
         <h3 className="mb-3 text-sm font-semibold text-slate-700">
@@ -718,24 +845,77 @@ export default function TaskDetailModal({
           <p className="text-sm text-slate-400">No comments yet.</p>
         ) : (
           <ul className="space-y-3">
-            {comments.map((c) => (
-              <li key={c.id} className="flex gap-2">
-                <Avatar name={c.user_name ?? "?"} size="sm" />
-                <div className="flex-1 rounded-lg bg-slate-50 p-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-slate-700">
-                      {c.user_name}
-                    </span>
-                    <span className="text-xs text-slate-400">
-                      {formatRelative(c.created_at)}
-                    </span>
+            {comments.map((c) => {
+              const mine = c.user_id === currentUser.id;
+              const canDel = mine || canManage;
+              return (
+                <li key={c.id} className="flex gap-2">
+                  <Avatar name={c.user_name ?? "?"} size="sm" />
+                  <div className="flex-1 rounded-lg bg-slate-50 p-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-slate-700">
+                        {c.user_name}
+                      </span>
+                      <span className="text-xs text-slate-400">
+                        {formatRelative(c.created_at)}
+                        {c.edited_at ? " · edited" : ""}
+                      </span>
+                    </div>
+                    {editingId === c.id ? (
+                      <div className="mt-1 flex gap-2">
+                        <input
+                          value={editBody}
+                          onChange={(e) => setEditBody(e.target.value)}
+                          className="flex-1 rounded border border-slate-300 px-2 py-1 text-sm focus:border-indigo-500 focus:outline-none"
+                        />
+                        <button
+                          onClick={() => saveEditComment(c.id)}
+                          className="rounded bg-indigo-600 px-2 py-1 text-xs font-semibold text-white hover:bg-indigo-700"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEditingId(null);
+                            setEditBody("");
+                          }}
+                          className="text-xs text-slate-400 hover:text-slate-600"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="mt-1 whitespace-pre-wrap text-sm text-slate-600">
+                          {c.body}
+                        </p>
+                        {canDel && (
+                          <div className="mt-1 flex gap-3 text-xs text-slate-400">
+                            {mine && (
+                              <button
+                                onClick={() => {
+                                  setEditingId(c.id);
+                                  setEditBody(c.body);
+                                }}
+                                className="hover:text-indigo-600"
+                              >
+                                Edit
+                              </button>
+                            )}
+                            <button
+                              onClick={() => deleteComment(c.id)}
+                              className="hover:text-red-500"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
-                  <p className="mt-1 whitespace-pre-wrap text-sm text-slate-600">
-                    {c.body}
-                  </p>
-                </div>
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ul>
         )}
 

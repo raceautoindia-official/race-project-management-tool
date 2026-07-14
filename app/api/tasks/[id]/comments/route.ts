@@ -30,7 +30,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
     await assertProjectAccess(user, task.project_id);
 
     const comments = await query<DbRow[]>(
-      `SELECT tc.id, tc.task_id, tc.user_id, tc.body, tc.created_at, u.name AS user_name
+      `SELECT tc.id, tc.task_id, tc.user_id, tc.body, tc.created_at, tc.edited_at, u.name AS user_name
        FROM task_comments tc
        JOIN users u ON u.id = tc.user_id
        WHERE tc.task_id = ?
@@ -118,7 +118,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     }
 
     const rows = await query<DbRow[]>(
-      `SELECT tc.id, tc.task_id, tc.user_id, tc.body, tc.created_at, u.name AS user_name
+      `SELECT tc.id, tc.task_id, tc.user_id, tc.body, tc.created_at, tc.edited_at, u.name AS user_name
        FROM task_comments tc JOIN users u ON u.id = tc.user_id
        WHERE tc.id = ?`,
       [result.insertId]

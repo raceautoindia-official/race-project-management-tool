@@ -41,6 +41,8 @@ export async function GET(req: NextRequest) {
     if (["active", "completed", "archived"].includes(status)) {
       where.push("p.status = ?");
       params.push(status);
+    } else if (status !== "all") {
+      where.push("p.status <> 'archived'");
     }
     const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 

@@ -83,11 +83,13 @@ export interface Task {
   approval_status?: ApprovalStatus;
   approved_by?: number | null;
   approved_at?: string | null;
+  completed_at?: string | null;
   is_additional?: boolean;
   parent_task_id?: number | null;
   priority: TaskPriority;
   estimated_hours: number | null;
   spent_hours: number;
+  start_date?: string | null;
   assignee_id: number | null;
   assignee_name?: string | null;
   created_by: number | null;
@@ -122,7 +124,27 @@ export interface Comment {
   user_id: number;
   user_name?: string;
   body: string;
+  edited_at?: string | null;
   created_at: string;
+}
+
+export interface Milestone {
+  id: number;
+  project_id: number;
+  name: string;
+  due_date: string | null;
+  is_done: boolean;
+  created_by?: number | null;
+}
+
+export interface Attachment {
+  id: number;
+  filename: string;
+  mime_type: string | null;
+  size_bytes: number;
+  created_at: string;
+  uploaded_by: number | null;
+  uploader_name?: string | null;
 }
 
 export interface ActivityItem {
@@ -144,6 +166,41 @@ export interface NotificationItem {
   link: string | null;
   is_read: boolean;
   created_at: string;
+}
+
+export type Recurrence = "none" | "daily" | "weekly" | "monthly";
+
+export const REMINDER_CATEGORIES = [
+  "payment",
+  "renewal",
+  "follow_up",
+  "meeting",
+  "general",
+  "custom",
+] as const;
+export type ReminderCategory = (typeof REMINDER_CATEGORIES)[number];
+
+export const REMINDER_CATEGORY_LABELS: Record<string, string> = {
+  payment: "Payment",
+  renewal: "Renewal",
+  follow_up: "Follow-up",
+  meeting: "Meeting",
+  general: "General",
+  custom: "Custom",
+};
+
+export interface Reminder {
+  id: number;
+  user_id: number;
+  title: string;
+  category: string;
+  notes: string | null;
+  scheduled_at: string;
+  reminder_minutes: number;
+  recurrence: Recurrence;
+  notify_email: boolean;
+  notify_push: boolean;
+  is_done: boolean;
 }
 
 export interface Meeting {

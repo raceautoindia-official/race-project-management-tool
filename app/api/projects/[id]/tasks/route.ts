@@ -13,7 +13,7 @@ type Params = { params: Promise<{ id: string }> };
 const TASK_SELECT = `
   t.id, t.project_id, t.title, t.description, t.status, t.priority,
   t.estimated_hours, t.spent_hours, t.is_additional, t.parent_task_id,
-  t.assignee_id, t.created_by, t.due_date, t.created_at, t.updated_at,
+  t.assignee_id, t.created_by, t.due_date, t.start_date, t.created_at, t.updated_at,
   a.name AS assignee_name, c.name AS creator_name,
   (SELECT COUNT(*) FROM task_comments tc WHERE tc.task_id = t.id) AS comment_count
 `;
@@ -106,8 +106,8 @@ export async function POST(req: NextRequest, { params }: Params) {
     const result = (await query<DbResult>(
       `INSERT INTO tasks
          (project_id, title, description, status, priority, estimated_hours,
-          assignee_id, created_by, due_date, is_additional, parent_task_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          assignee_id, created_by, due_date, start_date, is_additional, parent_task_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         projectId,
         data.title,
@@ -118,6 +118,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         data.assigneeId ?? null,
         user.id,
         data.dueDate ?? null,
+        data.startDate ?? null,
         isAdditional ? 1 : 0,
         data.parentTaskId ?? null,
       ]

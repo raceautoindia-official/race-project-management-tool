@@ -4,6 +4,7 @@ import { PageHeader, SectionCard } from "@/components/Cards";
 import { RoleBadge } from "@/components/Badge";
 import Avatar from "@/components/Avatar";
 import ProfileForm from "@/components/ProfileForm";
+import PushToggle from "@/components/PushToggle";
 import { formatDate } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -43,6 +44,10 @@ export default async function ProfilePage() {
               </dd>
             </div>
           </dl>
+        </SectionCard>
+
+        <SectionCard title="Browser notifications">
+          <PushToggle />
         </SectionCard>
       </div>
     </AppShell>

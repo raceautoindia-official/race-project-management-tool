@@ -1,4 +1,5 @@
 import { pool } from "./db";
+import { sendPushToUser } from "./push";
 
 interface LogInput {
   userId: number | null;
@@ -30,12 +31,14 @@ export async function logActivity(input: LogInput): Promise<void> {
   }
 }
 
-/** Create an in-app notification (best-effort). */
+/** Create an in-app notification (best-effort). Also web-pushes unless
+ *  opts.push is false. */
 export async function notify(
   userId: number,
   type: string,
   message: string,
-  link?: string | null
+  link?: string | null,
+  opts?: { push?: boolean }
 ): Promise<void> {
   try {
     await pool.execute(
@@ -43,6 +46,10 @@ export async function notify(
        VALUES (?, ?, ?, ?)`,
       [userId, type, message, link ?? null]
     );
+    // Fan out to the browser (best-effort; no-op if push isn't configured).
+    if (opts?.push !== false) {
+      void sendPushToUser(userId, { title: "PMApp", body: message, url: link ?? "/" });
+    }
   } catch (err) {
     console.error("Failed to write notification:", err);
   }

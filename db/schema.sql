@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   approval_status ENUM('none','pending','approved','rejected') NOT NULL DEFAULT 'none',
   approved_by     INT NULL,
   approved_at     DATETIME NULL,
+  completed_at    DATETIME NULL,                   -- when marked Done (perf stats)
   due_alert_sent  TINYINT(1) NOT NULL DEFAULT 0,
   is_additional   TINYINT(1) NOT NULL DEFAULT 0,   -- extra work raised post-completion
   parent_task_id  INT NULL,                        -- the task this follows up
@@ -74,6 +75,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   assignee_id INT,
   created_by  INT,
   due_date    DATE,
+  start_date  DATE,                                -- for the timeline / Gantt
   created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT fk_tasks_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
@@ -91,6 +93,7 @@ CREATE TABLE IF NOT EXISTS task_comments (
   task_id    INT NOT NULL,
   user_id    INT NOT NULL,
   body       TEXT NOT NULL,
+  edited_at  DATETIME NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_comments_task FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
   CONSTRAINT fk_comments_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -190,6 +193,36 @@ CREATE TABLE IF NOT EXISTS task_dependencies (
   CONSTRAINT fk_dep_task FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
   CONSTRAINT fk_dep_on   FOREIGN KEY (depends_on_task_id) REFERENCES tasks(id) ON DELETE CASCADE,
   INDEX idx_dep_on (depends_on_task_id)
+);
+
+-- Project milestones  (Phase 3 · Wave 10)
+CREATE TABLE IF NOT EXISTS milestones (
+  id           INT AUTO_INCREMENT PRIMARY KEY,
+  project_id   INT NOT NULL,
+  name         VARCHAR(200) NOT NULL,
+  due_date     DATE NULL,
+  is_done      TINYINT(1) NOT NULL DEFAULT 0,
+  completed_at DATETIME NULL,
+  created_by   INT NULL,
+  created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_ms_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  CONSTRAINT fk_ms_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_milestones_project (project_id)
+);
+
+-- Task file attachments (stored in-DB)  (Phase 3 · Wave 9)
+CREATE TABLE IF NOT EXISTS task_attachments (
+  id          INT AUTO_INCREMENT PRIMARY KEY,
+  task_id     INT NOT NULL,
+  uploaded_by INT NULL,
+  filename    VARCHAR(255) NOT NULL,
+  mime_type   VARCHAR(120) NULL,
+  size_bytes  INT NOT NULL,
+  data        LONGBLOB NOT NULL,
+  created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_att_task FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  CONSTRAINT fk_att_user FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_att_task (task_id)
 );
 
 -- Task time logs (auditable hours)  (Phase 2 · Wave 7)

@@ -42,6 +42,9 @@ export default async function ProjectsPage({
   if (["active", "completed", "archived"].includes(status)) {
     where.push("p.status = ?");
     params.push(status);
+  } else if (status !== "all") {
+    // Default view hides archived projects.
+    where.push("p.status <> 'archived'");
   }
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
@@ -94,10 +97,11 @@ export default async function ProjectsPage({
           defaultValue={status}
           className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
         >
-          <option value="">All statuses</option>
+          <option value="">Active &amp; completed</option>
           <option value="active">Active</option>
           <option value="completed">Completed</option>
           <option value="archived">Archived</option>
+          <option value="all">All (incl. archived)</option>
         </select>
         <button
           type="submit"

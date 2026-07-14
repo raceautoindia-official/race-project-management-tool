@@ -39,7 +39,23 @@ export default async function CalendarPage() {
     isAdmin ? [] : [user.id, user.id]
   );
 
+  // Personal reminders (not done) belonging to this user.
+  const reminderRows = await query<DbRow[]>(
+    `SELECT id, title, category, scheduled_at FROM reminders
+      WHERE user_id = ? AND is_done = 0`,
+    [user.id]
+  );
+
   const events: CalEvent[] = [
+    ...reminderRows.map((r) => ({
+      id: `reminder-${r.id}`,
+      kind: "reminder" as const,
+      title: r.title as string,
+      date: istDateKey(String(r.scheduled_at)),
+      time: istTime24(String(r.scheduled_at)) || null,
+      category: (r.category as string) ?? "general",
+      href: `/reminders`,
+    })),
     ...taskRows.map((t) => ({
       id: `task-${t.id}`,
       kind: "task" as const,

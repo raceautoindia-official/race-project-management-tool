@@ -57,6 +57,7 @@ export default function TaskFormModal({
   const [estimatedHours, setEstimatedHours] = useState<string>(
     task?.estimated_hours != null ? String(task.estimated_hours) : ""
   );
+  const [startDate, setStartDate] = useState<string>(task?.start_date ?? "");
   const [dueDate, setDueDate] = useState<string>(task?.due_date ?? "");
   const [labelIds, setLabelIds] = useState<number[]>(
     task?.labels?.map((l) => l.id) ?? []
@@ -102,6 +103,7 @@ export default function TaskFormModal({
       estimatedHours: estimatedHours === "" ? null : Number(estimatedHours),
       assigneeId: assigneeId === "" ? null : Number(assigneeId),
       dueDate: dueDate === "" ? null : dueDate,
+      startDate: startDate === "" ? null : startDate,
       labelIds,
       ...(parentTask && !isEdit ? { parentTaskId: parentTask.id } : {}),
     };
@@ -204,6 +206,15 @@ export default function TaskFormModal({
                 </option>
               ))}
             </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">Start date</label>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className={inputClass}
+            />
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">Due date</label>

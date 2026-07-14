@@ -74,6 +74,7 @@ export const createTaskSchema = z.object({
   estimatedHours: optionalHours.optional(),
   assigneeId: optionalId.optional(),
   dueDate: optionalDate.optional(),
+  startDate: optionalDate.optional(),
   labelIds: labelIdsField,
   // #7 — additional / follow-up work raised after a task or project completed.
   parentTaskId: optionalId.optional(),
@@ -89,11 +90,68 @@ export const updateTaskSchema = z
     estimatedHours: optionalHours.optional(),
     assigneeId: optionalId.optional(),
     dueDate: optionalDate.optional(),
+    startDate: optionalDate.optional(),
     labelIds: labelIdsField,
   })
   .refine((d) => Object.keys(d).length > 0, {
     message: "No fields to update",
   });
+
+// ---- Reminders / scheduled activities (Wave 11) ----
+export const createReminderSchema = z.object({
+  title: z.string().min(1).max(200),
+  category: z.string().min(1).max(40).optional(),
+  notes: optionalText,
+  scheduledAt: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/, "Expected a date and time"),
+  reminderMinutes: z.preprocess(
+    (v) => (v === "" || v === undefined || v === null ? 0 : v),
+    z.coerce.number().int().min(0).max(43200) // up to 30 days before
+  ),
+  recurrence: z.enum(["none", "daily", "weekly", "monthly"]).optional(),
+  notifyEmail: z.boolean().optional(),
+  notifyPush: z.boolean().optional(),
+});
+
+export const updateReminderSchema = z
+  .object({
+    title: z.string().min(1).max(200).optional(),
+    category: z.string().min(1).max(40).optional(),
+    notes: optionalText,
+    scheduledAt: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/)
+      .optional(),
+    reminderMinutes: z.coerce.number().int().min(0).max(43200).optional(),
+    recurrence: z.enum(["none", "daily", "weekly", "monthly"]).optional(),
+    notifyEmail: z.boolean().optional(),
+    notifyPush: z.boolean().optional(),
+    isDone: z.boolean().optional(),
+  })
+  .refine((d) => Object.keys(d).length > 0, { message: "No fields to update" });
+
+// ---- Milestones (Wave 10) ----
+export const createMilestoneSchema = z.object({
+  name: z.string().min(1).max(200),
+  dueDate: optionalDate.optional(),
+});
+export const updateMilestoneSchema = z
+  .object({
+    name: z.string().min(1).max(200).optional(),
+    dueDate: optionalDate.optional(),
+    isDone: z.boolean().optional(),
+  })
+  .refine((d) => Object.keys(d).length > 0, { message: "No fields to update" });
+
+// ---- Bulk task actions (Wave 10) ----
+export const bulkTaskSchema = z.object({
+  taskIds: z.array(z.coerce.number().int().positive()).min(1).max(500),
+  action: z.enum(["status", "assignee", "priority", "delete"]),
+  status: z.enum(["todo", "in_progress", "review", "done"]).optional(),
+  assigneeId: optionalId.optional(),
+  priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
+});
 
 // ---- Labels ----
 export const createLabelSchema = z.object({

@@ -16,6 +16,7 @@ import {
   TASK_STATUSES,
   TASK_STATUS_LABELS,
   type Label,
+  type Milestone,
   type ProjectMember,
   type ProjectStatus,
   type Role,
@@ -29,6 +30,7 @@ import TaskDetailModal from "./TaskDetailModal";
 import MembersModal from "./MembersModal";
 import EditProjectModal from "./EditProjectModal";
 import ImportTasksModal from "./ImportTasksModal";
+import TimelineView from "./TimelineView";
 
 interface PickUser {
   id: number;
@@ -52,13 +54,14 @@ const PRIORITY_ORDER: Record<TaskPriority, number> = {
   low: 3,
 };
 
-type ViewMode = "board" | "list" | "calendar";
+type ViewMode = "board" | "list" | "timeline" | "calendar";
 
 export default function ProjectBoard({
   project: initialProject,
   initialTasks,
   initialMembers,
   initialLabels,
+  initialMilestones,
   allUsers,
   currentUser,
   canManage,
@@ -67,6 +70,7 @@ export default function ProjectBoard({
   initialTasks: Task[];
   initialMembers: ProjectMember[];
   initialLabels: Label[];
+  initialMilestones: Milestone[];
   allUsers: PickUser[];
   currentUser: { id: number; role: Role };
   canManage: boolean;
@@ -76,6 +80,9 @@ export default function ProjectBoard({
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
   const [members, setMembers] = useState<ProjectMember[]>(initialMembers);
   const [labels, setLabels] = useState<Label[]>(initialLabels);
+  const [milestones, setMilestones] = useState<Milestone[]>(initialMilestones);
+  const [newMs, setNewMs] = useState("");
+  const [newMsDate, setNewMsDate] = useState("");
   const [view, setView] = useState<ViewMode>("board");
 
   const [formOpen, setFormOpen] = useState(false);
@@ -168,6 +175,46 @@ export default function ProjectBoard({
       setTasks(res.tasks);
     } catch (e) {
       toast(e instanceof Error ? e.message : "Could not refresh tasks", "error");
+    }
+  }
+
+  async function addMilestone() {
+    if (!newMs.trim()) return;
+    try {
+      const res = await apiFetch<{ milestone: Milestone }>(
+        `/api/projects/${project.id}/milestones`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            name: newMs.trim(),
+            dueDate: newMsDate || null,
+          }),
+        }
+      );
+      setMilestones((prev) => [...prev, res.milestone]);
+      setNewMs("");
+      setNewMsDate("");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not add milestone", "error");
+    }
+  }
+  async function toggleMilestone(m: Milestone) {
+    try {
+      const res = await apiFetch<{ milestone: Milestone }>(
+        `/api/milestones/${m.id}`,
+        { method: "PATCH", body: JSON.stringify({ isDone: !m.is_done }) }
+      );
+      setMilestones((prev) => prev.map((x) => (x.id === m.id ? res.milestone : x)));
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not update milestone", "error");
+    }
+  }
+  async function deleteMilestone(id: number) {
+    try {
+      await apiFetch(`/api/milestones/${id}`, { method: "DELETE" });
+      setMilestones((prev) => prev.filter((x) => x.id !== id));
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not remove milestone", "error");
     }
   }
 
@@ -281,8 +328,77 @@ export default function ProjectBoard({
         </div>
       </div>
 
+      {(milestones.length > 0 || canManage) && (
+        <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4">
+          <div className="mb-2 text-sm font-semibold text-slate-700">Milestones</div>
+          {milestones.length === 0 ? (
+            <p className="text-xs text-slate-400">No milestones yet.</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {milestones.map((m) => (
+                <span
+                  key={m.id}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${
+                    m.is_done
+                      ? "border-green-200 bg-green-50 text-green-700"
+                      : "border-slate-200 text-slate-600"
+                  }`}
+                >
+                  {canManage ? (
+                    <input
+                      type="checkbox"
+                      checked={m.is_done}
+                      onChange={() => toggleMilestone(m)}
+                      className="h-3 w-3"
+                    />
+                  ) : (
+                    <span>{m.is_done ? "✓" : "◆"}</span>
+                  )}
+                  <span className={m.is_done ? "line-through" : ""}>{m.name}</span>
+                  {m.due_date && (
+                    <span className="text-slate-400">· {formatDate(m.due_date)}</span>
+                  )}
+                  {canManage && (
+                    <button
+                      onClick={() => deleteMilestone(m.id)}
+                      className="text-slate-300 hover:text-red-500"
+                      aria-label="Remove milestone"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </span>
+              ))}
+            </div>
+          )}
+          {canManage && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              <input
+                value={newMs}
+                onChange={(e) => setNewMs(e.target.value)}
+                placeholder="New milestone…"
+                className="min-w-40 flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+              />
+              <input
+                type="date"
+                value={newMsDate}
+                onChange={(e) => setNewMsDate(e.target.value)}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+              />
+              <button
+                onClick={addMilestone}
+                disabled={!newMs.trim()}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+              >
+                Add
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="mb-4 inline-flex rounded-lg border border-slate-200 bg-white p-1 text-sm">
-        {(["board", "list", "calendar"] as ViewMode[]).map((v) => (
+        {(["board", "list", "timeline", "calendar"] as ViewMode[]).map((v) => (
           <button
             key={v}
             onClick={() => setView(v)}
@@ -348,7 +464,14 @@ export default function ProjectBoard({
           toggleSort={toggleSort}
           sortKey={sortKey}
           sortDir={sortDir}
+          canManage={canManage}
+          projectId={project.id}
+          onBulkDone={reloadTasks}
         />
+      )}
+
+      {view === "timeline" && (
+        <TimelineView tasks={tasks} milestones={milestones} onSelect={openDetail} />
       )}
 
       {view === "calendar" && <Calendar tasks={tasks} onSelect={openDetail} />}
@@ -438,6 +561,9 @@ function ListView({
   toggleSort,
   sortKey,
   sortDir,
+  canManage,
+  projectId,
+  onBulkDone,
 }: {
   tasks: Task[];
   members: ProjectMember[];
@@ -454,10 +580,44 @@ function ListView({
   toggleSort: (k: "due_date" | "priority" | "title" | "status") => void;
   sortKey: string;
   sortDir: "asc" | "desc";
+  canManage: boolean;
+  projectId: number;
+  onBulkDone: () => void;
 }) {
+  const { toast } = useToast();
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
   const selectClass =
     "rounded-lg border border-slate-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none";
   const arrow = (k: string) => (sortKey === k ? (sortDir === "asc" ? " ▲" : " ▼") : "");
+
+  function toggleSel(id: number) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function runBulk(body: Record<string, unknown>) {
+    if (selected.size === 0) return;
+    if (body.action === "delete" && !confirm(`Delete ${selected.size} task(s)?`)) return;
+    setBulkBusy(true);
+    try {
+      await apiFetch(`/api/projects/${projectId}/tasks/bulk`, {
+        method: "POST",
+        body: JSON.stringify({ taskIds: [...selected], ...body }),
+      });
+      setSelected(new Set());
+      onBulkDone();
+      toast("Bulk update applied");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Bulk update failed", "error");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
   return (
     <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
       <div className="flex flex-wrap gap-2 border-b border-slate-100 p-3">
@@ -496,9 +656,93 @@ function ListView({
           </select>
         )}
       </div>
+
+      {canManage && selected.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-indigo-50/50 p-3 text-sm">
+          <span className="font-medium text-slate-700">{selected.size} selected</span>
+          <select
+            disabled={bulkBusy}
+            defaultValue=""
+            onChange={(e) => {
+              if (e.target.value) runBulk({ action: "status", status: e.target.value });
+              e.target.value = "";
+            }}
+            className={selectClass}
+          >
+            <option value="">Set status…</option>
+            {TASK_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {TASK_STATUS_LABELS[s]}
+              </option>
+            ))}
+          </select>
+          <select
+            disabled={bulkBusy}
+            defaultValue=""
+            onChange={(e) => {
+              if (e.target.value) runBulk({ action: "priority", priority: e.target.value });
+              e.target.value = "";
+            }}
+            className={selectClass}
+          >
+            <option value="">Set priority…</option>
+            {(["low", "medium", "high", "urgent"] as TaskPriority[]).map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </select>
+          <select
+            disabled={bulkBusy}
+            defaultValue=""
+            onChange={(e) => {
+              const v = e.target.value;
+              if (!v) return;
+              runBulk({ action: "assignee", assigneeId: v === "unassign" ? null : Number(v) });
+              e.target.value = "";
+            }}
+            className={selectClass}
+          >
+            <option value="">Assign to…</option>
+            <option value="unassign">Unassigned</option>
+            {members.map((m) => (
+              <option key={m.user_id} value={m.user_id}>
+                {m.name}
+              </option>
+            ))}
+          </select>
+          <button
+            disabled={bulkBusy}
+            onClick={() => runBulk({ action: "delete" })}
+            className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+          >
+            Delete
+          </button>
+          <button
+            onClick={() => setSelected(new Set())}
+            className="text-xs text-slate-500 hover:text-slate-700"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
       <table className="w-full text-left text-sm">
         <thead className="text-xs uppercase tracking-wide text-slate-400">
           <tr>
+            {canManage && (
+              <th className="w-8 px-3 py-2">
+                <input
+                  type="checkbox"
+                  checked={tasks.length > 0 && selected.size === tasks.length}
+                  onChange={(e) =>
+                    setSelected(
+                      e.target.checked ? new Set(tasks.map((t) => t.id)) : new Set()
+                    )
+                  }
+                />
+              </th>
+            )}
             <th className="cursor-pointer px-4 py-2" onClick={() => toggleSort("title")}>
               Title{arrow("title")}
             </th>
@@ -517,13 +761,22 @@ function ListView({
         <tbody className="divide-y divide-slate-100">
           {tasks.length === 0 ? (
             <tr>
-              <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
+              <td colSpan={canManage ? 6 : 5} className="px-4 py-8 text-center text-slate-400">
                 No tasks match these filters.
               </td>
             </tr>
           ) : (
             tasks.map((t) => (
               <tr key={t.id} onClick={() => onOpen(t)} className="cursor-pointer hover:bg-slate-50">
+                {canManage && (
+                  <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selected.has(t.id)}
+                      onChange={() => toggleSel(t.id)}
+                    />
+                  </td>
+                )}
                 <td className="px-4 py-2">
                   <div className="font-medium text-slate-800">{t.title}</div>
                   {t.labels && t.labels.length > 0 && (
