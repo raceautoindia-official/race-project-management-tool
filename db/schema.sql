@@ -168,6 +168,8 @@ CREATE TABLE IF NOT EXISTS meetings (
   start_time       DATETIME NOT NULL,
   reminder_minutes INT NULL,
   reminder_sent    TINYINT(1) NOT NULL DEFAULT 0,
+  recurrence       ENUM('none','daily','weekly','monthly') NOT NULL DEFAULT 'none',
+  series_id        INT NULL,
   created_by       INT NULL,
   created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_meetings_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL,
@@ -193,6 +195,36 @@ CREATE TABLE IF NOT EXISTS task_dependencies (
   CONSTRAINT fk_dep_task FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
   CONSTRAINT fk_dep_on   FOREIGN KEY (depends_on_task_id) REFERENCES tasks(id) ON DELETE CASCADE,
   INDEX idx_dep_on (depends_on_task_id)
+);
+
+-- Recurring task definitions + project templates  (Phase 3 · Wave 12)
+CREATE TABLE IF NOT EXISTS recurring_tasks (
+  id              INT AUTO_INCREMENT PRIMARY KEY,
+  project_id      INT NOT NULL,
+  title           VARCHAR(200) NOT NULL,
+  description     TEXT NULL,
+  priority        ENUM('low','medium','high','urgent') NOT NULL DEFAULT 'medium',
+  assignee_id     INT NULL,
+  estimated_hours DECIMAL(6,2) NULL,
+  recurrence      ENUM('daily','weekly','monthly') NOT NULL DEFAULT 'weekly',
+  next_run        DATE NOT NULL,
+  is_active       TINYINT(1) NOT NULL DEFAULT 1,
+  created_by      INT NULL,
+  created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_rt_project  FOREIGN KEY (project_id)  REFERENCES projects(id) ON DELETE CASCADE,
+  CONSTRAINT fk_rt_assignee FOREIGN KEY (assignee_id) REFERENCES users(id)    ON DELETE SET NULL,
+  CONSTRAINT fk_rt_creator  FOREIGN KEY (created_by)  REFERENCES users(id)    ON DELETE SET NULL,
+  INDEX idx_rt_next (is_active, next_run)
+);
+
+CREATE TABLE IF NOT EXISTS project_templates (
+  id          INT AUTO_INCREMENT PRIMARY KEY,
+  name        VARCHAR(200) NOT NULL,
+  description TEXT NULL,
+  data        JSON NOT NULL,
+  created_by  INT NULL,
+  created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_tpl_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
 );
 
 -- Project milestones  (Phase 3 · Wave 10)

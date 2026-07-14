@@ -31,6 +31,7 @@ import MembersModal from "./MembersModal";
 import EditProjectModal from "./EditProjectModal";
 import ImportTasksModal from "./ImportTasksModal";
 import TimelineView from "./TimelineView";
+import RecurringTasksModal from "./RecurringTasksModal";
 
 interface PickUser {
   id: number;
@@ -93,6 +94,8 @@ export default function ProjectBoard({
   const [membersOpen, setMembersOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [recurringOpen, setRecurringOpen] = useState(false);
+  const [savingTemplate, setSavingTemplate] = useState(false);
   const [draggedId, setDraggedId] = useState<number | null>(null);
 
   const [fStatus, setFStatus] = useState("");
@@ -218,6 +221,26 @@ export default function ProjectBoard({
     }
   }
 
+  async function saveAsTemplate() {
+    const name = window.prompt(
+      "Template name — its labels, tasks and milestones are saved for reuse:",
+      `${project.name} template`
+    );
+    if (!name || !name.trim()) return;
+    setSavingTemplate(true);
+    try {
+      await apiFetch(`/api/templates`, {
+        method: "POST",
+        body: JSON.stringify({ name: name.trim(), projectId: project.id }),
+      });
+      toast("Saved as template — create projects from it under New project");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not save template", "error");
+    } finally {
+      setSavingTemplate(false);
+    }
+  }
+
   const visibleList = useMemo(() => {
     let list = tasks.slice();
     if (fStatus) list = list.filter((t) => t.status === fStatus);
@@ -297,11 +320,26 @@ export default function ProjectBoard({
                   Import Excel
                 </button>
                 <button
+                  onClick={() => setRecurringOpen(true)}
+                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                >
+                  Recurring
+                </button>
+                <button
                   onClick={() => setMembersOpen(true)}
                   className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
                 >
                   Members ({members.length})
                 </button>
+                {isAdmin && (
+                  <button
+                    onClick={saveAsTemplate}
+                    disabled={savingTemplate}
+                    className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                  >
+                    Save as template
+                  </button>
+                )}
                 <button
                   onClick={() => setEditOpen(true)}
                   className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
@@ -519,6 +557,15 @@ export default function ProjectBoard({
           onClose={() => setImportOpen(false)}
           projectId={project.id}
           onImported={reloadTasks}
+        />
+      )}
+      {canManage && (
+        <RecurringTasksModal
+          open={recurringOpen}
+          onClose={() => setRecurringOpen(false)}
+          projectId={project.id}
+          members={members}
+          canManage={canManage}
         />
       )}
       {canManage && (

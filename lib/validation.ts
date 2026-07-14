@@ -208,5 +208,27 @@ export const createMeetingSchema = z.object({
     (v) => (v === "" || v === undefined || v === null ? null : v),
     z.coerce.number().int().min(0).max(20160).nullable() // up to 14 days
   ),
+  recurrence: z.enum(["none", "daily", "weekly", "monthly"]).optional(),
   attendeeIds: z.array(z.coerce.number().int().positive()).optional(),
+});
+
+// ---- Recurring tasks + project templates (Wave 12) ----
+export const createRecurringTaskSchema = z.object({
+  title: z.string().min(1).max(200),
+  description: optionalText,
+  priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
+  assigneeId: optionalId.optional(),
+  estimatedHours: optionalHours.optional(),
+  recurrence: z.enum(["daily", "weekly", "monthly"]),
+  nextRun: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD"),
+});
+
+export const saveTemplateSchema = z.object({
+  name: z.string().min(1).max(200),
+  description: optionalText,
+  projectId: z.coerce.number().int().positive(),
+});
+
+export const instantiateTemplateSchema = z.object({
+  name: z.string().min(1).max(150),
 });

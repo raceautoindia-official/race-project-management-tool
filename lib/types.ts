@@ -213,8 +213,39 @@ export interface Meeting {
   start_time: string;
   reminder_minutes: number | null;
   reminder_sent?: boolean;
+  recurrence?: Recurrence;
+  series_id?: number | null;
   created_by: number | null;
   creator_name?: string | null;
   created_at: string;
   attendees?: { user_id: number; name: string; email: string | null }[];
+}
+
+// ---- Recurring tasks + project templates (Wave 12) ----
+export type RecurringInterval = "daily" | "weekly" | "monthly";
+
+export interface RecurringTask {
+  id: number;
+  project_id: number;
+  title: string;
+  description: string | null;
+  priority: TaskPriority;
+  assignee_id: number | null;
+  assignee_name?: string | null;
+  estimated_hours: number | null;
+  recurrence: RecurringInterval;
+  next_run: string;
+  is_active: boolean;
+  created_by: number | null;
+  created_at?: string;
+}
+
+export interface ProjectTemplate {
+  id: number;
+  name: string;
+  description: string | null;
+  created_by: number | null;
+  created_by_name?: string | null;
+  task_count?: number;
+  created_at?: string;
 }

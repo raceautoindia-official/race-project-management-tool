@@ -52,7 +52,7 @@ export async function GET(_req: NextRequest) {
 
     const meetings = await query<DbRow[]>(
       `SELECT m.id, m.title, m.description, m.project_id, m.location,
-              m.start_time, m.reminder_minutes, m.created_by, m.created_at,
+              m.start_time, m.reminder_minutes, m.recurrence, m.created_by, m.created_at,
               p.name AS project_name, u.name AS creator_name
          FROM meetings m
          LEFT JOIN projects p ON p.id = m.project_id
@@ -75,8 +75,9 @@ export async function POST(req: NextRequest) {
 
     const result = (await query<DbResult>(
       `INSERT INTO meetings
-         (title, description, project_id, location, start_time, reminder_minutes, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+         (title, description, project_id, location, start_time, reminder_minutes,
+          recurrence, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         data.title,
         data.description ?? null,
@@ -84,10 +85,19 @@ export async function POST(req: NextRequest) {
         data.location ?? null,
         toMysqlDateTime(data.startTime),
         data.reminderMinutes ?? null,
+        data.recurrence ?? "none",
         user.id,
       ]
     )) as unknown as DbResult;
     const meetingId = result.insertId;
+
+    // A recurring meeting is its own series head (used by the cron to advance).
+    if (data.recurrence && data.recurrence !== "none") {
+      await query(`UPDATE meetings SET series_id = ? WHERE id = ?`, [
+        meetingId,
+        meetingId,
+      ]);
+    }
 
     // Attendees: the chosen users plus the creator, de-duplicated.
     const attendeeSet = new Set<number>(data.attendeeIds ?? []);
@@ -121,7 +131,7 @@ export async function POST(req: NextRequest) {
 
     const rows = await query<DbRow[]>(
       `SELECT m.id, m.title, m.description, m.project_id, m.location,
-              m.start_time, m.reminder_minutes, m.created_by, m.created_at,
+              m.start_time, m.reminder_minutes, m.recurrence, m.created_by, m.created_at,
               p.name AS project_name, u.name AS creator_name
          FROM meetings m
          LEFT JOIN projects p ON p.id = m.project_id

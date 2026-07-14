@@ -150,6 +150,11 @@ function Section({
                         🔔 {m.reminder_minutes}m before
                       </span>
                     )}
+                    {m.recurrence && m.recurrence !== "none" && (
+                      <span className="ml-2 rounded-full bg-indigo-50 px-2 py-0.5 text-xs capitalize text-indigo-600">
+                        🔁 {m.recurrence}
+                      </span>
+                    )}
                   </div>
                   {m.description && (
                     <p className="mt-1 text-sm text-slate-600">{m.description}</p>
@@ -207,6 +212,7 @@ function NewMeetingModal({
   const [location, setLocation] = useState("");
   const [startTime, setStartTime] = useState("");
   const [reminder, setReminder] = useState("");
+  const [recurrence, setRecurrence] = useState("none");
   const [attendeeIds, setAttendeeIds] = useState<number[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -231,6 +237,7 @@ function NewMeetingModal({
           location,
           startTime: istInputToUtc(startTime),
           reminderMinutes: reminder === "" ? null : Number(reminder),
+          recurrence,
           attendeeIds,
         }),
       });
@@ -278,6 +285,15 @@ function NewMeetingModal({
                   {o.label}
                 </option>
               ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">Repeat</label>
+            <select value={recurrence} onChange={(e) => setRecurrence(e.target.value)} className={inputClass}>
+              <option value="none">Does not repeat</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
             </select>
           </div>
           <div>
