@@ -60,6 +60,20 @@ test("people outside the project can't see it", async () => {
   await expect(olivia).toHaveURL(/\/projects$/);
 });
 
+test("My Tasks shows a calendar even for someone with no tasks", async () => {
+  // Olivia owns nothing. Picking Calendar must still give her a calendar —
+  // swapping it for a line of text reads as a page that failed to load.
+  await olivia.goto("/my-tasks");
+  await olivia.getByRole("button", { name: "calendar" }).click();
+  await expect(olivia.getByText("Sun", { exact: true })).toBeVisible();
+  await expect(olivia.getByText("Sat", { exact: true })).toBeVisible();
+  await expect(olivia.getByText(/nothing on the calendar/i)).toBeVisible();
+
+  // The list view keeps its own plain empty state.
+  await olivia.getByRole("button", { name: "list" }).click();
+  await expect(olivia.getByText("You have no assigned tasks.")).toBeVisible();
+});
+
 test("the nominated lead approves the project and adds a member", async () => {
   await lead.goto(projectPath);
   await expect(lead.getByText("Awaiting lead approval")).toBeVisible();

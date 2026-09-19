@@ -43,15 +43,24 @@ export default function MyTasksView({ tasks }: { tasks: Task[] }) {
         ))}
       </div>
 
-      {tasks.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">
+      {/* Someone who picks Calendar gets a calendar, even with nothing in it.
+          Swapping it for a line of text reads as a broken page. */}
+      {view === "calendar" ? (
+        <>
+          <Calendar
+            tasks={tasks}
+            onSelect={(t) => router.push(`/projects/${t.project_id}`)}
+          />
+          {tasks.length === 0 && (
+            <p className="mt-3 text-center text-sm text-slate-600">
+              Nothing is assigned to you yet, so there is nothing on the calendar.
+            </p>
+          )}
+        </>
+      ) : tasks.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-slate-600">
           You have no assigned tasks.
         </div>
-      ) : view === "calendar" ? (
-        <Calendar
-          tasks={tasks}
-          onSelect={(t) => router.push(`/projects/${t.project_id}`)}
-        />
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {TASK_STATUSES.map((status) => (
