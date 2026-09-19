@@ -13,7 +13,11 @@ export default async function OutstandingPage() {
   const isAdmin = user.role === "admin";
 
   // "Needs attention": overdue tasks + tasks submitted for review.
-  const where = ["(t.outstanding = 1 OR t.status = 'review')"];
+  const where = [
+    "(t.outstanding = 1 OR t.status = 'review')",
+    // Read-only projects (pending/rejected requests, completed) need no action.
+    "p.approval_status = 'approved' AND p.status <> 'completed'",
+  ];
   const params: unknown[] = [];
   if (!isAdmin) {
     where.push(`(

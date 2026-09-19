@@ -51,17 +51,19 @@ export function labelSwatchClass(color: string): string {
 }
 
 // Deterministic avatar background based on a name/id.
+// One step darker than the 500 shades: white initials on a 500 background
+// falls below the contrast minimum for text.
 const AVATAR_CLASSES = [
-  "bg-rose-500",
-  "bg-orange-500",
-  "bg-amber-500",
-  "bg-green-500",
-  "bg-teal-500",
-  "bg-sky-500",
-  "bg-blue-500",
-  "bg-indigo-500",
-  "bg-violet-500",
-  "bg-pink-500",
+  "bg-rose-600",
+  "bg-orange-700",
+  "bg-amber-700",
+  "bg-green-700",
+  "bg-teal-700",
+  "bg-sky-700",
+  "bg-blue-600",
+  "bg-indigo-600",
+  "bg-violet-600",
+  "bg-pink-600",
 ];
 
 export function avatarColorClass(seed: string | number): string {

@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { query, DbRow } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { errorResponse, ApiError, forbidden, json } from "@/lib/http";
-import { assertProjectAccess, canManageProject } from "@/lib/rbac";
+import { assertProjectAccess, assertTaskWritable, canManageProject } from "@/lib/rbac";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +49,7 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
     if (!Number.isInteger(attId)) throw new ApiError(400, "Invalid id");
 
     const rows = await query<DbRow[]>(
-      `SELECT a.uploaded_by, t.project_id
+      `SELECT a.uploaded_by, a.task_id, t.project_id
          FROM task_attachments a JOIN tasks t ON t.id = a.task_id
         WHERE a.id = ? LIMIT 1`,
       [attId]
@@ -58,6 +58,7 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
     if (!att) throw new ApiError(404, "Attachment not found");
 
     const { projectRole } = await assertProjectAccess(user, att.project_id);
+    await assertTaskWritable(att.task_id);
     if (!canManageProject(user, projectRole) && att.uploaded_by !== user.id) {
       throw forbidden("You can only delete your own attachments");
     }

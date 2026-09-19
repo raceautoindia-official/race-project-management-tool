@@ -20,7 +20,6 @@ import type { Role } from "./types";
  */
 
 declare global {
-  // eslint-disable-next-line no-var
   var __attendancePool: mysql.Pool | undefined;
 }
 
@@ -83,6 +82,41 @@ export async function findEmployeeByEmpId(
   );
   const list = rows as AttendanceEmployee[];
   return list[0] ?? null;
+}
+
+/**
+ * Re-read an employee's active flag and role from Attendance and mirror any
+ * change into pm_app.users, so a deactivation or demotion takes effect on an
+ * existing session. An employee missing from Attendance counts as inactive.
+ * Returns null (and changes nothing) if Attendance can't be reached, so an
+ * Attendance outage doesn't lock everyone out.
+ */
+export async function syncEmployeeStatus(
+  employeeId: number,
+  current: { role: Role; is_active: boolean }
+): Promise<{ role: Role; is_active: boolean } | null> {
+  try {
+    const [rows] = await attendancePool.execute(
+      `SELECT role, is_active FROM employees WHERE id = ? LIMIT 1`,
+      [employeeId]
+    );
+    const emp = (rows as Pick<AttendanceEmployee, "role" | "is_active">[])[0];
+    const fresh = {
+      role: emp ? mapAttendanceRole(emp.role) : current.role,
+      is_active: Boolean(emp?.is_active),
+    };
+    if (fresh.role !== current.role || fresh.is_active !== current.is_active) {
+      await query(`UPDATE users SET role = ?, is_active = ? WHERE employee_id = ?`, [
+        fresh.role,
+        fresh.is_active ? 1 : 0,
+        employeeId,
+      ]);
+    }
+    return fresh;
+  } catch (err) {
+    console.error("[attendance] status sync failed:", (err as Error).message);
+    return null;
+  }
 }
 
 /** Constant-time-ish PIN check (bcrypt). */

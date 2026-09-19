@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { query, DbRow } from "@/lib/db";
 import { json, errorResponse } from "@/lib/http";
 import { assertCron } from "@/lib/cron";
-import { sendEmail, emailLayout, appBaseUrl } from "@/lib/mailer";
+import { sendEmail, emailLayout, appBaseUrl, escapeHtml } from "@/lib/mailer";
 import { formatIst } from "@/lib/tz";
 
 export const dynamic = "force-dynamic";
@@ -52,19 +52,19 @@ export async function POST(req: NextRequest) {
         .map(
           (t) =>
             `<tr>
-               <td style="padding:4px 8px;border-bottom:1px solid #f1f5f9;">${t.title}</td>
-               <td style="padding:4px 8px;border-bottom:1px solid #f1f5f9;color:#64748b;">${t.project_name}</td>
+               <td style="padding:4px 8px;border-bottom:1px solid #f1f5f9;">${escapeHtml(t.title)}</td>
+               <td style="padding:4px 8px;border-bottom:1px solid #f1f5f9;color:#64748b;">${escapeHtml(t.project_name)}</td>
                <td style="padding:4px 8px;border-bottom:1px solid #f1f5f9;color:${
                  Number(t.overdue) ? "#dc2626" : "#64748b"
-               };">${t.due_date ?? "—"}</td>
+               };">${escapeHtml(t.due_date ?? "—")}</td>
              </tr>`
         )
         .join("");
       const meetingRows = meetings
         .map(
           (m) =>
-            `<li><strong>${formatIst(String(m.start_time))}</strong> — ${m.title}${
-              m.project_name ? ` (${m.project_name})` : ""
+            `<li><strong>${formatIst(String(m.start_time))}</strong> — ${escapeHtml(m.title)}${
+              m.project_name ? ` (${escapeHtml(m.project_name)})` : ""
             }</li>`
         )
         .join("");

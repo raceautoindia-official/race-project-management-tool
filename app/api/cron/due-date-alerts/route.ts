@@ -4,7 +4,7 @@ import { json, errorResponse } from "@/lib/http";
 import { assertCron } from "@/lib/cron";
 import { notify } from "@/lib/activity";
 import { projectAlertRecipients } from "@/lib/recipients";
-import { sendEmail, emailLayout, appBaseUrl } from "@/lib/mailer";
+import { sendEmail, emailLayout, appBaseUrl, escapeHtml } from "@/lib/mailer";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +34,7 @@ export async function POST(req: NextRequest) {
          JOIN projects p ON p.id = t.project_id
          LEFT JOIN users a ON a.id = t.assignee_id
         WHERE t.status <> 'done'
+          AND p.approval_status = 'approved' AND p.status <> 'completed'
           AND t.due_alert_sent = 0
           AND t.due_date IS NOT NULL
           AND t.due_date BETWEEN UTC_DATE() AND (UTC_DATE() + INTERVAL ? DAY)`,
@@ -50,8 +51,8 @@ export async function POST(req: NextRequest) {
         subject: `Task due soon: ${t.title}`,
         html: emailLayout(
           "Task due soon",
-          `<p><strong>${t.title}</strong> in project <strong>${t.project_name}</strong> is due on <strong>${t.due_date}</strong>.</p>
-           <p>Assignee: ${t.assignee_name ?? "Unassigned"}</p>
+          `<p><strong>${escapeHtml(t.title)}</strong> in project <strong>${escapeHtml(t.project_name)}</strong> is due on <strong>${escapeHtml(t.due_date)}</strong>.</p>
+           <p>Assignee: ${escapeHtml(t.assignee_name ?? "Unassigned")}</p>
            <p><a href="${link}">Open the project →</a></p>`
         ),
       });
@@ -76,6 +77,7 @@ export async function POST(req: NextRequest) {
          JOIN projects p ON p.id = t.project_id
          LEFT JOIN users a ON a.id = t.assignee_id
         WHERE t.status <> 'done'
+          AND p.approval_status = 'approved' AND p.status <> 'completed'
           AND t.outstanding = 0
           AND t.due_date IS NOT NULL
           AND t.due_date < UTC_DATE()`
@@ -90,8 +92,8 @@ export async function POST(req: NextRequest) {
         subject: `Overdue task: ${t.title}`,
         html: emailLayout(
           "Task is overdue",
-          `<p><strong>${t.title}</strong> in project <strong>${t.project_name}</strong> was due on <strong>${t.due_date}</strong> (${t.days_overdue} day(s) ago) and is not complete.</p>
-           <p>Assignee: ${t.assignee_name ?? "Unassigned"}</p>
+          `<p><strong>${escapeHtml(t.title)}</strong> in project <strong>${escapeHtml(t.project_name)}</strong> was due on <strong>${escapeHtml(t.due_date)}</strong> (${escapeHtml(t.days_overdue)} day(s) ago) and is not complete.</p>
+           <p>Assignee: ${escapeHtml(t.assignee_name ?? "Unassigned")}</p>
            <p>It has been moved to the outstanding list. <a href="${link}">Review outstanding tasks →</a></p>`
         ),
       });

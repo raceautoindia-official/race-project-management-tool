@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { query, DbRow } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { json, errorResponse, ApiError } from "@/lib/http";
-import { assertProjectManage } from "@/lib/rbac";
+import { assertProjectManage, assertProjectWritable } from "@/lib/rbac";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -23,7 +23,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     const rtId = Number(id);
     if (!Number.isInteger(rtId)) throw new ApiError(400, "Invalid id");
     const rt = await load(rtId);
-    await assertProjectManage(user, rt.project_id);
+    assertProjectWritable(await assertProjectManage(user, rt.project_id));
     const body = await req.json().catch(() => ({}));
     if (typeof body.isActive === "boolean") {
       await query(`UPDATE recurring_tasks SET is_active = ? WHERE id = ?`, [
@@ -52,7 +52,7 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
     const rtId = Number(id);
     if (!Number.isInteger(rtId)) throw new ApiError(400, "Invalid id");
     const rt = await load(rtId);
-    await assertProjectManage(user, rt.project_id);
+    assertProjectWritable(await assertProjectManage(user, rt.project_id));
     await query(`DELETE FROM recurring_tasks WHERE id = ?`, [rtId]);
     return json({ ok: true });
   } catch (err) {

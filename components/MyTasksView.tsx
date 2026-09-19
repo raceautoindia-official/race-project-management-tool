@@ -44,7 +44,7 @@ export default function MyTasksView({ tasks }: { tasks: Task[] }) {
       </div>
 
       {tasks.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-slate-400">
+        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">
           You have no assigned tasks.
         </div>
       ) : view === "calendar" ? (
@@ -60,7 +60,7 @@ export default function MyTasksView({ tasks }: { tasks: Task[] }) {
               title={`${TASK_STATUS_LABELS[status]} (${byStatus[status].length})`}
             >
               {byStatus[status].length === 0 ? (
-                <p className="text-sm text-slate-400">Nothing here.</p>
+                <p className="text-sm text-slate-500">Nothing here.</p>
               ) : (
                 <ul className="divide-y divide-slate-100">
                   {byStatus[status].map((t) => (
@@ -75,7 +75,7 @@ export default function MyTasksView({ tasks }: { tasks: Task[] }) {
                         >
                           {t.title}
                         </Link>
-                        <div className="flex items-center gap-2 text-xs text-slate-400">
+                        <div className="flex items-center gap-2 text-xs text-slate-500">
                           <span>{t.project_name}</span>
                           {t.labels?.map((l) => (
                             <LabelChip key={l.id} name={l.name} color={l.color} />
@@ -89,7 +89,7 @@ export default function MyTasksView({ tasks }: { tasks: Task[] }) {
                             className={`text-xs ${
                               isOverdue(t.due_date, t.status)
                                 ? "font-medium text-red-600"
-                                : "text-slate-500"
+                                : "text-slate-600"
                             }`}
                           >
                             {formatDate(t.due_date)}

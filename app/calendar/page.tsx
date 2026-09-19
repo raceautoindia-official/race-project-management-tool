@@ -3,6 +3,9 @@ import { query, DbRow } from "@/lib/db";
 import AppShell from "@/components/AppShell";
 import { PageHeader } from "@/components/Cards";
 import CalendarView, { type CalEvent } from "@/components/CalendarView";
+import CalendarConnectButton from "@/components/CalendarConnectButton";
+import { appBaseUrl } from "@/lib/mailer";
+import { calendarFeedUrl } from "@/lib/calendar-links";
 import { istDateKey, istTime24 } from "@/lib/tz";
 
 export const dynamic = "force-dynamic";
@@ -38,6 +41,15 @@ export default async function CalendarPage() {
           )`,
     isAdmin ? [] : [user.id, user.id]
   );
+
+  // The private feed link for subscribing in Google / Outlook / Apple.
+  const [me] = await query<DbRow[]>(
+    `SELECT calendar_token FROM users WHERE id = ?`,
+    [user.id]
+  );
+  const calendarUrl = me?.calendar_token
+    ? calendarFeedUrl(appBaseUrl(), String(me.calendar_token))
+    : null;
 
   // Personal reminders (not done) belonging to this user.
   const reminderRows = await query<DbRow[]>(
@@ -85,6 +97,7 @@ export default async function CalendarPage() {
       <PageHeader
         title="Calendar"
         subtitle="Your tasks and meetings in one place — switch between month and agenda views."
+        action={<CalendarConnectButton initialUrl={calendarUrl} />}
       />
       <CalendarView events={events} />
     </AppShell>

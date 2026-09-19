@@ -45,12 +45,12 @@ export default function PresencePanel({
     <div className="rounded-xl border border-slate-200 bg-white">
       <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
         <h2 className="font-semibold text-slate-800">Team presence</h2>
-        <span className="flex items-center gap-1.5 text-sm text-slate-500">
+        <span className="flex items-center gap-1.5 text-sm text-slate-600">
           <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
           {onlineCount} online
         </span>
       </div>
-      <ul className="max-h-80 divide-y divide-slate-100 overflow-y-auto">
+      <ul tabIndex={0} className="max-h-80 divide-y divide-slate-100 overflow-y-auto">
         {users.map((u) => (
           <li key={u.id} className="flex items-center gap-3 px-5 py-2.5">
             <div className="relative">
@@ -69,7 +69,7 @@ export default function PresencePanel({
                 </span>
                 <RoleBadge role={u.role} />
               </div>
-              <div className="text-xs text-slate-400">
+              <div className="text-xs text-slate-500">
                 {u.online
                   ? "Active now"
                   : u.last_seen_at

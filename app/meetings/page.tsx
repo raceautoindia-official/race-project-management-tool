@@ -23,6 +23,7 @@ export default async function MeetingsPage() {
 
   const rows = await query<DbRow[]>(
     `SELECT m.id, m.title, m.description, m.project_id, m.location,
+            m.video_url, m.video_room_id, m.duration_minutes,
             m.start_time, m.reminder_minutes, m.created_by, m.created_at,
             p.name AS project_name, u.name AS creator_name
        FROM meetings m
@@ -70,7 +71,7 @@ export default async function MeetingsPage() {
     <AppShell user={user}>
       <PageHeader
         title="Meetings"
-        subtitle="Schedule meetings and set reminders — attendees are notified in-app and by email."
+        subtitle="Schedule meetings with a video call — attendees are notified in-app and by email, and every meeting can be added to their calendar."
       />
       <MeetingsView
         initial={rows as unknown as Meeting[]}

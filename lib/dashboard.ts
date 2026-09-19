@@ -39,7 +39,8 @@ export async function getAdminDashboard(): Promise<AdminDashboard> {
   const [users] = await query<DbRow[]>(`SELECT COUNT(*) AS c FROM users`);
   const [projects] = await query<DbRow[]>(`SELECT COUNT(*) AS c FROM projects`);
   const [activeProjects] = await query<DbRow[]>(
-    `SELECT COUNT(*) AS c FROM projects WHERE status = 'active'`
+    `SELECT COUNT(*) AS c FROM projects
+      WHERE status = 'active' AND approval_status = 'approved'`
   );
   const [tasks] = await query<DbRow[]>(`SELECT COUNT(*) AS c FROM tasks`);
 
@@ -78,7 +79,7 @@ export async function getAdminDashboard(): Promise<AdminDashboard> {
             (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id) AS task_count,
             (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'done') AS done_count
      FROM projects p
-     WHERE p.status = 'active'
+     WHERE p.status = 'active' AND p.approval_status = 'approved'
      ORDER BY task_count DESC, p.updated_at DESC
      LIMIT 6`
   );

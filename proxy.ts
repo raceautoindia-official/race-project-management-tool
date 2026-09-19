@@ -37,7 +37,7 @@ async function readToken(req: NextRequest): Promise<TokenClaims | null> {
 
 // Paths anyone may reach without a session.
 const PUBLIC_PAGES = new Set(["/login"]);
-const PUBLIC_APIS = new Set(["/api/auth/login"]);
+const PUBLIC_APIS = new Set(["/api/auth/login", "/api/auth/session-ended"]);
 
 // API path prefixes restricted to admins.
 const ADMIN_API_PREFIXES = ["/api/activity", "/api/presence"];
@@ -48,10 +48,13 @@ function isPublic(pathname: string): boolean {
   // Cron endpoints authenticate via the x-cron-secret header (see lib/cron.ts),
   // not a session cookie, so they bypass the session gate here.
   if (pathname.startsWith("/api/cron/")) return true;
+  // Calendar subscriptions authenticate with the secret token in the URL:
+  // Google/Outlook/Apple fetch them with no cookies.
+  if (pathname.startsWith("/api/calendar/feed/")) return true;
   return false;
 }
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const isApi = pathname.startsWith("/api/");
 

@@ -3,18 +3,16 @@ import { requirePageUser } from "@/lib/page-guard";
 import { query, DbRow } from "@/lib/db";
 import AppShell from "@/components/AppShell";
 import ProjectBoard from "@/components/project/ProjectBoard";
-import { attachTaskMeta } from "@/lib/tasks";
-import type { Label, Milestone, ProjectMember, Task } from "@/lib/types";
+import { fetchTaskRequests, fetchTasks } from "@/lib/tasks";
+import type {
+  Label,
+  Milestone,
+  ProjectMember,
+  Task,
+  TaskRequest,
+} from "@/lib/types";
 
 export const dynamic = "force-dynamic";
-
-const TASK_SELECT = `
-  t.id, t.project_id, t.title, t.description, t.status, t.priority,
-  t.estimated_hours, t.spent_hours, t.is_additional, t.parent_task_id,
-  t.assignee_id, t.created_by, t.due_date, t.start_date, t.created_at, t.updated_at,
-  a.name AS assignee_name, c.name AS creator_name,
-  (SELECT COUNT(*) FROM task_comments tc WHERE tc.task_id = t.id) AS comment_count
-`;
 
 export default async function ProjectDetailPage({
   params,
@@ -27,9 +25,13 @@ export default async function ProjectDetailPage({
   if (!Number.isInteger(projectId)) notFound();
 
   const projectRows = await query<DbRow[]>(
-    `SELECT p.id, p.name, p.description, p.status, p.owner_id, u.name AS owner_name
+    `SELECT p.id, p.name, p.description, p.status, p.approval_status, p.owner_id,
+            p.requested_by, p.requested_at, p.decided_at, p.decision_note,
+            u.name AS owner_name, rq.name AS requester_name, dc.name AS decider_name
      FROM projects p
      LEFT JOIN users u ON u.id = p.owner_id
+     LEFT JOIN users rq ON rq.id = p.requested_by
+     LEFT JOIN users dc ON dc.id = p.decided_by
      WHERE p.id = ? LIMIT 1`,
     [projectId]
   );
@@ -49,20 +51,13 @@ export default async function ProjectDetailPage({
   }
   const canManage = user.role === "admin" || projectRole === "lead";
 
-  const taskRows = await query<DbRow[]>(
-    `SELECT ${TASK_SELECT}
-     FROM tasks t
-     LEFT JOIN users a ON a.id = t.assignee_id
-     LEFT JOIN users c ON c.id = t.created_by
-     WHERE t.project_id = ?
-     ORDER BY t.created_at DESC`,
-    [projectId]
-  );
-  await attachTaskMeta(taskRows);
-  const tasks = taskRows.map((t) => ({
-    ...t,
-    comment_count: Number(t.comment_count),
-  })) as unknown as Task[];
+  const tasks = (await fetchTasks("t.project_id = ?", [projectId])) as unknown as Task[];
+
+  // Leads/admins review every task request; members see the ones they raised.
+  const requests = (await fetchTaskRequests(
+    canManage ? "r.project_id = ?" : "r.project_id = ? AND r.requested_by = ?",
+    canManage ? [projectId] : [projectId, user.id]
+  )) as unknown as TaskRequest[];
 
   const labelRows = await query<DbRow[]>(
     `SELECT id, project_id, name, color FROM labels WHERE project_id = ? ORDER BY name`,
@@ -108,13 +103,21 @@ export default async function ProjectDetailPage({
           status: project.status,
           owner_id: project.owner_id,
           owner_name: project.owner_name,
+          approval_status: project.approval_status,
+          requested_by: project.requested_by,
+          requester_name: project.requester_name,
+          requested_at: project.requested_at,
+          decider_name: project.decider_name,
+          decided_at: project.decided_at,
+          decision_note: project.decision_note,
         }}
         initialTasks={tasks}
         initialMembers={members}
         initialLabels={labels}
         initialMilestones={milestones}
+        initialRequests={requests}
         allUsers={allUsers.map((u) => ({ id: u.id, name: u.name, email: u.email }))}
-        currentUser={{ id: user.id, role: user.role }}
+        currentUser={{ id: user.id, role: user.role, name: user.name }}
         canManage={canManage}
       />
     </AppShell>

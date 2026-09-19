@@ -6,14 +6,37 @@ there is **no public sign-up** — an admin provisions every account.
 
 ## Features
 
-- **Role-based access (admin / member)** enforced **server-side** in middleware *and* in
+- **Role-based access (admin / member)** enforced **server-side** in the proxy *and* in
   every API route — not just hidden in the UI.
-- **Custom auth**: bcrypt password hashing, signed JWT session in an **httpOnly** cookie
-  (via `jose`), Edge middleware for route protection, basic login rate-limiting.
-- **Forced password change** on first login (and after an admin resets a password).
-- **Admin user management**: create users, assign roles, deactivate/reactivate, reset
-  passwords — with search & pagination.
+- **Sign-in with the Attendance app**: users log in with their Employee ID + PIN, checked
+  against the Attendance database (`attendance.employees`); PMApp stores no passwords and
+  mirrors employees into its own `users` table. Signed JWT session in an **httpOnly**
+  cookie (via `jose`), proxy route protection, per-client and per-account login
+  attempt limits.
 - **Projects**: CRUD, membership management (lead/member), progress tracking.
+  Members can **create a project** and nominate the lead who approves it; it stays
+  read-only until that lead (or an admin) approves.
+- **Two kinds of work**: every task is either an **existing work correction** (title,
+  existing behavior, expected behavior, acceptance criteria; reason and scope optional)
+  or a **new feature** (title, features, rules; flow optional). Leads create tasks
+  directly; members **raise task requests** that a lead approves (assigning an owner) or
+  rejects with a reason.
+- **Approval trail + sign-off lock**: each task records who **requested** it, who
+  **approved** it, its **assigned owner** and who **signed it off**. Sign-off (by the
+  requester or a lead/admin, once the task is Done) makes the task and everything on it
+  — comments, checklist, files, time logs — **permanently read-only**. A project can
+  only be marked **Completed** once every task is signed off, and is then read-only
+  (an admin can reopen it).
+- **Task PDF**: download any task (spec, approval trail, checklist, files, comments) as
+  a PDF.
+- **Calendar**: a private subscription link puts your meetings, task due dates and
+  reminders into **Google Calendar, Outlook or Apple Calendar** and keeps them updated;
+  single entries can be added with one click or downloaded as `.ics`.
+- **Video meetings**: scheduling a meeting creates a room in the company meetings app
+  (or takes a Zoom/Meet/Teams link you already have), with a **Join** button on the
+  meeting, in reminder emails and in the calendar entry.
+- **WhatsApp alerts**: notifications can also go to WhatsApp (Meta Cloud API) for people
+  who add a number and opt in on their profile.
 - **Tasks**: CRUD, assignees, priority, due dates, a 4-column status workflow, a
   **Kanban board** with drag-and-drop, a sortable/filterable **List view**, a
   **Calendar view** by due date, and a task detail panel with a **comments** thread.
@@ -63,6 +86,21 @@ docker compose up -d        # MySQL 8 on localhost:3306, db "pm_app"
 
 The schema in `db/schema.sql` is applied automatically on first container start.
 
+**Upgrading an existing database?** Apply the migrations in `db/migrations/` in date
+order. The last two add project requests, task types/requests and sign-off, then calendar
+subscriptions, video meetings and WhatsApp:
+
+```bash
+mysql -u root -p pm_app < db/migrations/2026-09-17_phase4_requests_signoff.sql
+mysql -u root -p pm_app < db/migrations/2026-09-18_phase5_calendar_video_whatsapp.sql
+mysql -u root -p pm_app < db/migrations/2026-09-18_fix_legacy_completed_at.sql
+```
+
+It is safe to re-run and backfills existing tasks (their creator — or the project owner —
+is recorded as requester and approver). From Windows PowerShell, `<` redirection doesn't
+work; use `cmd /c "mysql -u root -p pm_app < db\migrations\2026-09-17_phase4_requests_signoff.sql"`.
+See **Deploying to production** below for the order of steps.
+
 **Option B — Existing local MySQL:**
 
 ```bash
@@ -89,17 +127,25 @@ node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 | `MYSQL_DATABASE`      | Database name (default `pm_app`)         |
 | `AUTH_SECRET`         | Secret used to sign session JWTs (HS256) |
 | `SESSION_COOKIE_NAME` | Session cookie name (default `pm_session`) |
+| `ATTENDANCE_DB_*`     | Attendance database used for login (defaults to the `MYSQL_*` server, db `attendance`) |
+| `CRON_SECRET`         | Required `x-cron-secret` header for `/api/cron/*` |
+| `APP_BASE_URL`        | Absolute URL used for links in emails |
+| `SES_*`               | AWS SES email (blank = in-app notifications only) |
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_*` | Web push (the public key must be set **when building**) |
+| `MEETINGS_APP_URL`   | Video meetings app (default `https://meetings.raceinnovations.in`) |
+| `MEETINGS_API_KEY`   | Shared secret so PMApp can schedule meetings there (blank = room links only) |
+| `WHATSAPP_*`         | WhatsApp Cloud API (blank = WhatsApp alerts off) |
 
 `.env.local` is git-ignored; `.env.example` is committed.
 
-### 4. Seed test data
+### 4. Sync users
 
 ```bash
 npm run seed
 ```
 
-This is **idempotent** (safe to re-run). It hashes passwords before inserting and creates
-the users, projects, tasks, comments, and activity below.
+Copies every employee from the Attendance database into `pm_app.users` (idempotent; it
+does not create projects or tasks). Employees are also synced automatically when they log in.
 
 ### 5. Run
 
@@ -114,24 +160,25 @@ npm run build
 npm run start
 ```
 
-## Test credentials
+## Logging in
 
-> ⚠️ These are for **local development only**. Change them (or delete the users) before
-> using this anywhere real.
-
-| Role   | Email              | Password      |
-| ------ | ------------------ | ------------- |
-| Admin  | `admin@pmapp.test` | `Admin@12345` |
-| Member | `alex@pmapp.test`  | `User@12345`  |
-| Member | `sam@pmapp.test`   | `User@12345`  |
+Use an **Employee ID + PIN** from the Attendance app. There are no built-in demo accounts.
+For local development without the Attendance database, `npm run db:dev` starts a
+passwordless MySQL on port 3307 you can load a dump into.
 
 ## Access model
 
 **Admin** can manage all users (create/edit/deactivate/reset password/assign role), create
 and manage any project, manage membership, and view the activity log.
 
-**Member** sees only the projects they belong to and the tasks within them; can create and
-update tasks, move task status, and comment; has a personal *My Tasks* view; can edit their
+**Project lead** (per project) creates and edits tasks, approves or rejects task requests
+(not their own) and project requests they were nominated for, marks tasks Done and can
+sign them off (not tasks they own). "Requested by" can't be changed once a task is Done.
+Only admins and existing leads can be nominated to approve a project request.
+
+**Member** sees only the projects they belong to and the tasks within them; can request
+projects and raise task requests, and can sign off tasks they requested; can move the
+status of tasks assigned to them (up to Review) and comment; has a personal *My Tasks* view; can edit their
 own profile/password. Members **cannot** reach any `/admin/*` page or admin API — those
 return `403` (APIs) or redirect to `/dashboard` (pages). Unauthenticated requests get `401`
 (APIs) or redirect to `/login` (pages).
@@ -145,12 +192,43 @@ return `403` (APIs) or redirect to `/dashboard` (pages). Unauthenticated request
 | `npm run start` | Serve the production build          |
 | `npm run lint`  | ESLint                              |
 | `npm run seed`  | Seed/refresh test data (idempotent) |
+| `npm test`      | Unit tests (workflow rules, validation, PDF) |
+| `npm run test:integration` | API tests against a throwaway MySQL |
+| `npm run test:all` | Both suites |
+| `npm run test:e2e` | Builds, then end-to-end browser tests (Playwright) |
+| `npm run smoke` | Smoke-tests a **running** deployment in a real browser |
+| `npm run flow` | Full workflow test against a running dev/staging copy (needs DB access) |
+| `npm run a11y` | Accessibility (WCAG 2.1 AA) + phone-layout audit of a running copy |
+| `npm run db:dev` | Optional passwordless dev MySQL on port 3307 (data in `.mysql-dev/`) |
+
+### End-to-end tests
+
+`npm run test:e2e` builds the app and drives it in Google Chrome through the real
+login form (Employee ID + PIN) and the full workflow: project request → lead approval →
+task requests (approve / reject) → review → sign-off lock → PDF download → project
+completion lock → admin reopen. Each run boots a throwaway MySQL, loads `db/schema.sql`
+plus every migration, creates test employees in a throwaway `attendance` database, runs
+the `npm run seed` user sync, and starts `next start` on port 3210 (`E2E_PORT`) wired
+only to that database with email and push disabled — your own databases are never used.
+Set `E2E_BROWSER_CHANNEL=` (empty) to use Playwright's bundled Chromium instead of Chrome
+(`npx playwright install chromium`). Failures leave screenshots and traces in
+`test-results/` and an HTML report in `playwright-report/`.
+
+### Tests
+
+Unit tests need nothing but `npm install`. Integration tests call the real route
+handlers against a temporary MySQL 8.0 started by
+[`mysql-memory-server`](https://github.com/Sebastian-Webster/mysql-memory-server-nodejs):
+it uses a local MySQL 8.0 install if there is one, otherwise it downloads one on the first
+run. To use an existing server instead, set `TEST_MYSQL_HOST` (plus `TEST_MYSQL_PORT`,
+`TEST_MYSQL_USER`, `TEST_MYSQL_PASSWORD`); the `pm_test`, `pm_fresh` and `pm_migrate`
+databases on it are dropped and recreated.
 
 ## Project structure
 
 ```
 pm-app/
-├─ middleware.ts            # Edge auth + admin gating (jose; no bcrypt here)
+├─ proxy.ts                 # Session + admin gating before requests (jose; no bcrypt here)
 ├─ app/
 │  ├─ login, change-password, dashboard, projects, projects/[id],
 │  │  my-tasks, profile, admin, admin/users, admin/activity
@@ -164,17 +242,141 @@ pm-app/
 
 ## Security notes
 
-- Passwords are hashed with bcrypt; hashes are never returned to the client.
+- PINs are verified (bcrypt) against the Attendance database and never stored or returned by PMApp.
 - The session cookie is `httpOnly`, `sameSite=lax`, and `secure` in production (so use
   HTTPS in production; over plain HTTP a production build will not send the cookie back).
 - Authorization is checked server-side on every protected route, with `requireUser()` /
-  `requireAdmin()` resolving the **current DB record** so role/active changes take effect
-  immediately.
-- The login endpoint has basic in-memory rate-limiting.
+  `requireAdmin()` resolving the **current PMApp user record**. Role/active changes made
+  in the Attendance app are picked up within about a minute on open sessions (and at login).
+- Login attempts are limited in memory: 8 per client + Employee ID and 20 per Employee ID
+  per 15 minutes (per server process).
+- User-supplied text is HTML-escaped in emails and CSV cells can't run as spreadsheet formulas.
+
+## Calendar, video calls and WhatsApp
+
+### Calendar subscription (Google / Outlook / Apple)
+
+On the **Calendar** page, **Add to Google, Outlook or Apple** (also on Profile →
+**Calendar subscription**). Each button opens that service's own "add calendar" screen with
+the link filled in; confirm there and it is added. Subscribing once keeps that person's
+meetings, task due dates and reminders up to date. To add it by hand instead:
+
+- **Google Calendar:** Other calendars → **+** → From URL → paste → Add calendar.
+- **Outlook:** Add calendar → Subscribe from web → paste → Import.
+- **Apple Calendar:** File → New Calendar Subscription → paste → OK.
+
+The link itself is the credential (calendar apps can't sign in), so it is unguessable and
+per-person. **Reset link** invalidates it everywhere at once. Calendars refresh on their
+own schedule — usually a few hours; that is the calendar's choice, not a setting here.
+Individual meetings and task due dates also have **Add to calendar** (Google, Outlook) and
+an `.ics` download for Apple and desktop apps.
+
+#### When a subscription never fills in
+
+Google and Microsoft fetch the feed **from their own servers**, not from the browser you
+added it in. So the address in the link has to be reachable from the public internet — a
+link that opens perfectly on your own screen is useless to them if it points at
+`localhost`, a `192.168.x` address or a bare machine name. Nothing reports this: the
+calendar simply stays empty.
+
+Profile → **Calendar subscription** → **Check it works** fetches the feed the way Google
+would and says what happened. The three answers that matter:
+
+| It says | Fix |
+| --- | --- |
+| points at “localhost” / a private address | Set `APP_BASE_URL` to the public https address staff type into their browser, and restart the app. |
+| the feed asked for a login | The running build predates the public-feed rule in `proxy.ts` — deploy the current code. |
+| returned a web page instead of a calendar | Something in front of the app (nginx, a WAF, an SSO proxy) is intercepting `/api/calendar/feed/`; let it through unauthenticated. |
+
+Subscription links end in `.ics` because Google and several desktop clients decide how to
+treat a feed partly from the extension. Links handed out before that change still work.
+
+### Video meetings
+
+Scheduling a meeting offers:
+
+1. **A room in the company meetings app** (default).
+2. **A link you already have** — paste a Zoom, Google Meet or Teams link.
+3. **No video call.**
+
+The join link appears on the meeting, in the reminder email and in the calendar entry.
+
+**Connecting the two apps.** With `MEETINGS_API_KEY` set, PMApp schedules the meeting in
+the meetings app itself (`POST /api/integrations/meetings`), so it appears there with its
+host, time, duration and invited people, exactly as if it had been booked there. Attendees
+who have no account are created from their name and email; they set a password with
+**Forgot password** the first time they sign in.
+
+To set it up:
+
+1. In the **meetings app**, set `INTEGRATION_API_KEY` to a long random value and redeploy:
+   `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
+2. In **PMApp**, set `MEETINGS_API_KEY` to the same value and `MEETINGS_APP_URL` to that
+   app's address.
+
+Without the key — or if the meetings app can't be reached — scheduling still works: PMApp
+falls back to a plain room link (the room is created when the first person joins) and tells
+the organizer it couldn't be scheduled over there.
+
+### WhatsApp alerts (Meta WhatsApp Cloud API)
+
+Everything already sent in-app is also sent to WhatsApp for anyone who adds a mobile
+number and ticks the box on their profile. Nothing is sent until the server is configured:
+
+1. In Meta Business: create a WhatsApp app, add and verify the sender number, and copy its
+   **phone number ID** → `WHATSAPP_PHONE_NUMBER_ID`.
+2. Create a **permanent access token** for that app → `WHATSAPP_TOKEN`.
+3. Submit a message template with **one body parameter**, e.g. body text
+   `PMApp: {{1}}`. Once Meta approves it, set `WHATSAPP_TEMPLATE_NAME` (and
+   `WHATSAPP_TEMPLATE_LANG`, default `en`). Meta only delivers business-initiated
+   messages through an approved template; without one the app sends plain text, which
+   only arrives inside a 24-hour reply window (useful for testing).
+4. `WHATSAPP_DEFAULT_COUNTRY_CODE` (default `91`) is added to numbers typed without one.
+
+A failed send is logged and never breaks the action that triggered it.
+
+## Deploying to production
+
+Do these in order — the new code needs the new database columns.
+
+1. **Back up** the database (`mysqldump pm_app > backup.sql`). There is no down-migration;
+   rolling back = restore the backup and redeploy the previous build.
+2. **Upload source only.** Never upload `.env.local` (it overrides production settings),
+   `.mysql-dev/`, `.next/`, `node_modules/`, `test-results/` or `playwright-report/`.
+   Make sure no `.env.local` exists on the server.
+3. **Set production environment variables** (see the table above), including
+   `NEXT_PUBLIC_VAPID_PUBLIC_KEY` if push is used — it is baked in at build time.
+4. **Install and build** on the server with dev dependencies (TypeScript/Tailwind are
+   needed to build): `npm ci`, then `npm run build` (optionally `npm prune --omit=dev`).
+5. **Stop the old app**, then **run the migrations** in date order:
+   `2026-09-17_phase4_requests_signoff.sql`, `2026-09-18_phase5_calendar_video_whatsapp.sql`,
+   then `2026-09-18_fix_legacy_completed_at.sql` (that last one corrects completion
+   times left in the server's time zone by the July 2026 backfill; it records that it
+   ran, so a second run changes nothing).
+6. **Start the new build** (`npm run start`) and run the phase 4 migration **once more** — it
+   backfills any task created by the old app in between. Check
+   `SELECT COUNT(*) FROM tasks WHERE requested_by IS NULL` returns 0.
+7. **Smoke test** the live site:
+
+   ```bash
+   SMOKE_URL=https://your-site SMOKE_ADMIN=ADMIN001 SMOKE_MEMBER=RACE005 \
+     SMOKE_PIN=<pin> CRON_SECRET=<secret> npm run smoke
+   ```
+
+   It signs in as those two people and walks the critical path in a real browser —
+   create a project → lead approves → raise and approve a task request → mark Done →
+   sign off (and check it locks) → download the PDF → complete and reopen the project →
+   schedule a meeting with a video call → check the calendar feed → run every cron job.
+   It creates one project and one meeting named `SMOKE TEST <time>` and deletes both
+   through the API afterwards, naming anything it could not remove. `CRON_SECRET` is
+   optional; without it the scheduled jobs are skipped.
+
+Behaviour to tell users about: projects already marked **Completed** become read-only
+(an admin can reopen them); a project can only be completed once every task is **signed
+off**; only admins and existing project leads can be nominated to approve a project request.
 
 ## Notes
 
 - This project pins `turbopack.root` in `next.config.ts` because it lives alongside other
   lockfiles; adjust if you relocate it.
-- Next.js 16 prints a deprecation notice suggesting `proxy.ts` over `middleware.ts`. The
-  `middleware.ts` convention still works in 16 and is used here per the project spec.
+- Request gating lives in `proxy.ts` (Next.js 16's name for the former `middleware.ts`).

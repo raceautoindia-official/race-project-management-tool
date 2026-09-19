@@ -41,8 +41,11 @@ export interface TeamPerformance {
 async function scopedUserIds(user: User): Promise<{ scope: TeamPerformance["scope"]; ids: number[] | null }> {
   if (user.role === "admin") return { scope: "all", ids: null };
   const led = await query<DbRow[]>(
+    // Only approved projects: a nominated lead of a pending/rejected project
+    // request must not gain visibility into its members' work.
     `SELECT DISTINCT pm2.user_id
        FROM project_members pm
+       JOIN projects p ON p.id = pm.project_id AND p.approval_status = 'approved'
        JOIN project_members pm2 ON pm2.project_id = pm.project_id
       WHERE pm.user_id = ? AND pm.role_in_project = 'lead'`,
     [user.id]
