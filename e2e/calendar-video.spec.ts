@@ -112,7 +112,11 @@ test("WhatsApp alerts are opt-in with your own number", async () => {
 
 test("the Calendar page offers Google, Outlook and Apple directly", async () => {
   await lead.goto("/calendar");
-  await lead.getByRole("button", { name: /Add to Google, Outlook or Apple/ }).click();
+  // The button reads "Calendar connected" once a calendar app has fetched the
+  // feed, so match either state.
+  await lead
+    .getByRole("button", { name: /Add to Google, Outlook or Apple|Calendar connected/ })
+    .click();
   const dialog = lead.getByRole("dialog", { name: "Add to your calendar app" });
 
   const create = dialog.getByRole("button", { name: "Create my calendar link" });

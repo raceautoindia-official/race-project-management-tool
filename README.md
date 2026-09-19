@@ -87,13 +87,14 @@ docker compose up -d        # MySQL 8 on localhost:3306, db "pm_app"
 The schema in `db/schema.sql` is applied automatically on first container start.
 
 **Upgrading an existing database?** Apply the migrations in `db/migrations/` in date
-order. The last two add project requests, task types/requests and sign-off, then calendar
+order. They add project requests, task types/requests and sign-off, then calendar
 subscriptions, video meetings and WhatsApp:
 
 ```bash
 mysql -u root -p pm_app < db/migrations/2026-09-17_phase4_requests_signoff.sql
 mysql -u root -p pm_app < db/migrations/2026-09-18_phase5_calendar_video_whatsapp.sql
 mysql -u root -p pm_app < db/migrations/2026-09-18_fix_legacy_completed_at.sql
+mysql -u root -p pm_app < db/migrations/2026-09-19_calendar_feed_activity.sql
 ```
 
 It is safe to re-run and backfills existing tasks (their creator — or the project owner —
@@ -265,6 +266,14 @@ meetings, task due dates and reminders up to date. To add it by hand instead:
 - **Outlook:** Add calendar → Subscribe from web → paste → Import.
 - **Apple Calendar:** File → New Calendar Subscription → paste → OK.
 
+**How do I know it worked?** Google, Outlook and Apple keep the subscription on their
+side and never tell the app it exists, so nothing here can say "you are subscribed". What
+the app *can* see is the feed being fetched: once a calendar app reads it, the button
+changes from "Add to Google, Outlook or Apple" to **Calendar connected** and the panel
+says when it was last read. Until then it says so plainly — Google can take a few hours
+to check the first time. Resetting the link clears that, because a new link is a new
+subscription.
+
 The link itself is the credential (calendar apps can't sign in), so it is unguessable and
 per-person. **Reset link** invalidates it everywhere at once. Calendars refresh on their
 own schedule — usually a few hours; that is the calendar's choice, not a setting here.
@@ -350,9 +359,10 @@ Do these in order — the new code needs the new database columns.
    needed to build): `npm ci`, then `npm run build` (optionally `npm prune --omit=dev`).
 5. **Stop the old app**, then **run the migrations** in date order:
    `2026-09-17_phase4_requests_signoff.sql`, `2026-09-18_phase5_calendar_video_whatsapp.sql`,
-   then `2026-09-18_fix_legacy_completed_at.sql` (that last one corrects completion
+   `2026-09-18_fix_legacy_completed_at.sql` (that one corrects completion
    times left in the server's time zone by the July 2026 backfill; it records that it
-   ran, so a second run changes nothing).
+   ran, so a second run changes nothing), then
+   `2026-09-19_calendar_feed_activity.sql`.
 6. **Start the new build** (`npm run start`) and run the phase 4 migration **once more** — it
    backfills any task created by the old app in between. Check
    `SELECT COUNT(*) FROM tasks WHERE requested_by IS NULL` returns 0.

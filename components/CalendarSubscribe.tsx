@@ -24,7 +24,18 @@ interface CheckResult {
  * Calendar and your meetings, task due dates and reminders keep themselves up
  * to date. The link is the credential, so it can be reset.
  */
-export default function CalendarSubscribe({ initialUrl }: { initialUrl: string | null }) {
+export default function CalendarSubscribe({
+  initialUrl,
+  lastFetchedLabel = null,
+}: {
+  initialUrl: string | null;
+  /**
+   * How long ago a calendar app last read the feed, or null if none has.
+   * It is the only proof a subscription exists — Google, Outlook and Apple
+   * keep the subscription on their side and never tell us about it.
+   */
+  lastFetchedLabel?: string | null;
+}) {
   const { toast } = useToast();
   const [url, setUrl] = useState(initialUrl);
   const [busy, setBusy] = useState(false);
@@ -90,6 +101,24 @@ export default function CalendarSubscribe({ initialUrl }: { initialUrl: string |
 
       {url ? (
         <>
+          {/* Whether it is actually working, in the only terms we can know:
+              a calendar app has come and read the feed. A real fetch beats the
+              address check below it — it is evidence rather than a guess. */}
+          {lastFetchedLabel ? (
+            <p className="rounded-lg border border-green-300 bg-green-50 px-3 py-2 text-xs text-green-900">
+              <strong className="font-semibold">Connected.</strong> A calendar app read
+              this {lastFetchedLabel}. Your meetings and due dates are going through.
+            </p>
+          ) : (
+            !addressProblem && (
+              <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                No calendar app has read this link yet. If you have just added it, Google
+                can take a few hours to check the first time — this line will say so once
+                it does.
+              </p>
+            )
+          )}
+
           {/* Once they have checked, the result below says it better. */}
           {addressProblem && !check && (
             <p

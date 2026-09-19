@@ -439,7 +439,9 @@ try {
 
   await step("7d the calendar shows the meeting and due dates", async () => {
     await admin.goto(`${BASE}/calendar`);
-    await admin.getByRole("button", { name: /Add to Google, Outlook or Apple/ }).waitFor({ timeout: 20000 });
+    await admin
+      .getByRole("button", { name: /Add to Google, Outlook or Apple|Calendar connected/ })
+      .waitFor({ timeout: 20000 });
   });
 
   await step("7e the activity log records what happened", async () => {

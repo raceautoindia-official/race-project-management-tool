@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS users (
   must_change_password BOOLEAN NOT NULL DEFAULT FALSE, -- unused (federated auth)
   last_seen_at         DATETIME NULL,                  -- presence heartbeat
   calendar_token       CHAR(32) NULL UNIQUE,           -- private .ics feed link
+  calendar_feed_fetched_at DATETIME NULL,              -- last read by a calendar app
   created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );

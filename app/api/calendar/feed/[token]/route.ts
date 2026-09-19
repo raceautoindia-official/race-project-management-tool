@@ -44,6 +44,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
   );
   if (!user) return new Response("Not found", { status: 404 });
 
+  // The only evidence a subscription exists: Google, Outlook and Apple never
+  // tell us someone added the feed, but they do come and read it. Recording
+  // that is what lets the app say "connected" instead of "add".
+  await query(`UPDATE users SET calendar_feed_fetched_at = UTC_TIMESTAMP() WHERE id = ?`, [
+    user.id,
+  ]);
+
   const base = appBaseUrl();
   const userId = user.id as number;
   const events: IcsEvent[] = [];

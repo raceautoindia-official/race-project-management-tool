@@ -27,7 +27,12 @@ export async function POST(req: Request) {
 
     if (!token || rotate) {
       token = randomBytes(16).toString("hex");
-      await query(`UPDATE users SET calendar_token = ? WHERE id = ?`, [token, user.id]);
+      // A new link is a new subscription: whatever was reading the old one
+      // is now cut off, so the "last read" evidence no longer applies.
+      await query(
+        `UPDATE users SET calendar_token = ?, calendar_feed_fetched_at = NULL WHERE id = ?`,
+        [token, user.id]
+      );
       if (rotate) {
         await logActivity({
           userId: user.id,

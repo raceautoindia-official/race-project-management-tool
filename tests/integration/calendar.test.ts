@@ -135,6 +135,28 @@ describe("calendar subscription feed", () => {
     expect(ics).toContain("SUMMARY:Renew the domain");
   });
 
+  it("records that a calendar app read the feed, and forgets it on reset", async () => {
+    const readAt = async () =>
+      (
+        await query<DbRow[]>(
+          `SELECT calendar_feed_fetched_at AS at FROM users WHERE id = ?`,
+          [lead.id]
+        )
+      )[0].at;
+
+    actAs(lead);
+    // A new link is a different subscription, so any earlier evidence goes.
+    const rotated = await call<Json>(calendarToken.POST, {
+      method: "POST",
+      body: { rotate: true },
+    });
+    feedToken = String(rotated.body.token);
+    expect(await readAt()).toBeNull();
+
+    await call(calendarFeed.GET, { params: { token: feedToken } });
+    expect(await readAt()).not.toBeNull();
+  });
+
   it("answers the same whether or not the link ends in .ics", async () => {
     const bare = await call(calendarFeed.GET, { params: { token: feedToken } });
     const dotIcs = await call(calendarFeed.GET, { params: { token: `${feedToken}.ics` } });

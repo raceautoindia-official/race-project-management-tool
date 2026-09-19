@@ -183,7 +183,10 @@ try {
 
   await step("the calendar subscription serves that meeting", async () => {
     await admin.goto(`${BASE}/calendar`);
-    await admin.getByRole("button", { name: /Add to Google, Outlook or Apple/ }).click();
+    // Reads "Calendar connected" once a calendar app has fetched the feed.
+    await admin
+      .getByRole("button", { name: /Add to Google, Outlook or Apple|Calendar connected/ })
+      .click();
     const create = admin.getByRole("button", { name: "Create my calendar link" });
     if (await create.isVisible()) await create.click();
     const url = await admin.getByLabel("Your private calendar link").inputValue();

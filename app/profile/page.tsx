@@ -10,18 +10,25 @@ import CalendarSubscribe from "@/components/CalendarSubscribe";
 import { appBaseUrl } from "@/lib/mailer";
 import { calendarFeedUrl } from "@/lib/calendar-links";
 import { whatsappConfigured } from "@/lib/whatsapp";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatRelative } from "@/lib/format";
+import { parseUtc } from "@/lib/ics";
 
 export const dynamic = "force-dynamic";
 
 export default async function ProfilePage() {
   const user = await requirePageUser();
   const [row] = await query<DbRow[]>(
-    `SELECT phone, whatsapp_opt_in, calendar_token FROM users WHERE id = ?`,
+    `SELECT phone, whatsapp_opt_in, calendar_token, calendar_feed_fetched_at
+       FROM users WHERE id = ?`,
     [user.id]
   );
   const calendarUrl = row?.calendar_token
     ? calendarFeedUrl(appBaseUrl(), String(row.calendar_token))
+    : null;
+  // Formatted here, not in the client component: a relative time computed on
+  // both sides would not match and React would complain about it.
+  const lastFetchedLabel = row?.calendar_feed_fetched_at
+    ? formatRelative(parseUtc(String(row.calendar_feed_fetched_at)))
     : null;
 
   return (
@@ -68,7 +75,10 @@ export default async function ProfilePage() {
         </SectionCard>
 
         <SectionCard title="Calendar subscription">
-          <CalendarSubscribe initialUrl={calendarUrl} />
+          <CalendarSubscribe
+            initialUrl={calendarUrl}
+            lastFetchedLabel={lastFetchedLabel}
+          />
         </SectionCard>
       </div>
     </AppShell>
