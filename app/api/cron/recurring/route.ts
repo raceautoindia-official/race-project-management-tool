@@ -52,18 +52,23 @@ export async function POST(req: NextRequest) {
 
     // ── recurring tasks ─────────────────────────────────────────────────────
     const dueRt = await query<DbRow[]>(
-      `SELECT id, project_id, title, description, priority, assignee_id,
-              estimated_hours, recurrence, next_run, created_by
-         FROM recurring_tasks
-        WHERE is_active = 1 AND next_run <= UTC_DATE()`
+      `SELECT rt.id, rt.project_id, rt.title, rt.description, rt.priority,
+              rt.assignee_id, rt.estimated_hours, rt.recurrence, rt.next_run,
+              rt.created_by, p.owner_id
+         FROM recurring_tasks rt
+         JOIN projects p ON p.id = rt.project_id
+        WHERE rt.is_active = 1 AND rt.next_run <= UTC_DATE()
+          -- read-only projects (pending/rejected requests, completed) get no new work
+          AND p.approval_status = 'approved' AND p.status <> 'completed'`
     );
     for (const rt of dueRt) {
       const runDate = String(rt.next_run).slice(0, 10);
       const result = (await query<DbResult>(
         `INSERT INTO tasks
            (project_id, title, description, status, priority, estimated_hours,
-            assignee_id, created_by, due_date, start_date)
-         VALUES (?, ?, ?, 'todo', ?, ?, ?, ?, ?, ?)`,
+            assignee_id, created_by, due_date, start_date,
+            requested_by, request_approved_by, request_approved_at)
+         VALUES (?, ?, ?, 'todo', ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP())`,
         [
           rt.project_id,
           rt.title,
@@ -74,6 +79,10 @@ export async function POST(req: NextRequest) {
           rt.created_by ?? null,
           runDate,
           runDate,
+          // Whoever set up the recurring definition requested + approved it.
+          // No creator left → the project owner is on record instead.
+          rt.created_by ?? rt.owner_id ?? null,
+          rt.created_by ?? rt.owner_id ?? null,
         ]
       )) as unknown as DbResult;
 

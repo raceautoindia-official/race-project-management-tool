@@ -51,7 +51,7 @@ export default function OutstandingView({
 
   if (tasks.length === 0) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-slate-400">
+      <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-slate-500">
         🎉 Nothing outstanding. Overdue tasks and completions awaiting approval
         will appear here.
       </div>
@@ -61,7 +61,7 @@ export default function OutstandingView({
   return (
     <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
       <table className="w-full text-left text-sm">
-        <thead className="text-xs uppercase tracking-wide text-slate-400">
+        <thead className="text-xs uppercase tracking-wide text-slate-500">
           <tr>
             <th className="px-4 py-2">Task</th>
             <th className="px-4 py-2">Project</th>
@@ -80,7 +80,7 @@ export default function OutstandingView({
                 <td className="px-4 py-2 text-slate-600">
                   <Link
                     href={`/projects/${t.project_id}`}
-                    className="hover:text-indigo-600"
+                    className="inline-block py-1 hover:text-indigo-600"
                   >
                     {t.project_name}
                   </Link>
@@ -113,7 +113,7 @@ export default function OutstandingView({
                       <button
                         onClick={() => decide(t.id, "approve")}
                         disabled={busyId === t.id}
-                        className="rounded-lg bg-green-600 px-3 py-1 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+                        className="rounded-lg bg-green-700 px-3 py-1 text-xs font-semibold text-white hover:bg-green-800 disabled:opacity-50"
                       >
                         Approve
                       </button>
@@ -126,11 +126,11 @@ export default function OutstandingView({
                       </button>
                     </div>
                   ) : inReview ? (
-                    <span className="text-xs text-slate-400">Awaiting lead/admin</span>
+                    <span className="text-xs text-slate-500">Awaiting lead/admin</span>
                   ) : (
                     <Link
                       href={`/projects/${t.project_id}`}
-                      className="text-xs text-indigo-600 hover:underline"
+                      className="inline-block py-1 text-xs text-indigo-600 hover:underline"
                     >
                       Open
                     </Link>

@@ -5,19 +5,31 @@ const attempts = new Map<string, { count: number; first: number }>();
 
 const WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 const MAX_ATTEMPTS = 8;
+/** Attempts per account from any number of clients within the window. */
+export const ACCOUNT_MAX_ATTEMPTS = 20;
+const MAX_KEYS = 10_000;
 
-export function checkRateLimit(key: string): {
+export function checkRateLimit(
+  key: string,
+  maxAttempts = MAX_ATTEMPTS
+): {
   ok: boolean;
   retryAfter?: number;
 } {
   const now = Date.now();
+  // Keep memory bounded when many distinct keys are tried.
+  if (attempts.size > MAX_KEYS) {
+    for (const [k, rec] of attempts) {
+      if (now - rec.first > WINDOW_MS) attempts.delete(k);
+    }
+  }
   const rec = attempts.get(key);
   if (!rec || now - rec.first > WINDOW_MS) {
     attempts.set(key, { count: 1, first: now });
     return { ok: true };
   }
   rec.count += 1;
-  if (rec.count > MAX_ATTEMPTS) {
+  if (rec.count > maxAttempts) {
     return {
       ok: false,
       retryAfter: Math.ceil((WINDOW_MS - (now - rec.first)) / 1000),

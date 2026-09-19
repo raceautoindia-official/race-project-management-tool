@@ -2,15 +2,22 @@
 
 import { useEffect, useState } from "react";
 import Modal from "@/components/Modal";
-import { TaskStatusBadge, TaskPriorityBadge } from "@/components/Badge";
+import {
+  ReadOnlyBadge,
+  TaskStatusBadge,
+  TaskPriorityBadge,
+  WorkTypeBadge,
+} from "@/components/Badge";
 import LabelChip from "@/components/LabelChip";
 import Avatar from "@/components/Avatar";
-import { apiFetch } from "@/lib/api-client";
+import { apiFetch, isConflict } from "@/lib/api-client";
 import { useToast } from "@/components/ToastProvider";
 import { ProgressBar } from "@/components/ProgressBar";
 import { taskProgress } from "@/lib/progress";
 import { formatDate, formatRelative, isOverdue } from "@/lib/format";
 import { formatHM, formatMinutes, formatIst } from "@/lib/tz";
+import { canSignOff, signOffBlockers, specFieldsFor } from "@/lib/workflow";
+import { SpecView } from "./WorkSpec";
 
 interface TimeLog {
   id: number;
@@ -50,6 +57,7 @@ export default function TaskDetailModal({
   task,
   currentUser,
   canManage,
+  projectReadOnlyReason,
   members,
   projectTasks,
   onEdit,
@@ -62,6 +70,8 @@ export default function TaskDetailModal({
   task: Task | null;
   currentUser: { id: number; role: Role };
   canManage: boolean;
+  /** Set when the whole project is read-only (pending, rejected, completed). */
+  projectReadOnlyReason: string | null;
   members: ProjectMember[];
   projectTasks: { id: number; title: string; status: TaskStatus }[];
   onEdit: (task: Task) => void;
@@ -91,23 +101,28 @@ export default function TaskDetailModal({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [signOffOpen, setSignOffOpen] = useState(false);
+  const [signOffNote, setSignOffNote] = useState("");
+  const [downloading, setDownloading] = useState(false);
 
-  // The parent keys this modal by task id, so it remounts per task and the
-  // fetches below run once on mount. All state updates happen after `await`.
+  // The parent keys this modal by task id and open state, so it remounts each
+  // time it opens and the fetches below run once per opening (not on every
+  // task change). All state updates happen after `await`.
+  const taskId = task?.id;
   useEffect(() => {
-    if (!task) return;
+    if (!taskId || !open) return;
     let active = true;
     (async () => {
       try {
         const [c, s, d, tl, at] = await Promise.all([
-          apiFetch<{ comments: Comment[] }>(`/api/tasks/${task.id}/comments`),
-          apiFetch<{ subtasks: Subtask[] }>(`/api/tasks/${task.id}/subtasks`),
+          apiFetch<{ comments: Comment[] }>(`/api/tasks/${taskId}/comments`),
+          apiFetch<{ subtasks: Subtask[] }>(`/api/tasks/${taskId}/subtasks`),
           apiFetch<{ dependencies: Dependency[] }>(
-            `/api/tasks/${task.id}/dependencies`
+            `/api/tasks/${taskId}/dependencies`
           ),
-          apiFetch<{ logs: TimeLog[] }>(`/api/tasks/${task.id}/time-logs`),
+          apiFetch<{ logs: TimeLog[] }>(`/api/tasks/${taskId}/time-logs`),
           apiFetch<{ attachments: Attachment[] }>(
-            `/api/tasks/${task.id}/attachments`
+            `/api/tasks/${taskId}/attachments`
           ),
         ]);
         if (active) {
@@ -126,16 +141,30 @@ export default function TaskDetailModal({
     return () => {
       active = false;
     };
-  }, [task]);
+  }, [taskId, open]);
 
   if (!task) return null;
   const currentTask = task;
 
   const isAssignee = currentTask.assignee_id === currentUser.id;
+  // A signed-off task, or any task in a read-only project, can't be changed.
+  const lockReason = currentTask.signed_off_at
+    ? "This task is signed off and read-only."
+    : projectReadOnlyReason;
+  const readOnly = Boolean(lockReason);
   // Managers (admin/lead) manage everything; the assignee may drive execution
   // (status, checklist, logged hours) on their own task.
-  const canEditExecution = canManage || isAssignee;
-  const canDelete = canManage;
+  const canEditExecution = !readOnly && (canManage || isAssignee);
+  const canManageTask = !readOnly && canManage;
+  const canDelete = canManageTask;
+  const isTyped = specFieldsFor(currentTask.task_type).length > 0;
+  const signOffMissing = signOffBlockers(currentTask, { signerIsManager: canManage });
+  // Only an admin/lead can move a task out of Done (it's awaiting sign-off).
+  const canChangeStatus = canEditExecution && (canManage || currentTask.status !== "done");
+  const maySignOff =
+    !readOnly &&
+    currentTask.status === "done" &&
+    canSignOff(currentUser, canManage, currentTask);
   const overdue = isOverdue(currentTask.due_date, currentTask.status);
   const subDone = subtasks.filter((s) => s.is_done).length;
   const subPct = subtasks.length
@@ -150,6 +179,45 @@ export default function TaskDetailModal({
   });
 
   const totalMinutes = timeLogs.reduce((s, l) => s + l.minutes, 0);
+
+  // Someone else changed the task (e.g. signed it off): show the current state.
+  async function reloadIfChanged(e: unknown) {
+    if (!isConflict(e)) return;
+    try {
+      const res = await apiFetch<{ task: Task }>(`/api/tasks/${currentTask.id}`);
+      onChanged(res.task);
+    } catch {
+      // keep the error already shown
+    }
+  }
+
+  async function downloadPdf() {
+    setDownloading(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/tasks/${currentTask.id}/pdf`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? `Could not create the PDF (${res.status})`);
+      }
+      const blob = await res.blob();
+      const name =
+        /filename="([^"]+)"/.exec(res.headers.get("content-disposition") ?? "")?.[1] ??
+        `task-${currentTask.id}.pdf`;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = name;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not download the PDF");
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   async function logTime() {
     const minutes =
@@ -176,6 +244,7 @@ export default function TaskDetailModal({
       });
       toast("Time logged");
     } catch (e) {
+      void reloadIfChanged(e);
       setError(e instanceof Error ? e.message : "Could not log time");
     } finally {
       setSavingLog(false);
@@ -195,6 +264,7 @@ export default function TaskDetailModal({
         status: res.status as TaskStatus,
       });
     } catch (e) {
+      void reloadIfChanged(e);
       toast(e instanceof Error ? e.message : "Could not remove entry", "error");
     }
   }
@@ -228,6 +298,7 @@ export default function TaskDetailModal({
         ]);
       setDepToAdd("");
     } catch (e) {
+      void reloadIfChanged(e);
       toast(e instanceof Error ? e.message : "Could not add blocker", "error");
     }
   }
@@ -239,6 +310,7 @@ export default function TaskDetailModal({
       );
       setDeps((prev) => prev.filter((d) => d.id !== depId));
     } catch (e) {
+      void reloadIfChanged(e);
       toast(e instanceof Error ? e.message : "Could not remove blocker", "error");
     }
   }
@@ -288,6 +360,7 @@ export default function TaskDetailModal({
       onChanged(res.task);
       toast("Status updated");
     } catch (e) {
+      void reloadIfChanged(e);
       setError(e instanceof Error ? e.message : "Could not update status");
     }
   }
@@ -313,6 +386,7 @@ export default function TaskDetailModal({
         comment_count: (currentTask.comment_count ?? 0) + 1,
       });
     } catch (e) {
+      void reloadIfChanged(e);
       setError(e instanceof Error ? e.message : "Could not add comment");
     } finally {
       setBusy(false);
@@ -332,6 +406,7 @@ export default function TaskDetailModal({
       setEditingId(null);
       setEditBody("");
     } catch (e) {
+      void reloadIfChanged(e);
       toast(e instanceof Error ? e.message : "Could not edit comment", "error");
     }
   }
@@ -345,6 +420,7 @@ export default function TaskDetailModal({
         comment_count: Math.max(0, (currentTask.comment_count ?? 1) - 1),
       });
     } catch (e) {
+      void reloadIfChanged(e);
       toast(e instanceof Error ? e.message : "Could not delete comment", "error");
     }
   }
@@ -375,6 +451,7 @@ export default function TaskDetailModal({
       await apiFetch(`/api/attachments/${attId}`, { method: "DELETE" });
       setAttachments((prev) => prev.filter((a) => a.id !== attId));
     } catch (e) {
+      void reloadIfChanged(e);
       toast(e instanceof Error ? e.message : "Could not remove file", "error");
     }
   }
@@ -392,6 +469,7 @@ export default function TaskDetailModal({
       setNewSub("");
       syncCounts(list);
     } catch (e) {
+      void reloadIfChanged(e);
       toast(e instanceof Error ? e.message : "Could not add subtask", "error");
     }
   }
@@ -406,6 +484,7 @@ export default function TaskDetailModal({
       setSubtasks(list);
       syncCounts(list);
     } catch (e) {
+      void reloadIfChanged(e);
       toast(e instanceof Error ? e.message : "Could not update subtask", "error");
     }
   }
@@ -417,7 +496,28 @@ export default function TaskDetailModal({
       setSubtasks(list);
       syncCounts(list);
     } catch (e) {
+      void reloadIfChanged(e);
       toast(e instanceof Error ? e.message : "Could not delete subtask", "error");
+    }
+  }
+
+  async function signOff() {
+    if (signOffMissing.length) return;
+    setBusy(true);
+    setError("");
+    try {
+      const res = await apiFetch<{ task: Task }>(
+        `/api/tasks/${currentTask.id}/signoff`,
+        { method: "POST", body: JSON.stringify({ note: signOffNote || null }) }
+      );
+      onChanged(res.task);
+      setSignOffOpen(false);
+      toast("Signed off — this task is now read-only");
+    } catch (e) {
+      void reloadIfChanged(e);
+      setError(e instanceof Error ? e.message : "Could not sign off");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -444,8 +544,10 @@ export default function TaskDetailModal({
       )}
 
       <div className="flex flex-wrap items-center gap-2">
+        <WorkTypeBadge type={currentTask.task_type} />
         <TaskStatusBadge status={currentTask.status} />
         <TaskPriorityBadge priority={currentTask.priority} />
+        {currentTask.signed_off_at && <ReadOnlyBadge />}
         {Boolean(currentTask.is_additional) && (
           <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-700">
             Additional work
@@ -459,8 +561,33 @@ export default function TaskDetailModal({
         {currentTask.labels?.map((l) => (
           <LabelChip key={l.id} name={l.name} color={l.color} />
         ))}
-        <div className="ml-auto flex gap-2">
-          {canManage && currentTask.status === "done" && (
+        <div className="ml-auto flex flex-wrap gap-2">
+          <button
+            onClick={downloadPdf}
+            disabled={downloading}
+            className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60"
+          >
+            {downloading ? "Preparing PDF…" : "Download PDF"}
+          </button>
+          {currentTask.due_date && (
+            <a
+              href={`/api/tasks/${currentTask.id}/ics`}
+              download
+              className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+            >
+              📅 Add to calendar
+            </a>
+          )}
+          {maySignOff && (
+            <button
+              onClick={() => setSignOffOpen((v) => !v)}
+              aria-expanded={signOffOpen}
+              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700"
+            >
+              Sign off
+            </button>
+          )}
+          {canManage && !projectReadOnlyReason && currentTask.status === "done" && (
             <button
               onClick={() => onAddFollowUp(currentTask)}
               className="rounded-lg border border-violet-200 px-3 py-1.5 text-sm font-medium text-violet-700 hover:bg-violet-50"
@@ -468,7 +595,7 @@ export default function TaskDetailModal({
               + Follow-up work
             </button>
           )}
-          {canManage && (
+          {canManageTask && (
             <button
               onClick={() => onEdit(currentTask)}
               className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
@@ -488,15 +615,100 @@ export default function TaskDetailModal({
         </div>
       </div>
 
-      <p className="mt-4 whitespace-pre-wrap text-sm text-slate-700">
-        {currentTask.description || (
-          <span className="text-slate-400">No description.</span>
-        )}
-      </p>
+      {lockReason && (
+        <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          <span aria-hidden="true">🔒 </span>
+          {lockReason}
+          {currentTask.signed_off_at && (
+            <>
+              {" "}Signed off by <strong>{currentTask.signer_name ?? "—"}</strong> on{" "}
+              {formatIst(String(currentTask.signed_off_at))}
+              {currentTask.signoff_note ? ` — “${currentTask.signoff_note}”` : ""}
+            </>
+          )}
+        </div>
+      )}
+
+      {signOffOpen && maySignOff && (
+        <div className="mt-4 rounded-lg border border-emerald-200 bg-white p-3">
+          <h3 className="text-sm font-semibold text-slate-800">Sign off this task</h3>
+          {signOffMissing.length > 0 ? (
+            <>
+              <p className="mt-1 text-sm text-slate-600">
+                These are mandatory before sign-off:
+              </p>
+              <ul className="mt-1 list-disc pl-5 text-sm text-red-700">
+                {signOffMissing.map((b) => (
+                  <li key={b}>{b}</li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <>
+              <p className="mt-1 text-sm text-slate-600">
+                Confirm the work meets its{" "}
+                {currentTask.task_type === "correction" ? "acceptance criteria" : "specification"}.
+                Signing off makes this task and everything on it{" "}
+                <strong>permanently read-only</strong>.
+              </p>
+              <label htmlFor="signoff-note" className="mt-2 block text-xs text-slate-600">
+                Note (optional)
+              </label>
+              <textarea
+                id="signoff-note"
+                rows={2}
+                maxLength={1000}
+                value={signOffNote}
+                onChange={(e) => setSignOffNote(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              />
+            </>
+          )}
+          <div className="mt-2 flex justify-end gap-2">
+            <button
+              onClick={() => setSignOffOpen(false)}
+              className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={signOff}
+              disabled={busy || signOffMissing.length > 0}
+              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+            >
+              {busy ? "Signing off…" : "Confirm sign-off"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <ApprovalTrail task={currentTask} />
+
+      {isTyped ? (
+        <div className="mt-4 rounded-lg border border-slate-200 p-3">
+          <SpecView item={currentTask} />
+          {currentTask.description && (
+            <div className="mt-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Notes
+              </div>
+              <p className="mt-0.5 whitespace-pre-wrap text-sm text-slate-700">
+                {currentTask.description}
+              </p>
+            </div>
+          )}
+        </div>
+      ) : (
+        <p className="mt-4 whitespace-pre-wrap text-sm text-slate-700">
+          {currentTask.description || (
+            <span className="text-slate-500">No description.</span>
+          )}
+        </p>
+      )}
 
       {/* Progress */}
       <div className="mt-4">
-        <div className="mb-1 flex items-center justify-between text-xs text-slate-500">
+        <div className="mb-1 flex items-center justify-between text-xs text-slate-600">
           <span>Progress</span>
           <span className="font-medium text-slate-600">{progress}%</span>
         </div>
@@ -519,7 +731,7 @@ export default function TaskDetailModal({
             <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
               <div>
                 <span className="font-medium text-slate-700">Time</span>
-                <span className="ml-2 text-slate-500">
+                <span className="ml-2 text-slate-600">
                   {formatMinutes(totalMinutes)} logged
                   {estMin > 0 ? ` of ${formatHM(currentTask.estimated_hours)} est.` : ""}
                 </span>
@@ -539,8 +751,11 @@ export default function TaskDetailModal({
             {canEditExecution && (
               <div className="mt-3 flex flex-wrap items-end gap-2">
                 <div>
-                  <label className="block text-xs text-slate-500">Hours</label>
+                  <label htmlFor="log-hours" className="block text-xs text-slate-600">
+                    Hours
+                  </label>
                   <input
+                    id="log-hours"
                     type="number"
                     min="0"
                     value={logH}
@@ -550,8 +765,11 @@ export default function TaskDetailModal({
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-500">Minutes</label>
+                  <label htmlFor="log-minutes" className="block text-xs text-slate-600">
+                    Minutes
+                  </label>
                   <input
+                    id="log-minutes"
                     type="number"
                     min="0"
                     max="59"
@@ -584,12 +802,12 @@ export default function TaskDetailModal({
                     <span className="font-medium text-slate-700">
                       {formatMinutes(l.minutes)}
                     </span>
-                    <span className="text-slate-400">{l.user_name ?? "—"}</span>
-                    {l.note && <span className="text-slate-500">· {l.note}</span>}
-                    <span className="ml-auto text-slate-400">
+                    <span className="text-slate-500">{l.user_name ?? "—"}</span>
+                    {l.note && <span className="text-slate-600">· {l.note}</span>}
+                    <span className="ml-auto text-slate-500">
                       {formatIst(l.logged_at)}
                     </span>
-                    {(canManage || l.user_id === currentUser.id) && (
+                    {!readOnly && (canManage || l.user_id === currentUser.id) && (
                       <button
                         onClick={() => deleteLog(l.id)}
                         className="text-slate-300 hover:text-red-500"
@@ -607,11 +825,11 @@ export default function TaskDetailModal({
       })()}
 
       {/* Blocked by (dependencies) */}
-      {(deps.length > 0 || canManage) && (
+      {(deps.length > 0 || canManageTask) && (
         <div className="mt-4">
           <h3 className="mb-1 text-sm font-semibold text-slate-700">Blocked by</h3>
           {deps.length === 0 ? (
-            <p className="text-xs text-slate-400">No dependencies.</p>
+            <p className="text-xs text-slate-500">No dependencies.</p>
           ) : (
             <ul className="space-y-1">
               {deps.map((d) => (
@@ -621,13 +839,13 @@ export default function TaskDetailModal({
                       d.done ? "bg-green-500" : "bg-red-500"
                     }`}
                   />
-                  <span className={d.done ? "text-slate-400 line-through" : "text-slate-700"}>
+                  <span className={d.done ? "text-slate-500 line-through" : "text-slate-700"}>
                     {d.title}
                   </span>
-                  <span className="text-xs text-slate-400">
+                  <span className="text-xs text-slate-500">
                     {TASK_STATUS_LABELS[d.status]}
                   </span>
-                  {canManage && (
+                  {canManageTask && (
                     <button
                       onClick={() => removeDependency(d.id)}
                       className="ml-auto text-xs text-slate-300 hover:text-red-500"
@@ -640,9 +858,10 @@ export default function TaskDetailModal({
               ))}
             </ul>
           )}
-          {canManage && depCandidates.length > 0 && (
+          {canManageTask && depCandidates.length > 0 && (
             <div className="mt-2 flex gap-2">
               <select
+                aria-label="Add a blocking task"
                 value={depToAdd}
                 onChange={(e) => setDepToAdd(e.target.value)}
                 className="flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
@@ -668,7 +887,7 @@ export default function TaskDetailModal({
 
       <dl className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
         <div>
-          <dt className="text-xs text-slate-400">Assignee</dt>
+          <dt className="text-xs text-slate-500">Assignee</dt>
           <dd className="flex items-center gap-1.5 font-medium text-slate-700">
             {currentTask.assignee_name ? (
               <>
@@ -681,24 +900,25 @@ export default function TaskDetailModal({
           </dd>
         </div>
         <div>
-          <dt className="text-xs text-slate-400">Due date</dt>
+          <dt className="text-xs text-slate-500">Due date</dt>
           <dd className={`font-medium ${overdue ? "text-red-600" : "text-slate-700"}`}>
             {currentTask.due_date ? formatDate(currentTask.due_date) : "—"}
           </dd>
         </div>
         <div>
-          <dt className="text-xs text-slate-400">Created by</dt>
+          <dt className="text-xs text-slate-500">Created by</dt>
           <dd className="font-medium text-slate-700">
             {currentTask.creator_name ?? "—"}
           </dd>
         </div>
         <div>
-          <dt className="text-xs text-slate-400">
-            {canEditExecution ? "Move to" : "Status"}
+          <dt className="text-xs text-slate-500">
+            {canChangeStatus ? "Move to" : "Status"}
           </dt>
           <dd>
-            {canEditExecution ? (
+            {canChangeStatus ? (
               <select
+                aria-label="Task status"
                 value={currentTask.status}
                 onChange={(e) => changeStatus(e.target.value as TaskStatus)}
                 className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none"
@@ -746,7 +966,7 @@ export default function TaskDetailModal({
               />
               <span
                 className={`flex-1 text-sm ${
-                  s.is_done ? "text-slate-400 line-through" : "text-slate-700"
+                  s.is_done ? "text-slate-500 line-through" : "text-slate-700"
                 }`}
               >
                 {s.title}
@@ -794,18 +1014,18 @@ export default function TaskDetailModal({
                 key={a.id}
                 className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-1.5 text-sm"
               >
-                <span className="text-slate-400">📎</span>
+                <span className="text-slate-500">📎</span>
                 <a
                   href={`/api/attachments/${a.id}`}
                   className="truncate font-medium text-indigo-600 hover:underline"
                 >
                   {a.filename}
                 </a>
-                <span className="text-xs text-slate-400">
+                <span className="text-xs text-slate-500">
                   {fmtBytes(Number(a.size_bytes))}
                   {a.uploader_name ? ` · ${a.uploader_name}` : ""}
                 </span>
-                {(canManage || a.uploaded_by === currentUser.id) && (
+                {!readOnly && (canManage || a.uploaded_by === currentUser.id) && (
                   <button
                     onClick={() => deleteAttachment(a.id)}
                     className="ml-auto text-xs text-slate-300 hover:text-red-500"
@@ -818,20 +1038,24 @@ export default function TaskDetailModal({
             ))}
           </ul>
         )}
-        <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
-          {uploading ? "Uploading…" : "+ Attach file"}
-          <input
-            type="file"
-            className="hidden"
-            disabled={uploading}
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) uploadFile(f);
-              e.target.value = "";
-            }}
-          />
-        </label>
-        <span className="ml-2 text-xs text-slate-400">Max 10 MB</span>
+        {!readOnly && (
+          <>
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
+              {uploading ? "Uploading…" : "+ Attach file"}
+              <input
+                type="file"
+                className="hidden"
+                disabled={uploading}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) uploadFile(f);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            <span className="ml-2 text-xs text-slate-500">Max 10 MB</span>
+          </>
+        )}
       </div>
 
       {/* Comments */}
@@ -840,14 +1064,14 @@ export default function TaskDetailModal({
           Comments ({comments.length})
         </h3>
         {loading ? (
-          <p className="text-sm text-slate-400">Loading…</p>
+          <p className="text-sm text-slate-500">Loading…</p>
         ) : comments.length === 0 ? (
-          <p className="text-sm text-slate-400">No comments yet.</p>
+          <p className="text-sm text-slate-500">No comments yet.</p>
         ) : (
           <ul className="space-y-3">
             {comments.map((c) => {
               const mine = c.user_id === currentUser.id;
-              const canDel = mine || canManage;
+              const canDel = !readOnly && (mine || canManage);
               return (
                 <li key={c.id} className="flex gap-2">
                   <Avatar name={c.user_name ?? "?"} size="sm" />
@@ -856,7 +1080,7 @@ export default function TaskDetailModal({
                       <span className="text-sm font-medium text-slate-700">
                         {c.user_name}
                       </span>
-                      <span className="text-xs text-slate-400">
+                      <span className="text-xs text-slate-500">
                         {formatRelative(c.created_at)}
                         {c.edited_at ? " · edited" : ""}
                       </span>
@@ -879,7 +1103,7 @@ export default function TaskDetailModal({
                             setEditingId(null);
                             setEditBody("");
                           }}
-                          className="text-xs text-slate-400 hover:text-slate-600"
+                          className="text-xs text-slate-500 hover:text-slate-600"
                         >
                           Cancel
                         </button>
@@ -890,7 +1114,7 @@ export default function TaskDetailModal({
                           {c.body}
                         </p>
                         {canDel && (
-                          <div className="mt-1 flex gap-3 text-xs text-slate-400">
+                          <div className="mt-1 flex gap-3 text-xs text-slate-500">
                             {mine && (
                               <button
                                 onClick={() => {
@@ -919,6 +1143,7 @@ export default function TaskDetailModal({
           </ul>
         )}
 
+        {!readOnly && (
         <form onSubmit={addComment} className="mt-4 flex gap-2">
           <div className="relative flex-1">
             <input
@@ -950,7 +1175,80 @@ export default function TaskDetailModal({
             Send
           </button>
         </form>
+        )}
       </div>
     </Modal>
+  );
+}
+
+/** Requested → approved → owner → completed → signed off, with who and when. */
+function ApprovalTrail({ task }: { task: Task }) {
+  const steps: {
+    label: string;
+    who: string | null | undefined;
+    when?: string | null;
+    done: boolean;
+  }[] = [
+    {
+      label: "Requested by",
+      who: task.requester_name,
+      when: task.requested_at,
+      done: Boolean(task.requested_by),
+    },
+    {
+      label: "Approved by",
+      who: task.request_approver_name,
+      when: task.request_approved_at,
+      done: Boolean(task.request_approved_by),
+    },
+    { label: "Assigned owner", who: task.assignee_name, done: Boolean(task.assignee_id) },
+    {
+      label: "Completed",
+      who: task.status === "done" ? task.done_by_name ?? "Done" : null,
+      when: task.completed_at,
+      done: task.status === "done",
+    },
+    {
+      label: "Signed off by",
+      who: task.signer_name,
+      when: task.signed_off_at,
+      done: Boolean(task.signed_off_at),
+    },
+  ];
+  return (
+    <section aria-label="Approval trail" className="mt-4">
+      <h3 className="mb-2 text-sm font-semibold text-slate-700">Approval trail</h3>
+      <ol className="grid grid-cols-1 gap-2 sm:grid-cols-5">
+        {steps.map((s) => (
+          <li
+            key={s.label}
+            className={`min-w-0 rounded-lg border px-2.5 py-2 ${
+              s.done ? "border-emerald-200 bg-emerald-50/60" : "border-dashed border-slate-300"
+            }`}
+          >
+            <div className="flex items-center gap-1.5 text-xs text-slate-600">
+              <span
+                aria-hidden="true"
+                className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] ${
+                  s.done ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-600"
+                }`}
+              >
+                {s.done ? "✓" : ""}
+              </span>
+              {s.label}
+            </div>
+            <div
+              className="mt-0.5 truncate text-sm font-medium text-slate-800"
+              title={s.who ?? undefined}
+            >
+              {s.who || <span className="font-normal text-slate-500">Pending</span>}
+            </div>
+            {s.when && (
+              <div className="text-[11px] text-slate-500">{formatIst(String(s.when))}</div>
+            )}
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }

@@ -1,4 +1,3 @@
-import { NextRequest } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { query, DbRow } from "@/lib/db";
 import { json, errorResponse } from "@/lib/http";
@@ -6,7 +5,7 @@ import { json, errorResponse } from "@/lib/http";
 export const dynamic = "force-dynamic";
 
 /** GET /api/presence — admin-only live team presence + activity counts. */
-export async function GET(_req: NextRequest) {
+export async function GET() {
   try {
     await requireAdmin();
     const rows = await query<DbRow[]>(

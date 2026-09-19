@@ -1,4 +1,10 @@
 import { z } from "zod";
+import {
+  missingSpecFields,
+  specBodyKey,
+  specFromBody,
+} from "./workflow";
+import type { WorkType } from "./types";
 
 // Coerce "" / undefined / null to null, otherwise a positive int id.
 export const optionalId = z.preprocess(
@@ -21,6 +27,46 @@ export const optionalText = z
   .optional()
   .nullable();
 
+// Coerce "" / whitespace / null / undefined to null, otherwise a positive int
+// id; a missing value fails with `message`.
+const requiredId = (message: string) =>
+  z.preprocess(
+    (v) => (v === "" || v === undefined || v === null ? undefined : v),
+    z.coerce.number({ error: message }).int().positive(message)
+  );
+
+// Spec text: blank → null, otherwise trimmed text.
+const specText = z
+  .preprocess(
+    (v) => (typeof v === "string" ? v.trim() || null : v ?? null),
+    z.string().max(5000).nullable()
+  )
+  .optional();
+
+const specShape = {
+  existingBehavior: specText,
+  expectedBehavior: specText,
+  acceptanceCriteria: specText,
+  reason: specText,
+  scope: specText,
+  features: specText,
+  flow: specText,
+  rules: specText,
+};
+
+/** Issues for the required spec fields of `taskType` that are blank. */
+function specIssues(d: { taskType?: WorkType } & Record<string, unknown>) {
+  return missingSpecFields(d.taskType, specFromBody(d)).map((f) => ({
+    code: "custom" as const,
+    path: [specBodyKey(f.key)],
+    message: `${f.label} is required`,
+  }));
+}
+
+const specTypeField = z.enum(["correction", "feature"], {
+  error: "Choose a type: existing work correction or new feature",
+});
+
 // ---- Auth ----
 // Credentials are federated to the parent Attendance app: users sign in with
 // their attendance Employee ID + numeric PIN (validated against attendance.employees).
@@ -39,7 +85,25 @@ export const createProjectSchema = z.object({
   status: z.enum(["active", "completed", "archived"]).optional(),
   ownerId: optionalId.optional(),
   memberIds: z.array(z.coerce.number().int().positive()).optional(),
+  // Non-admins request a project: the nominated lead approves it.
+  leadId: optionalId.optional(),
 });
+
+/** Approve / reject a pending request. A rejection must say why. */
+export const decisionSchema = z
+  .object({
+    decision: z.enum(["approve", "reject"]),
+    note: z.string().trim().max(1000).optional().nullable(),
+  })
+  .superRefine((d, ctx) => {
+    if (d.decision === "reject" && !d.note) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["note"],
+        message: "Give a reason for rejecting",
+      });
+    }
+  });
 
 export const updateProjectSchema = z
   .object({
@@ -66,25 +130,37 @@ export const optionalHours = z.preprocess(
   z.coerce.number().min(0).max(9999).nullable()
 );
 
-export const createTaskSchema = z.object({
-  title: z.string().min(1).max(200),
-  description: optionalText,
-  status: z.enum(["todo", "in_progress", "review", "done"]).optional(),
-  priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
-  estimatedHours: optionalHours.optional(),
-  assigneeId: optionalId.optional(),
-  dueDate: optionalDate.optional(),
-  startDate: optionalDate.optional(),
-  labelIds: labelIdsField,
-  // #7 — additional / follow-up work raised after a task or project completed.
-  parentTaskId: optionalId.optional(),
-  isAdditional: z.boolean().optional(),
-});
+// Tasks created by an admin/lead: one of the two spec types, with the
+// requester and assigned owner mandatory (the creator is the approver).
+export const createTaskSchema = z
+  .object({
+    taskType: specTypeField,
+    title: z.string().trim().min(1, "Title is required").max(200),
+    description: optionalText,
+    ...specShape,
+    requestedById: optionalId.optional(),
+    status: z.enum(["todo", "in_progress", "review", "done"]).optional(),
+    priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
+    estimatedHours: optionalHours.optional(),
+    assigneeId: requiredId("An assigned owner is required"),
+    dueDate: optionalDate.optional(),
+    startDate: optionalDate.optional(),
+    labelIds: labelIdsField,
+    // #7 — additional / follow-up work raised after a task or project completed.
+    parentTaskId: optionalId.optional(),
+    isAdditional: z.boolean().optional(),
+  })
+  .superRefine((d, ctx) => specIssues(d).forEach((i) => ctx.addIssue(i)));
 
+// Required spec fields are checked in the route against the merged task, so a
+// partial update cannot blank them out.
 export const updateTaskSchema = z
   .object({
-    title: z.string().min(1).max(200).optional(),
+    title: z.string().trim().min(1).max(200).optional(),
     description: optionalText,
+    taskType: specTypeField.optional(),
+    ...specShape,
+    requestedById: optionalId.optional(),
     status: z.enum(["todo", "in_progress", "review", "done"]).optional(),
     priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
     estimatedHours: optionalHours.optional(),
@@ -96,6 +172,47 @@ export const updateTaskSchema = z
   .refine((d) => Object.keys(d).length > 0, {
     message: "No fields to update",
   });
+
+// ---- Task requests (raised by members, approved by a lead) ----
+export const createTaskRequestSchema = z
+  .object({
+    taskType: specTypeField,
+    title: z.string().trim().min(1, "Title is required").max(200),
+    ...specShape,
+  })
+  .superRefine((d, ctx) => specIssues(d).forEach((i) => ctx.addIssue(i)));
+
+/** Approving a request turns it into a task, so it needs an assigned owner. */
+export const taskRequestDecisionSchema = z
+  .object({
+    decision: z.enum(["approve", "reject"]),
+    note: z.string().trim().max(1000).optional().nullable(),
+    assigneeId: optionalId.optional(),
+    priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
+    estimatedHours: optionalHours.optional(),
+    dueDate: optionalDate.optional(),
+    startDate: optionalDate.optional(),
+  })
+  .superRefine((d, ctx) => {
+    if (d.decision === "approve" && !d.assigneeId) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["assigneeId"],
+        message: "Choose an assigned owner to approve this request",
+      });
+    }
+    if (d.decision === "reject" && !d.note) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["note"],
+        message: "Give a reason for rejecting",
+      });
+    }
+  });
+
+export const signOffSchema = z.object({
+  note: z.string().trim().max(1000).optional().nullable(),
+});
 
 // ---- Reminders / scheduled activities (Wave 11) ----
 export const createReminderSchema = z.object({
@@ -176,6 +293,14 @@ export const updateSubtaskSchema = z
 // ---- Profile ----
 export const updateProfileSchema = z.object({
   name: z.string().min(1).max(120),
+  /** E.164-ish; blank clears it. Checked properly in lib/whatsapp.ts. */
+  phone: z
+    .string()
+    .max(20)
+    .regex(/^\+?[\d\s()-]*$/, "Use digits, spaces and + only")
+    .optional()
+    .nullable(),
+  whatsappOptIn: z.boolean().optional(),
 });
 
 // ---- Comments ----
@@ -210,6 +335,10 @@ export const createMeetingSchema = z.object({
   ),
   recurrence: z.enum(["none", "daily", "weekly", "monthly"]).optional(),
   attendeeIds: z.array(z.coerce.number().int().positive()).optional(),
+  durationMinutes: z.coerce.number().int().min(5).max(720).optional(),
+  /** "room" creates a room in the meetings app; "link" uses videoUrl; "none". */
+  video: z.enum(["none", "room", "link"]).optional(),
+  videoUrl: z.string().max(500).optional().nullable(),
 });
 
 // ---- Recurring tasks + project templates (Wave 12) ----

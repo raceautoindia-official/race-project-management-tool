@@ -1,9 +1,17 @@
 import { NextRequest } from "next/server";
 import { query, DbRow, DbResult } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
-import { json, errorResponse } from "@/lib/http";
+import { json, errorResponse, ApiError } from "@/lib/http";
+import { assertProjectAccess } from "@/lib/rbac";
 import { createMeetingSchema } from "@/lib/validation";
 import { logActivity, notify } from "@/lib/activity";
+import {
+  createRemoteMeeting,
+  isSafeVideoUrl,
+  meetingRoomUrl,
+  meetingsApiConfigured,
+  newRoomId,
+} from "@/lib/video";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +44,7 @@ async function attachAttendees(meetings: DbRow[]): Promise<void> {
   for (const m of meetings) m.attendees = byMeeting.get(m.id as number) ?? [];
 }
 
-export async function GET(_req: NextRequest) {
+export async function GET() {
   try {
     const user = await requireUser();
 
@@ -52,6 +60,7 @@ export async function GET(_req: NextRequest) {
 
     const meetings = await query<DbRow[]>(
       `SELECT m.id, m.title, m.description, m.project_id, m.location,
+              m.video_url, m.video_room_id, m.duration_minutes,
               m.start_time, m.reminder_minutes, m.recurrence, m.created_by, m.created_at,
               p.name AS project_name, u.name AS creator_name
          FROM meetings m
@@ -72,18 +81,80 @@ export async function POST(req: NextRequest) {
   try {
     const user = await requireUser();
     const data = createMeetingSchema.parse(await req.json().catch(() => ({})));
+    // You can only attach a meeting to a project you can see.
+    if (data.projectId) await assertProjectAccess(user, data.projectId);
+    const invited = [...new Set(data.attendeeIds ?? [])].filter((id) => id !== user.id);
+    if (invited.length) {
+      const [found] = await query<DbRow[]>(
+        `SELECT COUNT(*) AS n FROM users WHERE is_active = TRUE AND id IN (${invited.map(() => "?").join(",")})`,
+        invited
+      );
+      if (Number(found.n) !== invited.length) {
+        throw new ApiError(400, "Every attendee must be an active user");
+      }
+    }
+
+    // Attendees: the chosen users plus the organizer, de-duplicated.
+    const attendeeSet = new Set<number>(data.attendeeIds ?? []);
+    attendeeSet.add(user.id);
+
+    // Video call: a room in the company meetings app, a link the organizer
+    // already has (Zoom/Meet/Teams), or none.
+    let videoRoomId: string | null = null;
+    let videoUrl: string | null = null;
+    let videoWarning: string | null = null;
+    if (data.video === "room") {
+      const people = await query<DbRow[]>(
+        `SELECT id, name, email FROM users WHERE id IN (${[...attendeeSet].map(() => "?").join(",")})`,
+        [...attendeeSet]
+      );
+      const host = people.find((p) => p.id === user.id);
+      // Schedule it in the meetings app itself, so it shows up there with its
+      // host and invitees. If that isn't configured (or is unreachable), fall
+      // back to a plain room link — the room is created on first join.
+      const remote = await createRemoteMeeting({
+        title: data.title,
+        scheduledAt: toMysqlDateTime(data.startTime),
+        durationMins: data.durationMinutes ?? 30,
+        host: { name: String(host?.name ?? user.name), email: (host?.email as string) ?? null },
+        invitees: people
+          .filter((p) => p.id !== user.id)
+          .map((p) => ({ name: String(p.name), email: (p.email as string) ?? null })),
+      });
+      if (remote) {
+        videoRoomId = remote.roomId;
+        videoUrl = remote.joinUrl;
+      } else {
+        videoRoomId = newRoomId(data.title);
+        videoUrl = meetingRoomUrl(videoRoomId);
+        if (meetingsApiConfigured()) {
+          videoWarning = host?.email
+            ? "The meetings app couldn't be reached, so the room link was created without scheduling it there."
+            : "Your profile has no email address, so the meeting couldn't be scheduled in the meetings app — the room link still works.";
+        }
+      }
+    } else if (data.video === "link") {
+      const link = (data.videoUrl ?? "").trim();
+      if (!link || !isSafeVideoUrl(link)) {
+        throw new ApiError(400, "Enter a valid meeting link (https://…)");
+      }
+      videoUrl = link;
+    }
 
     const result = (await query<DbResult>(
       `INSERT INTO meetings
-         (title, description, project_id, location, start_time, reminder_minutes,
-          recurrence, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+         (title, description, project_id, location, video_url, video_room_id,
+          start_time, duration_minutes, reminder_minutes, recurrence, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         data.title,
         data.description ?? null,
         data.projectId ?? null,
         data.location ?? null,
+        videoUrl,
+        videoRoomId,
         toMysqlDateTime(data.startTime),
+        data.durationMinutes ?? 30,
         data.reminderMinutes ?? null,
         data.recurrence ?? "none",
         user.id,
@@ -99,9 +170,6 @@ export async function POST(req: NextRequest) {
       ]);
     }
 
-    // Attendees: the chosen users plus the creator, de-duplicated.
-    const attendeeSet = new Set<number>(data.attendeeIds ?? []);
-    attendeeSet.add(user.id);
     for (const uid of attendeeSet) {
       await query(
         `INSERT IGNORE INTO meeting_attendees (meeting_id, user_id) VALUES (?, ?)`,
@@ -123,7 +191,7 @@ export async function POST(req: NextRequest) {
         await notify(
           uid,
           "meeting_invite",
-          `You were invited to "${data.title}"`,
+          `You were invited to "${data.title}"${videoUrl ? " (video call)" : ""}`,
           `/meetings`
         );
       }
@@ -131,6 +199,7 @@ export async function POST(req: NextRequest) {
 
     const rows = await query<DbRow[]>(
       `SELECT m.id, m.title, m.description, m.project_id, m.location,
+              m.video_url, m.video_room_id, m.duration_minutes,
               m.start_time, m.reminder_minutes, m.recurrence, m.created_by, m.created_at,
               p.name AS project_name, u.name AS creator_name
          FROM meetings m
@@ -140,7 +209,7 @@ export async function POST(req: NextRequest) {
       [meetingId]
     );
     await attachAttendees(rows);
-    return json({ meeting: rows[0] }, 201);
+    return json({ meeting: rows[0], videoWarning }, 201);
   } catch (err) {
     return errorResponse(err);
   }

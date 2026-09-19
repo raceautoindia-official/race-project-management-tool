@@ -30,13 +30,17 @@ export default async function AdminHomePage() {
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {/* Accounts, roles and PINs live in the Attendance app; PMApp mirrors
+            them on login and on `npm run seed`, so there is nothing to manage
+            here — this used to link to a page that does not exist. */}
         <Link
-          href="/admin/users"
+          href="/team"
           className="rounded-xl border border-slate-200 bg-white p-6 hover:border-indigo-300 hover:shadow-sm"
         >
-          <div className="text-lg font-semibold text-slate-800">User management →</div>
-          <p className="mt-1 text-sm text-slate-500">
-            Create accounts, assign roles, deactivate users, and reset passwords.
+          <div className="text-lg font-semibold text-slate-800">People →</div>
+          <p className="mt-1 text-sm text-slate-600">
+            Everyone synced from the Attendance app, with their workload and status.
+            Accounts, roles and PINs are managed there.
           </p>
         </Link>
         <Link
@@ -44,7 +48,7 @@ export default async function AdminHomePage() {
           className="rounded-xl border border-slate-200 bg-white p-6 hover:border-indigo-300 hover:shadow-sm"
         >
           <div className="text-lg font-semibold text-slate-800">Activity log →</div>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-slate-600">
             Full audit trail of logins, project and task changes.
           </p>
         </Link>
@@ -54,24 +58,24 @@ export default async function AdminHomePage() {
         <SectionCard
           title="Recent activity"
           action={
-            <Link href="/admin/activity" className="text-sm font-medium text-indigo-600 hover:underline">
+            <Link href="/admin/activity" className="inline-block py-1 text-sm font-medium text-indigo-600 hover:underline">
               View all
             </Link>
           }
         >
           {data.recentActivity.length === 0 ? (
-            <p className="text-sm text-slate-400">No activity yet.</p>
+            <p className="text-sm text-slate-500">No activity yet.</p>
           ) : (
             <ul className="divide-y divide-slate-100">
               {data.recentActivity.map((a) => (
                 <li key={a.id} className="flex items-center justify-between py-2 text-sm">
                   <span className="text-slate-700">
                     <span className="font-medium">{a.user_name ?? "System"}</span>{" "}
-                    <span className="text-slate-500">
+                    <span className="text-slate-600">
                       {humanizeAction(a.action).toLowerCase()}
                     </span>
                   </span>
-                  <span className="text-xs text-slate-400">
+                  <span className="text-xs text-slate-500">
                     {formatRelative(a.created_at)}
                   </span>
                 </li>

@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { query, DbRow } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { json, errorResponse, ApiError } from "@/lib/http";
-import { assertTaskEdit } from "@/lib/rbac";
+import { assertTaskEdit, assertTaskWritable } from "@/lib/rbac";
 import { updateSubtaskSchema } from "@/lib/validation";
 
 type Params = { params: Promise<{ id: string }> };
@@ -31,6 +31,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       project_id: sub.project_id,
       assignee_id: sub.assignee_id,
     });
+    await assertTaskWritable(sub.task_id);
 
     const body = await req.json().catch(() => ({}));
     const data = updateSubtaskSchema.parse(body);
@@ -75,6 +76,7 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
       project_id: sub.project_id,
       assignee_id: sub.assignee_id,
     });
+    await assertTaskWritable(sub.task_id);
 
     await query(`DELETE FROM subtasks WHERE id = ?`, [subtaskId]);
     return json({ ok: true });

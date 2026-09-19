@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { safeNextPath } from "@/lib/safe-redirect";
 import { apiFetch } from "@/lib/api-client";
 
 export default function LoginPage() {
@@ -22,7 +23,7 @@ export default function LoginPage() {
       });
       const params = new URLSearchParams(window.location.search);
       const next = params.get("next");
-      router.push(next && next.startsWith("/") ? next : "/dashboard");
+      router.push(safeNextPath(next));
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
@@ -37,23 +38,24 @@ export default function LoginPage() {
           <div className="text-2xl font-bold text-slate-900">
             PM<span className="text-indigo-500">App</span>
           </div>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-slate-600">
             Sign in with your Attendance account
           </p>
         </div>
 
         {error && (
-          <div className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+          <div role="alert" className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}
           </div>
         )}
 
         <form onSubmit={onSubmit} className="space-y-4">
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">
+            <label htmlFor="login-emp-id" className="mb-1 block text-sm font-medium text-slate-700">
               Employee ID
             </label>
             <input
+              id="login-emp-id"
               type="text"
               required
               autoComplete="username"
@@ -64,10 +66,11 @@ export default function LoginPage() {
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">
+            <label htmlFor="login-pin" className="mb-1 block text-sm font-medium text-slate-700">
               PIN
             </label>
             <input
+              id="login-pin"
               type="password"
               required
               inputMode="numeric"
@@ -87,7 +90,7 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p className="mt-6 text-center text-xs text-slate-400">
+        <p className="mt-6 text-center text-xs text-slate-500">
           Accounts are managed in the Attendance app. Use the same Employee ID
           and PIN you use there.
         </p>

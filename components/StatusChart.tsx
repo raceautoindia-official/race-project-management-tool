@@ -26,7 +26,7 @@ function Tip({ active, payload, total }: TipProps & { total: number }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs shadow-sm">
       <span className="font-medium text-slate-700">{d.name}</span>
-      <span className="ml-2 text-slate-500">
+      <span className="ml-2 text-slate-600">
         {d.value} ({pct}%)
       </span>
     </div>
@@ -37,7 +37,7 @@ export default function StatusChart({ data }: { data: ChartDatum[] }) {
   const total = data.reduce((s, d) => s + d.value, 0);
   if (total === 0) {
     return (
-      <div className="flex h-64 items-center justify-center text-sm text-slate-400">
+      <div className="flex h-64 items-center justify-center text-sm text-slate-500">
         No tasks to chart yet.
       </div>
     );
@@ -67,7 +67,7 @@ export default function StatusChart({ data }: { data: ChartDatum[] }) {
         {/* Center hero number */}
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
           <div className="text-3xl font-bold text-slate-900">{total}</div>
-          <div className="text-xs text-slate-400">tasks</div>
+          <div className="text-xs text-slate-500">tasks</div>
         </div>
       </div>
 
@@ -84,7 +84,7 @@ export default function StatusChart({ data }: { data: ChartDatum[] }) {
               <span className="text-slate-600">{d.name}</span>
               <span className="ml-auto font-medium text-slate-700">
                 {d.value}
-                <span className="ml-1 text-xs font-normal text-slate-400">
+                <span className="ml-1 text-xs font-normal text-slate-500">
                   {pct}%
                 </span>
               </span>

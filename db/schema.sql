@@ -23,11 +23,15 @@ CREATE TABLE IF NOT EXISTS users (
   emp_id               VARCHAR(20) NOT NULL UNIQUE,   -- attendance.employees.emp_id
   name                 VARCHAR(120) NOT NULL,
   email                VARCHAR(190) NULL,
+  phone                VARCHAR(20) NULL,             -- E.164, for WhatsApp alerts
+  whatsapp_opt_in      BOOLEAN NOT NULL DEFAULT FALSE,
   password_hash        VARCHAR(255) NULL,             -- unused (federated auth)
   role                 ENUM('admin','member') NOT NULL DEFAULT 'member',
   is_active            BOOLEAN NOT NULL DEFAULT TRUE,
   must_change_password BOOLEAN NOT NULL DEFAULT FALSE, -- unused (federated auth)
   last_seen_at         DATETIME NULL,                  -- presence heartbeat
+  calendar_token       CHAR(32) NULL UNIQUE,           -- private .ics feed link
+  calendar_feed_fetched_at DATETIME NULL,              -- last read by a calendar app
   created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
@@ -37,10 +41,20 @@ CREATE TABLE IF NOT EXISTS projects (
   name        VARCHAR(150) NOT NULL,
   description TEXT,
   status      ENUM('active','completed','archived') NOT NULL DEFAULT 'active',
+  -- Members request projects; the nominated lead (owner) or an admin decides.
+  approval_status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'approved',
   owner_id    INT,
+  requested_by  INT NULL,
+  requested_at  DATETIME NULL,
+  decided_by    INT NULL,
+  decided_at    DATETIME NULL,
+  decision_note VARCHAR(1000) NULL,
   created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  CONSTRAINT fk_projects_owner FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE SET NULL
+  CONSTRAINT fk_projects_owner FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE SET NULL,
+  CONSTRAINT fk_projects_requester FOREIGN KEY (requested_by) REFERENCES users(id) ON DELETE SET NULL,
+  CONSTRAINT fk_projects_decider FOREIGN KEY (decided_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_projects_approval (approval_status)
 );
 
 -- Which users belong to which project
@@ -60,6 +74,24 @@ CREATE TABLE IF NOT EXISTS tasks (
   project_id  INT NOT NULL,
   title       VARCHAR(200) NOT NULL,
   description TEXT,
+  -- Spec: an existing-work correction or a new feature (general = legacy/imported).
+  task_type           ENUM('general','correction','feature') NOT NULL DEFAULT 'general',
+  existing_behavior   TEXT NULL,
+  expected_behavior   TEXT NULL,
+  acceptance_criteria TEXT NULL,
+  reason              TEXT NULL,
+  scope               TEXT NULL,
+  features            TEXT NULL,
+  flow                TEXT NULL,
+  rules               TEXT NULL,
+  -- Approval trail: requested → approved → signed off (then read-only).
+  request_id          INT NULL,                    -- task_requests.id it came from
+  requested_by        INT NULL,
+  request_approved_by INT NULL,
+  request_approved_at DATETIME NULL,
+  signed_off_by       INT NULL,
+  signed_off_at       DATETIME NULL,
+  signoff_note        VARCHAR(1000) NULL,
   status      ENUM('todo','in_progress','review','done') NOT NULL DEFAULT 'todo',
   outstanding     TINYINT(1) NOT NULL DEFAULT 0,  -- overdue & not done (set by cron)
   approval_status ENUM('none','pending','approved','rejected') NOT NULL DEFAULT 'none',
@@ -83,9 +115,42 @@ CREATE TABLE IF NOT EXISTS tasks (
   CONSTRAINT fk_tasks_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
   CONSTRAINT fk_tasks_approver FOREIGN KEY (approved_by) REFERENCES users(id) ON DELETE SET NULL,
   CONSTRAINT fk_tasks_parent FOREIGN KEY (parent_task_id) REFERENCES tasks(id) ON DELETE SET NULL,
+  CONSTRAINT fk_tasks_requester FOREIGN KEY (requested_by) REFERENCES users(id) ON DELETE SET NULL,
+  CONSTRAINT fk_tasks_req_approver FOREIGN KEY (request_approved_by) REFERENCES users(id) ON DELETE SET NULL,
+  CONSTRAINT fk_tasks_signer FOREIGN KEY (signed_off_by) REFERENCES users(id) ON DELETE SET NULL,
   INDEX idx_tasks_project (project_id),
   INDEX idx_tasks_assignee (assignee_id),
-  INDEX idx_tasks_status (status)
+  INDEX idx_tasks_status (status),
+  INDEX idx_tasks_signed_off (signed_off_at),
+  INDEX idx_tasks_request (request_id)
+);
+
+-- Tasks raised by project members, awaiting a lead's approval  (Phase 4)
+CREATE TABLE IF NOT EXISTS task_requests (
+  id                  INT AUTO_INCREMENT PRIMARY KEY,
+  project_id          INT NOT NULL,
+  task_type           ENUM('correction','feature') NOT NULL,
+  title               VARCHAR(200) NOT NULL,
+  existing_behavior   TEXT NULL,
+  expected_behavior   TEXT NULL,
+  acceptance_criteria TEXT NULL,
+  reason              TEXT NULL,
+  scope               TEXT NULL,
+  features            TEXT NULL,
+  flow                TEXT NULL,
+  rules               TEXT NULL,
+  status              ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+  requested_by        INT NULL,
+  requested_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  decided_by          INT NULL,
+  decided_at          DATETIME NULL,
+  decision_note       VARCHAR(1000) NULL,
+  task_id             INT NULL,
+  CONSTRAINT fk_treq_project   FOREIGN KEY (project_id)   REFERENCES projects(id) ON DELETE CASCADE,
+  CONSTRAINT fk_treq_requester FOREIGN KEY (requested_by) REFERENCES users(id)    ON DELETE SET NULL,
+  CONSTRAINT fk_treq_decider   FOREIGN KEY (decided_by)   REFERENCES users(id)    ON DELETE SET NULL,
+  CONSTRAINT fk_treq_task      FOREIGN KEY (task_id)      REFERENCES tasks(id)    ON DELETE SET NULL,
+  INDEX idx_treq_project_status (project_id, status)
 );
 
 CREATE TABLE IF NOT EXISTS task_comments (
@@ -165,7 +230,10 @@ CREATE TABLE IF NOT EXISTS meetings (
   description      TEXT,
   project_id       INT NULL,
   location         VARCHAR(255) NULL,
+  video_url        VARCHAR(500) NULL,               -- join link (video call)
+  video_room_id    VARCHAR(120) NULL,               -- room in the meetings app
   start_time       DATETIME NOT NULL,
+  duration_minutes INT NOT NULL DEFAULT 30,
   reminder_minutes INT NULL,
   reminder_sent    TINYINT(1) NOT NULL DEFAULT 0,
   recurrence       ENUM('none','daily','weekly','monthly') NOT NULL DEFAULT 'none',
@@ -255,6 +323,44 @@ CREATE TABLE IF NOT EXISTS task_attachments (
   CONSTRAINT fk_att_task FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
   CONSTRAINT fk_att_user FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE SET NULL,
   INDEX idx_att_task (task_id)
+);
+
+-- One-off data corrections that have been applied (see db/migrations).
+CREATE TABLE IF NOT EXISTS applied_data_fixes (
+  name       VARCHAR(190) PRIMARY KEY,
+  applied_at DATETIME NOT NULL
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- Personal reminders + web push subscriptions  (Phase 3 · Wave 11)
+CREATE TABLE IF NOT EXISTS reminders (
+  id               INT AUTO_INCREMENT PRIMARY KEY,
+  user_id          INT NOT NULL,
+  title            VARCHAR(200) NOT NULL,
+  category         VARCHAR(40) NOT NULL DEFAULT 'general',
+  notes            TEXT NULL,
+  scheduled_at     DATETIME NOT NULL,                    -- target time (UTC)
+  reminder_minutes INT NOT NULL DEFAULT 0,               -- fire this many min before
+  recurrence       ENUM('none','daily','weekly','monthly') NOT NULL DEFAULT 'none',
+  notify_email     TINYINT(1) NOT NULL DEFAULT 1,
+  notify_push      TINYINT(1) NOT NULL DEFAULT 1,
+  is_done          TINYINT(1) NOT NULL DEFAULT 0,
+  reminder_sent    TINYINT(1) NOT NULL DEFAULT 0,
+  created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_reminders_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_reminders_user (user_id),
+  INDEX idx_reminders_fire (reminder_sent, is_done, scheduled_at)
+);
+
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id         INT AUTO_INCREMENT PRIMARY KEY,
+  user_id    INT NOT NULL,
+  endpoint   VARCHAR(500) NOT NULL,
+  p256dh     VARCHAR(255) NOT NULL,
+  auth       VARCHAR(255) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_push_endpoint (endpoint),
+  CONSTRAINT fk_push_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_push_user (user_id)
 );
 
 -- Task time logs (auditable hours)  (Phase 2 · Wave 7)

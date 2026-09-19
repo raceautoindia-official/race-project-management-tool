@@ -165,7 +165,7 @@ export default function CalendarView({ events }: { events: CalEvent[] }) {
       </div>
 
       {view === "month" ? (
-        <div className="grid grid-cols-7 gap-px overflow-hidden rounded-lg bg-slate-200 text-center text-xs font-medium text-slate-500">
+        <div className="grid grid-cols-7 gap-px overflow-hidden rounded-lg bg-slate-200 text-center text-xs font-medium text-slate-600">
           {WEEKDAYS.map((d) => (
             <div key={d} className="bg-slate-50 py-1.5">
               {d}
@@ -188,7 +188,7 @@ export default function CalendarView({ events }: { events: CalEvent[] }) {
                   className={`mb-1 inline-flex h-5 w-5 items-center justify-center rounded-full text-xs ${
                     isToday
                       ? "bg-indigo-600 font-semibold text-white"
-                      : "text-slate-500"
+                      : "text-slate-600"
                   }`}
                 >
                   {format(day, "d")}
@@ -211,7 +211,7 @@ export default function CalendarView({ events }: { events: CalEvent[] }) {
                     </div>
                   ))}
                   {dayEvents.length > 3 && (
-                    <div className="px-1 text-[10px] text-slate-400">
+                    <div className="px-1 text-[10px] text-slate-500">
                       +{dayEvents.length - 3} more
                     </div>
                   )}
@@ -225,7 +225,7 @@ export default function CalendarView({ events }: { events: CalEvent[] }) {
       )}
 
       {/* Legend */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-600">
         {(Object.keys(TASK_STATUS_LABELS) as TaskStatus[]).map((s) => (
           <span key={s} className="flex items-center gap-1">
             <span
@@ -260,13 +260,13 @@ export default function CalendarView({ events }: { events: CalEvent[] }) {
             </h4>
             <button
               onClick={() => setSelected(null)}
-              className="text-sm text-slate-400 hover:text-slate-600"
+              className="text-sm text-slate-500 hover:text-slate-600"
             >
               ✕
             </button>
           </div>
           {selectedEvents.length === 0 ? (
-            <p className="text-sm text-slate-400">Nothing scheduled.</p>
+            <p className="text-sm text-slate-500">Nothing scheduled.</p>
           ) : (
             <ul className="divide-y divide-slate-100">
               {selectedEvents.map((e) => (
@@ -280,7 +280,7 @@ export default function CalendarView({ events }: { events: CalEvent[] }) {
                       {e.time ? `${e.time} · ` : ""}
                       {e.title}
                     </span>
-                    <span className="ml-auto text-xs capitalize text-slate-400">
+                    <span className="ml-auto text-xs capitalize text-slate-500">
                       {e.kind}
                       {e.projectName ? ` · ${e.projectName}` : ""}
                     </span>
@@ -304,7 +304,7 @@ function AgendaView({ byDate }: { byDate: Map<string, CalEvent[]> }) {
 
   if (upcoming.length === 0) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-400">
+      <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">
         Nothing coming up.
       </div>
     );
@@ -328,7 +328,7 @@ function AgendaView({ byDate }: { byDate: Map<string, CalEvent[]> }) {
                     {e.time ? `${e.time} · ` : ""}
                     {e.title}
                   </span>
-                  <span className="ml-auto text-xs capitalize text-slate-400">
+                  <span className="ml-auto text-xs capitalize text-slate-500">
                     {e.kind}
                     {e.projectName ? ` · ${e.projectName}` : ""}
                   </span>

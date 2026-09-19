@@ -80,12 +80,12 @@ export default function GlobalSearch() {
       {show && (
         <div className="absolute left-0 right-0 z-50 mt-1 max-h-96 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg">
           {empty ? (
-            <p className="px-4 py-3 text-sm text-slate-400">No matches.</p>
+            <p className="px-4 py-3 text-sm text-slate-500">No matches.</p>
           ) : (
             <>
               {projects.length > 0 && (
                 <div>
-                  <div className="px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  <div className="px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Projects
                   </div>
                   {projects.map((p) => (
@@ -101,7 +101,7 @@ export default function GlobalSearch() {
               )}
               {tasks.length > 0 && (
                 <div className="border-t border-slate-100">
-                  <div className="px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  <div className="px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Tasks
                   </div>
                   {tasks.map((t) => (
@@ -111,7 +111,7 @@ export default function GlobalSearch() {
                       className="block w-full px-4 py-2 text-left text-sm hover:bg-slate-50"
                     >
                       <span className="truncate text-slate-700">✓ {t.title}</span>
-                      <span className="ml-1 text-xs text-slate-400">
+                      <span className="ml-1 text-xs text-slate-500">
                         — {t.project_name} · {TASK_STATUS_LABELS[t.status]}
                       </span>
                     </button>

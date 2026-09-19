@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { query, DbRow, DbResult } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { json, errorResponse, ApiError } from "@/lib/http";
-import { assertProjectAccess, assertTaskEdit } from "@/lib/rbac";
+import { assertProjectAccess, assertTaskEdit, assertTaskWritable } from "@/lib/rbac";
 import { createSubtaskSchema } from "@/lib/validation";
 
 type Params = { params: Promise<{ id: string }> };
@@ -56,6 +56,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (!Number.isInteger(taskId)) throw new ApiError(400, "Invalid id");
     const ref = await loadTaskRef(taskId);
     await assertTaskEdit(user, ref);
+    await assertTaskWritable(taskId);
 
     const body = await req.json().catch(() => ({}));
     const { title } = createSubtaskSchema.parse(body);

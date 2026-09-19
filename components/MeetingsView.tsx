@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import Modal from "@/components/Modal";
+import AddToCalendar from "@/components/AddToCalendar";
 import { apiFetch } from "@/lib/api-client";
 import { useToast } from "@/components/ToastProvider";
 import { formatIst, istInputToUtc } from "@/lib/tz";
@@ -20,6 +21,8 @@ interface PickProject {
 
 const inputClass =
   "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
+
+const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120];
 
 const REMINDER_OPTIONS: { label: string; value: string }[] = [
   { label: "No reminder", value: "" },
@@ -104,6 +107,13 @@ export default function MeetingsView({
   );
 }
 
+/** End time as a stored-style UTC string, from the start plus its duration. */
+function endOf(m: Meeting): string {
+  const start = new Date(`${m.start_time.replace(" ", "T")}Z`);
+  const end = new Date(start.getTime() + (m.duration_minutes ?? 30) * 60_000);
+  return end.toISOString().replace("T", " ").slice(0, 19);
+}
+
 function isoNow(): string {
   // Build a "YYYY-MM-DD HH:MM:SS" in UTC to compare with stored values.
   return new Date().toISOString().replace("T", " ").slice(0, 19);
@@ -126,9 +136,9 @@ function Section({
 }) {
   return (
     <div>
-      <h2 className="mb-2 text-sm font-semibold text-slate-500">{title}</h2>
+      <h2 className="mb-2 text-sm font-semibold text-slate-600">{title}</h2>
       {meetings.length === 0 ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">
+        <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
           {empty}
         </div>
       ) : (
@@ -136,8 +146,8 @@ function Section({
           {meetings.map((m) => (
             <div
               key={m.id}
-              className={`rounded-xl border border-slate-200 bg-white p-4 ${
-                muted ? "opacity-70" : ""
+              className={`rounded-xl border border-slate-200 p-4 ${
+                muted ? "bg-slate-50" : "bg-white"
               }`}
             >
               <div className="flex flex-wrap items-start justify-between gap-2">
@@ -146,7 +156,7 @@ function Section({
                   <div className="mt-0.5 text-sm text-indigo-600">
                     {fmt(m.start_time)}
                     {m.reminder_minutes != null && (
-                      <span className="ml-2 text-xs text-slate-400">
+                      <span className="ml-2 text-xs text-slate-500">
                         🔔 {m.reminder_minutes}m before
                       </span>
                     )}
@@ -159,12 +169,12 @@ function Section({
                   {m.description && (
                     <p className="mt-1 text-sm text-slate-600">{m.description}</p>
                   )}
-                  <div className="mt-1 flex flex-wrap gap-x-3 text-xs text-slate-400">
+                  <div className="mt-1 flex flex-wrap gap-x-3 text-xs text-slate-500">
                     {m.location && <span>📍 {m.location}</span>}
                     {m.project_name && (
                       <Link
                         href={`/projects/${m.project_id}`}
-                        className="hover:text-indigo-600"
+                        className="inline-block py-1 hover:text-indigo-600"
                       >
                         📁 {m.project_name}
                       </Link>
@@ -172,19 +182,40 @@ function Section({
                     {m.creator_name && <span>by {m.creator_name}</span>}
                   </div>
                   {m.attendees && m.attendees.length > 0 && (
-                    <div className="mt-1 text-xs text-slate-400">
+                    <div className="mt-1 text-xs text-slate-500">
                       Attendees: {m.attendees.map((a) => a.name).join(", ")}
                     </div>
                   )}
                 </div>
-                {canDelete(m) && (
-                  <button
-                    onClick={() => onDelete(m)}
-                    className="rounded-lg border border-red-200 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
-                  >
-                    Cancel
-                  </button>
-                )}
+                <div className="flex shrink-0 flex-wrap items-start gap-2">
+                  {m.video_url && (
+                    <a
+                      href={m.video_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
+                    >
+                      🎥 Join video call
+                    </a>
+                  )}
+                  <AddToCalendar
+                    compact
+                    title={m.title}
+                    start={m.start_time}
+                    end={endOf(m)}
+                    details={m.description}
+                    location={m.video_url ?? m.location}
+                    icsHref={`/api/meetings/${m.id}/ics`}
+                  />
+                  {canDelete(m) && (
+                    <button
+                      onClick={() => onDelete(m)}
+                      className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           ))}
@@ -212,6 +243,9 @@ function NewMeetingModal({
   const [location, setLocation] = useState("");
   const [startTime, setStartTime] = useState("");
   const [reminder, setReminder] = useState("");
+  const [duration, setDuration] = useState("30");
+  const [video, setVideo] = useState<"none" | "room" | "link">("room");
+  const [videoUrl, setVideoUrl] = useState("");
   const [recurrence, setRecurrence] = useState("none");
   const [attendeeIds, setAttendeeIds] = useState<number[]>([]);
   const [error, setError] = useState("");
@@ -228,7 +262,7 @@ function NewMeetingModal({
     setError("");
     setBusy(true);
     try {
-      const res = await apiFetch<{ meeting: Meeting }>("/api/meetings", {
+      const res = await apiFetch<{ meeting: Meeting; videoWarning?: string | null }>("/api/meetings", {
         method: "POST",
         body: JSON.stringify({
           title,
@@ -237,12 +271,16 @@ function NewMeetingModal({
           location,
           startTime: istInputToUtc(startTime),
           reminderMinutes: reminder === "" ? null : Number(reminder),
+          durationMinutes: Number(duration),
+          video,
+          videoUrl: video === "link" ? videoUrl.trim() : null,
           recurrence,
           attendeeIds,
         }),
       });
       onCreated(res.meeting);
       toast("Meeting scheduled");
+      if (res.videoWarning) toast(res.videoWarning, "error");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not schedule");
     } finally {
@@ -254,22 +292,39 @@ function NewMeetingModal({
     <Modal open onClose={onClose} title="New meeting" widthClass="max-w-lg">
       <form onSubmit={submit} className="space-y-4">
         {error && (
-          <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+          <div role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}
           </div>
         )}
         <div>
-          <label className="mb-1 block text-sm font-medium text-slate-700">Title</label>
-          <input required value={title} onChange={(e) => setTitle(e.target.value)} className={inputClass} />
+          <label htmlFor="meeting-title" className="mb-1 block text-sm font-medium text-slate-700">
+            Title
+          </label>
+          <input
+            id="meeting-title"
+            required
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className={inputClass}
+          />
         </div>
         <div>
-          <label className="mb-1 block text-sm font-medium text-slate-700">Description</label>
-          <textarea rows={2} value={description} onChange={(e) => setDescription(e.target.value)} className={inputClass} />
+          <label htmlFor="meeting-description" className="mb-1 block text-sm font-medium text-slate-700">
+            Description
+          </label>
+          <textarea
+            id="meeting-description"
+            rows={2}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            className={inputClass}
+          />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Start</label>
+            <label htmlFor="meeting-start" className="mb-1 block text-sm font-medium text-slate-700">Start</label>
             <input
+              id="meeting-start"
               type="datetime-local"
               required
               value={startTime}
@@ -278,8 +333,18 @@ function NewMeetingModal({
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Reminder</label>
-            <select value={reminder} onChange={(e) => setReminder(e.target.value)} className={inputClass}>
+            <label htmlFor="meeting-duration" className="mb-1 block text-sm font-medium text-slate-700">Duration</label>
+            <select id="meeting-duration" value={duration} onChange={(e) => setDuration(e.target.value)} className={inputClass}>
+              {DURATION_OPTIONS.map((d) => (
+                <option key={d} value={d}>
+                  {d < 60 ? `${d} minutes` : `${d / 60} hour${d > 60 ? "s" : ""}`}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="meeting-reminder" className="mb-1 block text-sm font-medium text-slate-700">Reminder</label>
+            <select id="meeting-reminder" value={reminder} onChange={(e) => setReminder(e.target.value)} className={inputClass}>
               {REMINDER_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
@@ -288,8 +353,8 @@ function NewMeetingModal({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Repeat</label>
-            <select value={recurrence} onChange={(e) => setRecurrence(e.target.value)} className={inputClass}>
+            <label htmlFor="meeting-repeat" className="mb-1 block text-sm font-medium text-slate-700">Repeat</label>
+            <select id="meeting-repeat" value={recurrence} onChange={(e) => setRecurrence(e.target.value)} className={inputClass}>
               <option value="none">Does not repeat</option>
               <option value="daily">Daily</option>
               <option value="weekly">Weekly</option>
@@ -297,10 +362,10 @@ function NewMeetingModal({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">
+            <label htmlFor="meeting-project" className="mb-1 block text-sm font-medium text-slate-700">
               Project (optional)
             </label>
-            <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className={inputClass}>
+            <select id="meeting-project" value={projectId} onChange={(e) => setProjectId(e.target.value)} className={inputClass}>
               <option value="">None</option>
               {projects.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -310,15 +375,51 @@ function NewMeetingModal({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">
+            <label htmlFor="meeting-location" className="mb-1 block text-sm font-medium text-slate-700">
               Location / link
             </label>
-            <input value={location} onChange={(e) => setLocation(e.target.value)} className={inputClass} placeholder="Room 2 / https://…" />
+            <input
+              id="meeting-location"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              className={inputClass}
+              placeholder="Room 2 / https://…"
+            />
           </div>
         </div>
         <div>
+          <label htmlFor="meeting-video" className="mb-1 block text-sm font-medium text-slate-700">
+            Video call
+          </label>
+          <select
+            id="meeting-video"
+            value={video}
+            onChange={(e) => setVideo(e.target.value as "none" | "room" | "link")}
+            className={inputClass}
+          >
+            <option value="room">Create a room in our meetings app</option>
+            <option value="link">Use a link I already have</option>
+            <option value="none">No video call</option>
+          </select>
+          {video === "link" && (
+            <input
+              value={videoUrl}
+              onChange={(e) => setVideoUrl(e.target.value)}
+              required
+              placeholder="https://…"
+              aria-label="Meeting link"
+              className={`${inputClass} mt-2`}
+            />
+          )}
+          {video === "room" && (
+            <p className="mt-1 text-xs text-slate-500">
+              Everyone gets a join link. They sign in to the meetings app once.
+            </p>
+          )}
+        </div>
+        <div>
           <label className="mb-1 block text-sm font-medium text-slate-700">Attendees</label>
-          <div className="max-h-40 overflow-y-auto rounded-lg border border-slate-200 p-2">
+          <div tabIndex={0} className="max-h-40 overflow-y-auto rounded-lg border border-slate-200 p-2">
             {users.map((u) => (
               <label key={u.id} className="flex cursor-pointer items-center gap-2 px-1 py-0.5 text-sm">
                 <input
@@ -331,7 +432,7 @@ function NewMeetingModal({
               </label>
             ))}
           </div>
-          <p className="mt-1 text-xs text-slate-400">
+          <p className="mt-1 text-xs text-slate-500">
             You are added automatically as the organizer.
           </p>
         </div>

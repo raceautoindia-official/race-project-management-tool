@@ -103,13 +103,13 @@ export default function MembersModal({
               <Avatar name={m.name} size="md" />
               <div>
                 <div className="text-sm font-medium text-slate-800">{m.name}</div>
-                <div className="text-xs text-slate-400">{m.email}</div>
+                <div className="text-xs text-slate-500">{m.email}</div>
               </div>
             </div>
             <div className="flex items-center gap-3">
               <RoleBadge role={m.role_in_project} />
               {m.user_id === ownerId ? (
-                <span className="text-xs text-slate-400">Owner</span>
+                <span className="text-xs text-slate-500">Owner</span>
               ) : (
                 <button
                   onClick={() => remove(m.user_id)}
@@ -126,10 +126,11 @@ export default function MembersModal({
 
       <form onSubmit={add} className="flex flex-wrap items-end gap-2 border-t border-slate-100 pt-3">
         <div className="flex-1">
-          <label className="mb-1 block text-xs font-medium text-slate-500">
+          <label htmlFor="add-member-user" className="mb-1 block text-xs font-medium text-slate-600">
             Add member
           </label>
           <select
+            id="add-member-user"
             value={userId}
             onChange={(e) => setUserId(e.target.value)}
             className={`${inputClass} w-full`}
@@ -143,6 +144,7 @@ export default function MembersModal({
           </select>
         </div>
         <select
+          aria-label="Role in project"
           value={role}
           onChange={(e) => setRole(e.target.value)}
           className={inputClass}

@@ -1,6 +1,6 @@
 "use client";
 
-import { TaskPriorityBadge } from "@/components/Badge";
+import { ReadOnlyBadge, TaskPriorityBadge, WorkTypeBadge } from "@/components/Badge";
 import LabelChip from "@/components/LabelChip";
 import Avatar from "@/components/Avatar";
 import { ProgressBar } from "@/components/ProgressBar";
@@ -24,14 +24,23 @@ export default function TaskCard({
   const progress = taskProgress(task);
   const est = task.estimated_hours != null ? Number(task.estimated_hours) : null;
   const spentH = Number(task.spent_hours ?? 0);
+  const locked = Boolean(task.signed_off_at);
 
   return (
     <div
-      draggable
+      draggable={!locked}
       onDragStart={() => onDragStart(task.id)}
       onClick={() => onOpen(task)}
       className="cursor-pointer rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition hover:border-indigo-300 hover:shadow"
     >
+      {(locked || (task.task_type && task.task_type !== "general")) && (
+        <div className="mb-2 flex flex-wrap items-center gap-1">
+          {task.task_type && task.task_type !== "general" && (
+            <WorkTypeBadge type={task.task_type} />
+          )}
+          {locked && <ReadOnlyBadge />}
+        </div>
+      )}
       {task.labels && task.labels.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-1">
           {task.labels.map((l) => (
@@ -52,7 +61,7 @@ export default function TaskCard({
         <TaskPriorityBadge priority={task.priority} />
       </div>
 
-      <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+      <div className="mt-2 flex items-center justify-between text-xs text-slate-600">
         <div className="flex min-w-0 items-center gap-1.5">
           {task.assignee_name ? (
             <>
@@ -60,12 +69,12 @@ export default function TaskCard({
               <span className="truncate">{task.assignee_name}</span>
             </>
           ) : (
-            <span className="text-slate-400">Unassigned</span>
+            <span className="text-slate-500">Unassigned</span>
           )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {(est != null || spentH > 0) && (
-            <span className="text-slate-400" title="Logged / estimated time">
+            <span className="text-slate-500" title="Logged / estimated time">
               ⏱ {formatHM(spentH)}
               {est != null ? ` / ${formatHM(est)}` : ""}
             </span>
@@ -76,7 +85,7 @@ export default function TaskCard({
             </span>
           )}
           {(task.comment_count ?? 0) > 0 && (
-            <span className="text-slate-400">💬 {task.comment_count}</span>
+            <span className="text-slate-500">💬 {task.comment_count}</span>
           )}
           {task.due_date && (
             <span className={overdue ? "font-medium text-red-600" : ""}>

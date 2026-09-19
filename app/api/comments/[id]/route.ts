@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { query, DbRow } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { json, errorResponse, ApiError, forbidden } from "@/lib/http";
-import { assertProjectAccess, canManageProject } from "@/lib/rbac";
+import { assertProjectAccess, assertTaskWritable, canManageProject } from "@/lib/rbac";
 import { createCommentSchema } from "@/lib/validation";
 import { logActivity } from "@/lib/activity";
 
@@ -29,6 +29,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
     const comment = await loadComment(commentId);
     await assertProjectAccess(user, comment.project_id);
+    await assertTaskWritable(comment.task_id);
     if (comment.user_id !== user.id) {
       throw forbidden("You can only edit your own comment");
     }
@@ -62,6 +63,7 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
 
     const comment = await loadComment(commentId);
     const { projectRole } = await assertProjectAccess(user, comment.project_id);
+    await assertTaskWritable(comment.task_id);
     if (!canManageProject(user, projectRole) && comment.user_id !== user.id) {
       throw forbidden("You can only delete your own comment");
     }

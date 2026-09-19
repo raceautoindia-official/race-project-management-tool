@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { SignJWT, jwtVerify } from "jose";
 import { query, DbRow } from "./db";
 import { ApiError, forbidden, unauthorized } from "./http";
+import { syncEmployeeStatus } from "./attendance";
 import type { Role, SessionUser, User } from "./types";
 
 const COOKIE_NAME = process.env.SESSION_COOKIE_NAME ?? "pm_session";
@@ -92,7 +93,7 @@ export async function getCurrentUser(): Promise<User | null> {
   const session = await getSessionUser();
   if (!session) return null;
   const rows = await query<DbRow[]>(
-    `SELECT id, name, email, role, is_active, must_change_password,
+    `SELECT id, employee_id, name, email, role, is_active, must_change_password,
             last_seen_at, created_at, updated_at
      FROM users WHERE id = ? LIMIT 1`,
     [session.userId]
@@ -110,6 +111,16 @@ export async function getCurrentUser(): Promise<User | null> {
     query(`UPDATE users SET last_seen_at = UTC_TIMESTAMP() WHERE id = ?`, [
       row.id,
     ]).catch(() => {});
+    // On the same cadence, pick up deactivation / role changes made in the
+    // Attendance app, so they apply to sessions that are already open.
+    const fresh = await syncEmployeeStatus(row.employee_id, {
+      role: row.role,
+      is_active: Boolean(row.is_active),
+    });
+    if (fresh) {
+      if (!fresh.is_active) return null;
+      row.role = fresh.role;
+    }
   }
 
   return {

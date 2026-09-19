@@ -43,15 +43,24 @@ export default function MyTasksView({ tasks }: { tasks: Task[] }) {
         ))}
       </div>
 
-      {tasks.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-slate-400">
+      {/* Someone who picks Calendar gets a calendar, even with nothing in it.
+          Swapping it for a line of text reads as a broken page. */}
+      {view === "calendar" ? (
+        <>
+          <Calendar
+            tasks={tasks}
+            onSelect={(t) => router.push(`/projects/${t.project_id}`)}
+          />
+          {tasks.length === 0 && (
+            <p className="mt-3 text-center text-sm text-slate-600">
+              Nothing is assigned to you yet, so there is nothing on the calendar.
+            </p>
+          )}
+        </>
+      ) : tasks.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-slate-600">
           You have no assigned tasks.
         </div>
-      ) : view === "calendar" ? (
-        <Calendar
-          tasks={tasks}
-          onSelect={(t) => router.push(`/projects/${t.project_id}`)}
-        />
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {TASK_STATUSES.map((status) => (
@@ -60,7 +69,7 @@ export default function MyTasksView({ tasks }: { tasks: Task[] }) {
               title={`${TASK_STATUS_LABELS[status]} (${byStatus[status].length})`}
             >
               {byStatus[status].length === 0 ? (
-                <p className="text-sm text-slate-400">Nothing here.</p>
+                <p className="text-sm text-slate-500">Nothing here.</p>
               ) : (
                 <ul className="divide-y divide-slate-100">
                   {byStatus[status].map((t) => (
@@ -75,7 +84,7 @@ export default function MyTasksView({ tasks }: { tasks: Task[] }) {
                         >
                           {t.title}
                         </Link>
-                        <div className="flex items-center gap-2 text-xs text-slate-400">
+                        <div className="flex items-center gap-2 text-xs text-slate-500">
                           <span>{t.project_name}</span>
                           {t.labels?.map((l) => (
                             <LabelChip key={l.id} name={l.name} color={l.color} />
@@ -89,7 +98,7 @@ export default function MyTasksView({ tasks }: { tasks: Task[] }) {
                             className={`text-xs ${
                               isOverdue(t.due_date, t.status)
                                 ? "font-medium text-red-600"
-                                : "text-slate-500"
+                                : "text-slate-600"
                             }`}
                           >
                             {formatDate(t.due_date)}
