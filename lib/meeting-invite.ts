@@ -121,6 +121,8 @@ export async function sendMeetingInvite(
     ics,
     method,
     fromName: organizer.name,
+    // A reply to an invitation belongs with whoever called the meeting.
+    replyTo: organizer.email,
   });
 
   return sent ? recipients.length : 0;

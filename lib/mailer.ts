@@ -115,6 +115,12 @@ export interface CalendarInviteOptions extends SendOptions {
   method: "REQUEST" | "CANCEL";
   /** Shown as the sender's name; defaults to the organizer's own. */
   fromName?: string;
+  /**
+   * Where a plain reply should go — the organizer, not the alerts mailbox.
+   * RSVPs follow ORGANIZER inside the calendar part, but "can we move this
+   * to 3pm?" is just an email, and without this it lands nowhere useful.
+   */
+  replyTo?: string | null;
 }
 
 /**
@@ -176,6 +182,7 @@ export function buildInviteMime(opts: {
   text?: string;
   ics: string;
   method: "REQUEST" | "CANCEL";
+  replyTo?: string | null;
   /** Fixed boundaries, for tests. */
   boundaries?: { alt: string; mixed: string };
 }): string {
@@ -186,9 +193,12 @@ export function buildInviteMime(opts: {
     : opts.from;
   const unique = opts.to;
 
+  const replyTo = headerSafe(opts.replyTo ?? "");
+
   return [
     `From: ${from}`,
     `To: ${unique.join(", ")}`,
+    ...(replyTo ? [`Reply-To: ${replyTo}`] : []),
     `Subject: ${encodeHeader(opts.subject)}`,
     "MIME-Version: 1.0",
     `Content-Type: multipart/mixed; boundary="${mixed}"`,

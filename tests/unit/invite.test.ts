@@ -168,3 +168,36 @@ describe("the email that carries an invitation", () => {
     expect(mime({ method: "CANCEL" })).toContain("method=CANCEL");
   });
 });
+
+describe("replies to an invitation", () => {
+  const mime = (over: Record<string, unknown> = {}) =>
+    buildInviteMime({
+      to: ["sam@example.test"],
+      from: "alerts@example.test",
+      subject: "Invitation: Sprint review",
+      html: "<p>x</p>",
+      ics: "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n",
+      method: "REQUEST",
+      boundaries: { alt: "ALT", mixed: "MIX" },
+      ...over,
+    });
+
+  it("go to the organizer, not the alerts mailbox", () => {
+    const raw = mime({ replyTo: "lee@example.test" });
+    expect(raw).toContain("Reply-To: lee@example.test");
+    // Still sent from the verified SES identity, which is what SPF checks.
+    expect(raw).toContain("From: alerts@example.test");
+  });
+
+  it("are simply omitted when there is no organizer address", () => {
+    for (const replyTo of [undefined, null, "", "   "]) {
+      expect(mime({ replyTo })).not.toContain("Reply-To:");
+    }
+  });
+
+  it("cannot smuggle a second header in", () => {
+    const raw = mime({ replyTo: "lee@example.test\r\nBcc: sneak@evil.test" });
+    expect(raw.split("\r\n").some((l) => l.startsWith("Bcc:"))).toBe(false);
+    expect(raw).toContain("Reply-To: lee@example.test Bcc: sneak@evil.test");
+  });
+});
