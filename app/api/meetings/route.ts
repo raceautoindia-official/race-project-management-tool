@@ -12,6 +12,7 @@ import {
   meetingsApiConfigured,
   newRoomId,
 } from "@/lib/video";
+import { sendMeetingInvite } from "@/lib/meeting-invite";
 
 export const dynamic = "force-dynamic";
 
@@ -195,6 +196,44 @@ export async function POST(req: NextRequest) {
           `/meetings`
         );
       }
+    }
+
+    // And as a real calendar invitation, so it lands in their own calendar
+    // without anyone having to subscribe to anything. Failure here must not
+    // fail the request — the meeting exists and is visible in the app.
+    try {
+      const guests = await query<DbRow[]>(
+        `SELECT id, name, email FROM users WHERE id IN (${
+          [...attendeeSet].map(() => "?").join(",")
+        })`,
+        [...attendeeSet]
+      );
+      const host = guests.find((g) => g.id === user.id);
+      const [project] = data.projectId
+        ? await query<DbRow[]>(`SELECT name FROM projects WHERE id = ?`, [data.projectId])
+        : [];
+      await sendMeetingInvite(
+        {
+          id: meetingId,
+          title: data.title,
+          description: data.description ?? null,
+          startTime: toMysqlDateTime(data.startTime),
+          durationMinutes: data.durationMinutes ?? 30,
+          location: data.location ?? null,
+          videoUrl,
+          reminderMinutes: data.reminderMinutes ?? null,
+          projectName: (project?.name as string) ?? null,
+        },
+        {
+          name: String(host?.name ?? user.name),
+          email: String(host?.email ?? user.email ?? ""),
+        },
+        guests
+          .filter((g) => g.id !== user.id)
+          .map((g) => ({ name: String(g.name), email: String(g.email ?? "") }))
+      );
+    } catch (err) {
+      console.error("[meetings] invitation failed:", (err as Error).message);
     }
 
     const rows = await query<DbRow[]>(

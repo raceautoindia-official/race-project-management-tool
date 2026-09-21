@@ -7,7 +7,7 @@ import Avatar from "@/components/Avatar";
 import ProfileForm from "@/components/ProfileForm";
 import PushToggle from "@/components/PushToggle";
 import CalendarSubscribe from "@/components/CalendarSubscribe";
-import { appBaseUrl } from "@/lib/mailer";
+import { appBaseUrl, mailerConfigured } from "@/lib/mailer";
 import { calendarFeedUrl } from "@/lib/calendar-links";
 import { whatsappConfigured } from "@/lib/whatsapp";
 import { formatDate, formatRelative } from "@/lib/format";
@@ -78,6 +78,7 @@ export default async function ProfilePage() {
           <CalendarSubscribe
             initialUrl={calendarUrl}
             lastFetchedLabel={lastFetchedLabel}
+            meetingsByEmail={mailerConfigured()}
           />
         </SectionCard>
       </div>

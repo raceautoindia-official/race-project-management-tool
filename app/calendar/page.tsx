@@ -4,7 +4,7 @@ import AppShell from "@/components/AppShell";
 import { PageHeader } from "@/components/Cards";
 import CalendarView, { type CalEvent } from "@/components/CalendarView";
 import CalendarConnectButton from "@/components/CalendarConnectButton";
-import { appBaseUrl } from "@/lib/mailer";
+import { appBaseUrl, mailerConfigured } from "@/lib/mailer";
 import { calendarFeedUrl } from "@/lib/calendar-links";
 import { istDateKey, istTime24 } from "@/lib/tz";
 import { formatRelative } from "@/lib/format";
@@ -108,6 +108,7 @@ export default async function CalendarPage() {
           <CalendarConnectButton
             initialUrl={calendarUrl}
             lastFetchedLabel={lastFetchedLabel}
+            meetingsByEmail={mailerConfigured()}
           />
         }
       />

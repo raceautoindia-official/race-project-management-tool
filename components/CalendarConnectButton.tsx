@@ -14,8 +14,11 @@ import CalendarSubscribe from "./CalendarSubscribe";
 export default function CalendarConnectButton({
   initialUrl,
   lastFetchedLabel,
+  meetingsByEmail,
 }: {
   initialUrl: string | null;
+  /** Meetings arrive as email invitations, so the feed leaves them out. */
+  meetingsByEmail: boolean;
   /** How long ago a calendar app last read the feed, or null if never. */
   lastFetchedLabel: string | null;
 }) {
@@ -53,7 +56,11 @@ export default function CalendarConnectButton({
         title="Add to your calendar app"
         widthClass="max-w-lg"
       >
-        <CalendarSubscribe initialUrl={initialUrl} lastFetchedLabel={lastFetchedLabel} />
+        <CalendarSubscribe
+          initialUrl={initialUrl}
+          lastFetchedLabel={lastFetchedLabel}
+          meetingsByEmail={meetingsByEmail}
+        />
       </Modal>
     </>
   );

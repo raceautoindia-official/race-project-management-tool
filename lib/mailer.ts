@@ -14,24 +14,31 @@ import { feedUrlProblem } from "./calendar-links";
  * before SES credentials are supplied. Wire the creds and email lights up.
  */
 
-const REGION = process.env.SES_REGION ?? process.env.AWS_REGION ?? "";
-const ACCESS = process.env.SES_ACCESS_KEY_ID ?? process.env.AWS_ACCESS_KEY_ID ?? "";
-const SECRET =
+// Read at call time, not at import: a module-level snapshot is taken before
+// the environment is necessarily complete, and it makes the setting
+// impossible to vary in a test.
+const region = () => process.env.SES_REGION ?? process.env.AWS_REGION ?? "";
+const access = () => process.env.SES_ACCESS_KEY_ID ?? process.env.AWS_ACCESS_KEY_ID ?? "";
+const secret = () =>
   process.env.SES_SECRET_ACCESS_KEY ?? process.env.AWS_SECRET_ACCESS_KEY ?? "";
-const FROM = process.env.SES_FROM_EMAIL ?? "";
+const fromAddress = () => process.env.SES_FROM_EMAIL ?? "";
 
 export function mailerConfigured(): boolean {
-  return Boolean(REGION && ACCESS && SECRET && FROM);
+  return Boolean(region() && access() && secret() && fromAddress());
 }
 
 let _client: SESv2Client | null = null;
+let _clientKey = "";
 function client(): SESv2Client | null {
   if (!mailerConfigured()) return null;
-  if (!_client) {
+  // Rebuild if the credentials changed under us.
+  const key = `${region()}|${access()}`;
+  if (!_client || _clientKey !== key) {
     _client = new SESv2Client({
-      region: REGION,
-      credentials: { accessKeyId: ACCESS, secretAccessKey: SECRET },
+      region: region(),
+      credentials: { accessKeyId: access(), secretAccessKey: secret() },
     });
+    _clientKey = key;
   }
   return _client;
 }
@@ -62,7 +69,7 @@ export async function sendEmail(opts: SendOptions): Promise<boolean> {
   try {
     await c.send(
       new SendEmailCommand({
-        FromEmailAddress: FROM,
+        FromEmailAddress: fromAddress(),
         Destination: { ToAddresses: unique },
         Content: {
           Simple: {
@@ -82,6 +89,143 @@ export async function sendEmail(opts: SendOptions): Promise<boolean> {
     console.error("[mailer] SES send failed:", (err as Error).message);
     return false;
   }
+}
+
+/** Header text with anything that could inject another header removed. */
+function headerSafe(value: string): string {
+  return value.replace(/[\r\n]+/g, " ").trim();
+}
+
+/** RFC 2047 for a subject that isn't plain ASCII (accents, emoji, …). */
+function encodeHeader(value: string): string {
+  const safe = headerSafe(value);
+  if (/^[\x20-\x7e]*$/.test(safe)) return safe;
+  return `=?UTF-8?B?${Buffer.from(safe, "utf8").toString("base64")}?=`;
+}
+
+/** Base64, wrapped at 76 characters as MIME requires. */
+function base64Body(value: string): string {
+  return (Buffer.from(value, "utf8").toString("base64").match(/.{1,76}/g) ?? []).join("\r\n");
+}
+
+export interface CalendarInviteOptions extends SendOptions {
+  /** iCalendar text built with buildInvite(). */
+  ics: string;
+  /** Must match the METHOD inside `ics`. */
+  method: "REQUEST" | "CANCEL";
+  /** Shown as the sender's name; defaults to the organizer's own. */
+  fromName?: string;
+}
+
+/**
+ * Send a real calendar invitation, not a mail with a file attached.
+ *
+ * What makes Gmail and Outlook put the meeting straight into someone's
+ * calendar — with Yes/No/Maybe, and no action needed from them — is a
+ * `text/calendar; method=REQUEST` part inside multipart/alternative. SES's
+ * Simple content can't express that, so this builds the MIME itself and
+ * sends it raw. The .ics attachment alongside is for Apple Mail and other
+ * clients that look for a file instead.
+ */
+export async function sendCalendarInvite(opts: CalendarInviteOptions): Promise<boolean> {
+  const unique = Array.from(
+    new Set(
+      (Array.isArray(opts.to) ? opts.to : [opts.to])
+        .map((r) => headerSafe(r ?? ""))
+        .filter((r) => r.length > 0)
+    )
+  );
+  if (unique.length === 0) return false;
+
+  const c = client();
+  if (!c) {
+    console.warn(
+      `[mailer] SES not configured — skipped invitation "${opts.subject}" → ${unique.length} recipient(s)`
+    );
+    return false;
+  }
+
+  const raw = buildInviteMime({ ...opts, to: unique, from: fromAddress() });
+
+  try {
+    await c.send(
+      new SendEmailCommand({
+        FromEmailAddress: fromAddress(),
+        Destination: { ToAddresses: unique },
+        Content: { Raw: { Data: Buffer.from(raw, "utf8") } },
+      })
+    );
+    return true;
+  } catch (err) {
+    console.error("[mailer] SES invitation failed:", (err as Error).message);
+    return false;
+  }
+}
+
+/**
+ * The MIME document behind an invitation. Exported so its shape can be
+ * tested: a boundary typo or a missing header turns an invitation back into
+ * an unreadable attachment, and nothing would tell us.
+ */
+export function buildInviteMime(opts: {
+  to: string[];
+  from: string;
+  fromName?: string;
+  subject: string;
+  html: string;
+  text?: string;
+  ics: string;
+  method: "REQUEST" | "CANCEL";
+  /** Fixed boundaries, for tests. */
+  boundaries?: { alt: string; mixed: string };
+}): string {
+  const alt = opts.boundaries?.alt ?? `alt-${Math.random().toString(36).slice(2)}`;
+  const mixed = opts.boundaries?.mixed ?? `mix-${Math.random().toString(36).slice(2)}`;
+  const from = opts.fromName
+    ? `${encodeHeader(opts.fromName)} <${opts.from}>`
+    : opts.from;
+  const unique = opts.to;
+
+  return [
+    `From: ${from}`,
+    `To: ${unique.join(", ")}`,
+    `Subject: ${encodeHeader(opts.subject)}`,
+    "MIME-Version: 1.0",
+    `Content-Type: multipart/mixed; boundary="${mixed}"`,
+    "",
+    `--${mixed}`,
+    `Content-Type: multipart/alternative; boundary="${alt}"`,
+    "",
+    `--${alt}`,
+    'Content-Type: text/plain; charset="UTF-8"',
+    "Content-Transfer-Encoding: base64",
+    "",
+    base64Body(opts.text ?? opts.subject),
+    "",
+    `--${alt}`,
+    'Content-Type: text/html; charset="UTF-8"',
+    "Content-Transfer-Encoding: base64",
+    "",
+    base64Body(opts.html),
+    "",
+    `--${alt}`,
+    `Content-Type: text/calendar; charset="UTF-8"; method=${opts.method}`,
+    "Content-Transfer-Encoding: base64",
+    "",
+    base64Body(opts.ics),
+    "",
+    `--${alt}--`,
+    "",
+    `--${mixed}`,
+    'Content-Type: application/ics; name="invite.ics"',
+    "Content-Transfer-Encoding: base64",
+    'Content-Disposition: attachment; filename="invite.ics"',
+    "",
+    base64Body(opts.ics),
+    "",
+    `--${mixed}--`,
+    "",
+  ].join("\r\n");
 }
 
 /** Escape user-supplied text for interpolation into email HTML. */

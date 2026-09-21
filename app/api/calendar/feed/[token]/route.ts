@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { query, DbRow } from "@/lib/db";
 import { buildIcs, icsResponse, parseUtc, type IcsEvent } from "@/lib/ics";
-import { appBaseUrl } from "@/lib/mailer";
+import { appBaseUrl, mailerConfigured } from "@/lib/mailer";
 import { checkRateLimit } from "@/lib/ratelimit";
 
 export const dynamic = "force-dynamic";
@@ -39,7 +39,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
   }
 
   const [user] = await query<DbRow[]>(
-    `SELECT id, name FROM users WHERE calendar_token = ? AND is_active = TRUE LIMIT 1`,
+    `SELECT id, name, email FROM users WHERE calendar_token = ? AND is_active = TRUE LIMIT 1`,
     [token]
   );
   if (!user) return new Response("Not found", { status: 404 });
@@ -55,7 +55,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
   const userId = user.id as number;
   const events: IcsEvent[] = [];
 
-  const meetings = await query<DbRow[]>(
+  // Meetings arrive as calendar invitations by email, which put themselves in
+  // the person's own calendar. Repeating them here would show every meeting
+  // twice. They stay in the feed only for people no invitation can reach —
+  // email switched off on the server, or no address on their account.
+  const invitedByEmail = mailerConfigured() && Boolean(user.email);
+
+  const meetings = invitedByEmail ? [] : await query<DbRow[]>(
     `SELECT m.id, m.title, m.description, m.location, m.video_url, m.start_time,
             m.duration_minutes, m.reminder_minutes, p.name AS project_name
        FROM meetings m

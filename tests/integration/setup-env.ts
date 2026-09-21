@@ -30,10 +30,12 @@ vi.mock("@/lib/auth", async () => {
 });
 
 // No outbound email in tests (templates and escaping stay real).
+// These are vi.fn()s so a test that cares — one checking what changes when
+// email *is* switched on — can override them for its own duration.
 vi.mock("@/lib/mailer", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/mailer")>()),
-  mailerConfigured: () => false,
-  sendEmail: async () => false,
+  mailerConfigured: vi.fn(() => false),
+  sendEmail: vi.fn(async () => false),
 }));
 
 afterAll(async () => {

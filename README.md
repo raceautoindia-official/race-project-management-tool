@@ -29,9 +29,10 @@ there is **no public sign-up** — an admin provisions every account.
   (an admin can reopen it).
 - **Task PDF**: download any task (spec, approval trail, checklist, files, comments) as
   a PDF.
-- **Calendar**: a private subscription link puts your meetings, task due dates and
-  reminders into **Google Calendar, Outlook or Apple Calendar** and keeps them updated;
-  single entries can be added with one click or downloaded as `.ics`.
+- **Calendar**: meetings arrive as real **calendar invitations** by email, so they appear
+  in Google, Outlook or Apple Calendar by themselves — no setting up, and cancelling one
+  withdraws it again. A private subscription link adds **task due dates and reminders** on
+  top; single entries can be added with one click or downloaded as `.ics`.
 - **Video meetings**: scheduling a meeting creates a room in the company meetings app
   (or takes a Zoom/Meet/Teams link you already have), with a **Join** button on the
   meeting, in reminder emails and in the calendar entry.
@@ -255,12 +256,31 @@ pm-app/
 
 ## Calendar, video calls and WhatsApp
 
+### Meeting invitations (nothing to set up)
+
+Scheduling a meeting emails every attendee a **calendar invitation** — the same kind
+Outlook and Google Calendar send, with Yes / No / Maybe. Gmail and Outlook put it straight
+into the person's own calendar on arrival; nobody has to subscribe to anything or click
+anything first. Cancelling the meeting sends a cancellation that removes it again.
+
+It works with Google, Outlook, Apple and anything else that reads email, because it is
+ordinary email: a `text/calendar; method=REQUEST` part, not an attachment. The only
+requirement is that **SES is configured** (`SES_*` in the env) and that people have an
+email address on their account — both come from the Attendance app.
+
+Because of this, meetings are **left out of the subscription feed** below when email is
+switched on: they already arrive in the person's own calendar, and carrying them twice
+would show every meeting twice. If SES is not configured, or someone has no email
+address, the feed keeps carrying their meetings so they still see them somewhere.
+
 ### Calendar subscription (Google / Outlook / Apple)
+
+The feed covers what nobody wants an email invitation for: **task due dates and
+reminders** (plus meetings, when email is off — see above).
 
 On the **Calendar** page, **Add to Google, Outlook or Apple** (also on Profile →
 **Calendar subscription**). Each button opens that service's own "add calendar" screen with
-the link filled in; confirm there and it is added. Subscribing once keeps that person's
-meetings, task due dates and reminders up to date. To add it by hand instead:
+the link filled in; confirm there and it is added. To add it by hand instead:
 
 - **Google Calendar:** Other calendars → **+** → From URL → paste → Add calendar.
 - **Outlook:** Add calendar → Subscribe from web → paste → Import.

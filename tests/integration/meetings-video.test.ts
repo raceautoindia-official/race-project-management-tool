@@ -112,3 +112,92 @@ describe("organizer without an email address", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe("meeting invitations by email", () => {
+  /**
+   * The point of invitations is that nobody has to subscribe to anything:
+   * the meeting lands in the guest's own calendar on arrival. These check
+   * the routes actually send one, addressed to the right people.
+   */
+  async function withMailerSpy<T>(fn: (sent: ReturnType<typeof vi.fn>) => Promise<T>) {
+    const sent = vi.fn().mockResolvedValue(true);
+    const real = await vi.importActual<typeof import("@/lib/mailer")>("@/lib/mailer");
+    vi.doMock("@/lib/mailer", () => ({ ...real, sendCalendarInvite: sent }));
+    vi.resetModules();
+    try {
+      return await fn(sent);
+    } finally {
+      vi.doUnmock("@/lib/mailer");
+      vi.resetModules();
+    }
+  }
+
+  it("invites every guest when a meeting is created, and cancels on delete", async () => {
+    await withMailerSpy(async (sent) => {
+      const route = await import("@/app/api/meetings/route");
+      const byId = await import("@/app/api/meetings/[id]/route");
+
+      actAs(lead);
+      const created = await call<{ meeting: Meeting }>(route.POST, {
+        method: "POST",
+        body: {
+          title: "Invited review",
+          startTime: "2026-12-11T09:30",
+          durationMinutes: 45,
+          video: "room",
+          reminderMinutes: 30,
+          attendeeIds: [sam.id],
+        },
+      });
+      expect(created.status).toBe(201);
+
+      expect(sent).toHaveBeenCalledTimes(1);
+      const invite = sent.mock.calls[0][0];
+      expect(invite.method).toBe("REQUEST");
+      expect(invite.subject).toBe("Invitation: Invited review");
+      // The guest, not the organizer — you don't invite yourself.
+      expect(invite.to).toEqual([sam.email]);
+      expect(invite.ics).toContain("METHOD:REQUEST");
+      expect(invite.ics).toContain(`UID:meeting-${created.body.meeting.id}@pmapp`);
+      expect(invite.ics).toContain("DTSTART:20261211T093000Z");
+      expect(invite.ics).toContain("DTEND:20261211T101500Z"); // +45 minutes
+      expect(invite.ics).toContain("TRIGGER:-PT30M");
+      expect(invite.ics.replace(/\r\n /g, "")).toContain(`mailto:${sam.email}`);
+
+      sent.mockClear();
+      const deleted = await call(byId.DELETE, { id: created.body.meeting.id });
+      expect(deleted.status).toBe(200);
+
+      expect(sent).toHaveBeenCalledTimes(1);
+      const cancel = sent.mock.calls[0][0];
+      expect(cancel.method).toBe("CANCEL");
+      expect(cancel.subject).toBe("Cancelled: Invited review");
+      expect(cancel.to).toEqual([sam.email]);
+      // Same UID, so the entry is withdrawn rather than duplicated.
+      expect(cancel.ics).toContain(`UID:meeting-${created.body.meeting.id}@pmapp`);
+      expect(cancel.ics).toContain("STATUS:CANCELLED");
+    });
+  });
+
+  it("still creates the meeting when the invitation cannot be sent", async () => {
+    await withMailerSpy(async (sent) => {
+      sent.mockRejectedValue(new Error("SES is down"));
+      const route = await import("@/app/api/meetings/route");
+
+      actAs(lead);
+      const created = await call<{ meeting: Meeting }>(route.POST, {
+        method: "POST",
+        body: {
+          title: "Mail is broken",
+          startTime: "2026-12-12T09:30",
+          video: "none",
+          attendeeIds: [sam.id],
+        },
+      });
+
+      // The meeting is what matters; the email is a courtesy.
+      expect(created.status).toBe(201);
+      expect(created.body.meeting.title).toBe("Mail is broken");
+    });
+  });
+});

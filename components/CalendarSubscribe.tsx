@@ -27,8 +27,15 @@ interface CheckResult {
 export default function CalendarSubscribe({
   initialUrl,
   lastFetchedLabel = null,
+  meetingsByEmail = false,
 }: {
   initialUrl: string | null;
+  /**
+   * True when meetings are emailed as calendar invitations, which means they
+   * are deliberately absent from this feed — saying otherwise here would
+   * have people hunting for meetings that were never meant to be in it.
+   */
+  meetingsByEmail?: boolean;
   /**
    * How long ago a calendar app last read the feed, or null if none has.
    * It is the only proof a subscription exists — Google, Outlook and Apple
@@ -95,8 +102,17 @@ export default function CalendarSubscribe({
   return (
     <div className="space-y-3 text-sm">
       <p className="text-slate-600">
-        Subscribe once and your meetings, task due dates and reminders appear in your
-        calendar and stay up to date.
+        {meetingsByEmail ? (
+          <>
+            Meetings already reach you as calendar invitations by email. Subscribe here to
+            add your <strong>task due dates and reminders</strong> too, kept up to date.
+          </>
+        ) : (
+          <>
+            Subscribe once and your meetings, task due dates and reminders appear in your
+            calendar and stay up to date.
+          </>
+        )}
       </p>
 
       {url ? (

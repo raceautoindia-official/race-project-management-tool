@@ -118,6 +118,91 @@ export function buildIcs(
   return lines.map(foldIcsLine).join("\r\n") + "\r\n";
 }
 
+export interface InvitePerson {
+  name: string;
+  email: string;
+}
+
+export interface InviteInput {
+  /** Stable across the invitation and its later cancellation. */
+  uid: string;
+  summary: string;
+  start: Date;
+  end: Date;
+  description?: string | null;
+  location?: string | null;
+  url?: string | null;
+  alarmMinutesBefore?: number | null;
+  organizer: InvitePerson;
+  attendees: InvitePerson[];
+  /** REQUEST invites; CANCEL withdraws an invitation already sent. */
+  method: "REQUEST" | "CANCEL";
+  now?: Date;
+}
+
+/** A mail address as iCalendar wants it, with anything dangerous stripped. */
+function calAddress(email: string): string {
+  return `mailto:${email.replace(/[\r\n\s;,:]+/g, "")}`;
+}
+
+/**
+ * A calendar *invitation*, as opposed to the feed's read-only copy.
+ *
+ * The difference is METHOD plus an ORGANIZER and ATTENDEE list: with those,
+ * Gmail and Outlook treat the mail as an invitation — putting it straight in
+ * the recipient's own calendar with Yes/No/Maybe — instead of an attachment
+ * they have to open. CANCEL removes it again, matched by the shared UID.
+ *
+ * SEQUENCE is 0 for the invitation and 1 for the cancellation, which is all
+ * this app needs: a meeting here can be created and cancelled, never edited.
+ */
+export function buildInvite(input: InviteInput): string {
+  const now = input.now ?? new Date();
+  const cancelling = input.method === "CANCEL";
+
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//PMApp//Project Management//EN",
+    "CALSCALE:GREGORIAN",
+    `METHOD:${input.method}`,
+    "BEGIN:VEVENT",
+    `UID:${input.uid}`,
+    `DTSTAMP:${stamp(now)}`,
+    `DTSTART:${stamp(input.start)}`,
+    `DTEND:${stamp(input.end)}`,
+    `SEQUENCE:${cancelling ? 1 : 0}`,
+    `SUMMARY:${escapeIcsText(input.summary)}`,
+    `ORGANIZER;CN=${escapeIcsText(input.organizer.name)}:${calAddress(input.organizer.email)}`,
+  ];
+
+  for (const a of input.attendees) {
+    lines.push(
+      `ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;` +
+        `CN=${escapeIcsText(a.name)}:${calAddress(a.email)}`
+    );
+  }
+
+  if (input.description) lines.push(`DESCRIPTION:${escapeIcsText(input.description)}`);
+  if (input.location) lines.push(`LOCATION:${escapeIcsText(input.location)}`);
+  if (input.url) lines.push(`URL:${input.url.replace(/[\r\n]+/g, "")}`);
+  lines.push(`STATUS:${cancelling ? "CANCELLED" : "CONFIRMED"}`);
+
+  // A cancelled event needs no reminder.
+  if (!cancelling && input.alarmMinutesBefore != null && input.alarmMinutesBefore > 0) {
+    lines.push(
+      "BEGIN:VALARM",
+      "ACTION:DISPLAY",
+      `DESCRIPTION:${escapeIcsText(input.summary)}`,
+      `TRIGGER:-PT${Math.round(input.alarmMinutesBefore)}M`,
+      "END:VALARM"
+    );
+  }
+
+  lines.push("END:VEVENT", "END:VCALENDAR");
+  return lines.map(foldIcsLine).join("\r\n") + "\r\n";
+}
+
 /** A downloadable .ics response (single event) — opens in the desktop calendar. */
 export function icsResponse(filename: string, body: string, download = true): Response {
   const safe = filename.replace(/[^\w.-]+/g, "-").slice(0, 80);
