@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildInvite } from "@/lib/ics";
 import { buildInviteMime } from "@/lib/mailer";
 
@@ -199,5 +199,61 @@ describe("replies to an invitation", () => {
     const raw = mime({ replyTo: "lee@example.test\r\nBcc: sneak@evil.test" });
     expect(raw.split("\r\n").some((l) => l.startsWith("Bcc:"))).toBe(false);
     expect(raw).toContain("Reply-To: lee@example.test Bcc: sneak@evil.test");
+  });
+});
+
+describe("choosing how mail leaves the server", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  async function transport() {
+    const m = await import("@/lib/mailer");
+    return { kind: m.mailerTransport(), configured: m.mailerConfigured() };
+  }
+
+  const ses = () => {
+    vi.stubEnv("SES_REGION", "ap-south-1");
+    vi.stubEnv("SES_ACCESS_KEY_ID", "AKIAEXAMPLE");
+    vi.stubEnv("SES_SECRET_ACCESS_KEY", "secret");
+    vi.stubEnv("SES_FROM_EMAIL", "alerts@example.test");
+  };
+  const smtp = () => {
+    vi.stubEnv("SMTP_HOST", "smtpout.secureserver.net");
+    vi.stubEnv("SMTP_USER", "pm@example.test");
+    vi.stubEnv("SMTP_PASSWORD", "hunter2");
+    vi.stubEnv("SMTP_FROM", "pm@example.test");
+  };
+
+  it("reports nothing configured when nothing is", async () => {
+    for (const k of ["SES_REGION", "SES_ACCESS_KEY_ID", "SES_SECRET_ACCESS_KEY",
+                     "SES_FROM_EMAIL", "SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD",
+                     "SMTP_FROM", "AWS_REGION", "AWS_ACCESS_KEY_ID",
+                     "AWS_SECRET_ACCESS_KEY", "SMTP_PASS"]) {
+      vi.stubEnv(k, "");
+    }
+    expect(await transport()).toEqual({ kind: "none", configured: false });
+  });
+
+  it("uses SES when only SES is set up", async () => {
+    ses();
+    expect(await transport()).toEqual({ kind: "ses", configured: true });
+  });
+
+  it("uses SMTP when only SMTP is set up", async () => {
+    smtp();
+    expect(await transport()).toEqual({ kind: "smtp", configured: true });
+  });
+
+  it("prefers SMTP when both are — it needs no DNS work to be trusted", async () => {
+    ses();
+    smtp();
+    expect(await transport()).toEqual({ kind: "smtp", configured: true });
+  });
+
+  it("is not configured when SMTP is half-filled in", async () => {
+    vi.stubEnv("SMTP_HOST", "smtpout.secureserver.net");
+    vi.stubEnv("SMTP_USER", "pm@example.test");
+    vi.stubEnv("SMTP_PASSWORD", ""); // forgotten
+    vi.stubEnv("SMTP_FROM", "pm@example.test");
+    expect(await transport()).toEqual({ kind: "none", configured: false });
   });
 });

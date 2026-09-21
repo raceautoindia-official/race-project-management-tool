@@ -1,5 +1,6 @@
 import "server-only";
 import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
+import { createTransport, type Transporter } from "nodemailer";
 import { feedUrlProblem } from "./calendar-links";
 
 /**
@@ -21,16 +22,54 @@ const region = () => process.env.SES_REGION ?? process.env.AWS_REGION ?? "";
 const access = () => process.env.SES_ACCESS_KEY_ID ?? process.env.AWS_ACCESS_KEY_ID ?? "";
 const secret = () =>
   process.env.SES_SECRET_ACCESS_KEY ?? process.env.AWS_SECRET_ACCESS_KEY ?? "";
-const fromAddress = () => process.env.SES_FROM_EMAIL ?? "";
+
+const smtpHost = () => process.env.SMTP_HOST ?? "";
+const smtpUser = () => process.env.SMTP_USER ?? "";
+const smtpPass = () => process.env.SMTP_PASSWORD ?? process.env.SMTP_PASS ?? "";
+const smtpPort = () => Number(process.env.SMTP_PORT ?? 465);
+/** Implicit TLS on 465; STARTTLS on 587 and friends. */
+const smtpSecure = () =>
+  process.env.SMTP_SECURE ? process.env.SMTP_SECURE === "true" : smtpPort() === 465;
+
+/**
+ * Each transport's sender, read independently — deciding the address from
+ * which transport is active, while deciding the transport from whether it
+ * has an address, is a loop.
+ */
+const smtpFrom = () => process.env.SMTP_FROM ?? process.env.SES_FROM_EMAIL ?? "";
+const sesFrom = () => process.env.SES_FROM_EMAIL ?? "";
+
+/** The sender actually used, which follows the transport actually used. */
+const fromAddress = () => (smtpConfigured() ? smtpFrom() : sesFrom());
+
+function sesConfigured(): boolean {
+  return Boolean(region() && access() && secret() && sesFrom());
+}
+
+/**
+ * True when SMTP is set up. Preferred over SES when both are: an existing
+ * company mailbox is already trusted by the domain's SPF, so it needs no DNS
+ * work, no DKIM wait and no sending-limit approval.
+ */
+function smtpConfigured(): boolean {
+  return Boolean(smtpHost() && smtpUser() && smtpPass() && smtpFrom());
+}
 
 export function mailerConfigured(): boolean {
-  return Boolean(region() && access() && secret() && fromAddress());
+  return smtpConfigured() || sesConfigured();
+}
+
+/** Which way mail leaves, for logs and the admin page. */
+export function mailerTransport(): "smtp" | "ses" | "none" {
+  if (smtpConfigured()) return "smtp";
+  if (sesConfigured()) return "ses";
+  return "none";
 }
 
 let _client: SESv2Client | null = null;
 let _clientKey = "";
 function client(): SESv2Client | null {
-  if (!mailerConfigured()) return null;
+  if (!sesConfigured()) return null;
   // Rebuild if the credentials changed under us.
   const key = `${region()}|${access()}`;
   if (!_client || _clientKey !== key) {
@@ -41,6 +80,44 @@ function client(): SESv2Client | null {
     _clientKey = key;
   }
   return _client;
+}
+
+let _smtp: Transporter | null = null;
+let _smtpKey = "";
+function smtp(): Transporter | null {
+  if (!smtpConfigured()) return null;
+  const key = `${smtpHost()}|${smtpPort()}|${smtpUser()}|${smtpSecure()}`;
+  if (!_smtp || _smtpKey !== key) {
+    _smtp = createTransport({
+      host: smtpHost(),
+      port: smtpPort(),
+      secure: smtpSecure(),
+      auth: { user: smtpUser(), pass: smtpPass() },
+    });
+    _smtpKey = key;
+  }
+  return _smtp;
+}
+
+/**
+ * Prove the SMTP settings work, without sending anything. Used by the admin
+ * email check so a wrong password is found on the spot rather than by
+ * noticing, days later, that nothing arrived.
+ */
+export async function verifyMailer(): Promise<{ ok: boolean; detail: string }> {
+  const t = smtp();
+  if (t) {
+    try {
+      await t.verify();
+      return { ok: true, detail: `SMTP ${smtpHost()}:${smtpPort()} accepted the login.` };
+    } catch (err) {
+      return { ok: false, detail: `SMTP ${smtpHost()}: ${(err as Error).message}` };
+    }
+  }
+  if (sesConfigured()) {
+    return { ok: true, detail: `AWS SES in ${region()} (credentials checked on first send).` };
+  }
+  return { ok: false, detail: "No email is configured — set SMTP_* or SES_*." };
 }
 
 export interface SendOptions {
@@ -58,10 +135,27 @@ export async function sendEmail(opts: SendOptions): Promise<boolean> {
   const unique = Array.from(new Set(recipients));
   if (unique.length === 0) return false;
 
+  const t = smtp();
+  if (t) {
+    try {
+      await t.sendMail({
+        from: fromAddress(),
+        to: unique.join(", "),
+        subject: opts.subject,
+        html: opts.html,
+        ...(opts.text ? { text: opts.text } : {}),
+      });
+      return true;
+    } catch (err) {
+      console.error("[mailer] SMTP send failed:", (err as Error).message);
+      return false;
+    }
+  }
+
   const c = client();
   if (!c) {
     console.warn(
-      `[mailer] SES not configured — skipped "${opts.subject}" → ${unique.join(", ")}`
+      `[mailer] no email transport configured — skipped "${opts.subject}" → ${unique.join(", ")}`
     );
     return false;
   }
@@ -143,15 +237,33 @@ export async function sendCalendarInvite(opts: CalendarInviteOptions): Promise<b
   );
   if (unique.length === 0) return false;
 
-  const c = client();
-  if (!c) {
+  if (!mailerConfigured()) {
     console.warn(
-      `[mailer] SES not configured — skipped invitation "${opts.subject}" → ${unique.length} recipient(s)`
+      `[mailer] no email transport configured — skipped invitation "${opts.subject}" → ${unique.length} recipient(s)`
     );
     return false;
   }
 
+  // The same MIME either way: the invitation's shape is what makes calendars
+  // treat it as one, and that must not depend on how it happens to be sent.
   const raw = buildInviteMime({ ...opts, to: unique, from: fromAddress() });
+
+  const t = smtp();
+  if (t) {
+    try {
+      await t.sendMail({
+        envelope: { from: fromAddress(), to: unique },
+        raw,
+      });
+      return true;
+    } catch (err) {
+      console.error("[mailer] SMTP invitation failed:", (err as Error).message);
+      return false;
+    }
+  }
+
+  const c = client();
+  if (!c) return false;
 
   try {
     await c.send(

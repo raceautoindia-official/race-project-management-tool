@@ -3,6 +3,7 @@ import { requirePageAdmin } from "@/lib/page-guard";
 import { getAdminDashboard } from "@/lib/dashboard";
 import AppShell from "@/components/AppShell";
 import { StatCard, SectionCard, PageHeader } from "@/components/Cards";
+import EmailCheck from "@/components/EmailCheck";
 import { humanizeAction, formatRelative } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -52,6 +53,12 @@ export default async function AdminHomePage() {
             Full audit trail of logins, project and task changes.
           </p>
         </Link>
+      </div>
+
+      <div className="mt-6">
+        <SectionCard title="Email">
+          <EmailCheck />
+        </SectionCard>
       </div>
 
       <div className="mt-6">

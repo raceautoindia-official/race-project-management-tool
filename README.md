@@ -132,7 +132,8 @@ node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 | `ATTENDANCE_DB_*`     | Attendance database used for login (defaults to the `MYSQL_*` server, db `attendance`) |
 | `CRON_SECRET`         | Required `x-cron-secret` header for `/api/cron/*` |
 | `APP_BASE_URL`        | Absolute URL used for links in emails |
-| `SES_*`               | AWS SES email (blank = in-app notifications only) |
+| `SMTP_*`              | Email through an ordinary mailbox — host, user, password, from (blank = in-app only) |
+| `SES_*`               | Email through AWS SES instead, for higher volume. SMTP wins if both are set |
 | `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_*` | Web push (the public key must be set **when building**) |
 | `MEETINGS_APP_URL`   | Video meetings app (default `https://meetings.raceinnovations.in`) |
 | `MEETINGS_API_KEY`   | Shared secret so PMApp can schedule meetings there (blank = room links only) |
@@ -256,6 +257,23 @@ pm-app/
 
 ## Calendar, video calls and WhatsApp
 
+### Setting up email
+
+Two ways, and **SMTP wins if both are configured**:
+
+| | When to use it | What it needs |
+| --- | --- | --- |
+| **SMTP** | Almost always | An ordinary company mailbox: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`. Nothing in DNS — the domain already lists its own mail server in SPF. `SMTP_FROM` must be the mailbox you log in as; most providers refuse to send as anything else. |
+| **AWS SES** | Thousands of emails a day | Domain verified, DKIM records added, `amazonses.com` in the SPF record, and production access (new accounts can only send to verified recipients). |
+
+Common hosts: GoDaddy `smtpout.secureserver.net:465`, Google Workspace
+`smtp.gmail.com:465` (with an App Password), Microsoft 365 `smtp.office365.com:587`.
+
+**Admin Home → Email** has a *Check settings* and a *Send me a test* button. Use them
+after any change: email failures are logged rather than shown — a notification that
+can't be sent must not break the action behind it — so nothing else tells you the
+password is wrong.
+
 ### Meeting invitations (nothing to set up)
 
 Scheduling a meeting emails every attendee a **calendar invitation** — the same kind
@@ -265,7 +283,7 @@ anything first. Cancelling the meeting sends a cancellation that removes it agai
 
 It works with Google, Outlook, Apple and anything else that reads email, because it is
 ordinary email: a `text/calendar; method=REQUEST` part, not an attachment. The only
-requirement is that **SES is configured** (`SES_*` in the env) and that people have an
+requirement is that **email is configured** (`SMTP_*` or `SES_*` in the env) and that people have an
 email address on their account — both come from the Attendance app.
 
 Because of this, meetings are **left out of the subscription feed** below when email is
