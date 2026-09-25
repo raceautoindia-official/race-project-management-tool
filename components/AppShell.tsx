@@ -24,6 +24,7 @@ const MEMBER_LINKS = [
   { href: "/team", label: "Team", icon: "◉" },
   { href: "/calendar", label: "Calendar", icon: "▤" },
   { href: "/outstanding", label: "Outstanding", icon: "⚠" },
+  { href: "/work-hours", label: "Work hours", icon: "◵" },
   { href: "/meetings", label: "Meetings", icon: "◷" },
   { href: "/reminders", label: "Reminders", icon: "🔔" },
   { href: "/profile", label: "Profile", icon: "◔" },

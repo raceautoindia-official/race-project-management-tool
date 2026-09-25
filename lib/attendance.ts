@@ -69,6 +69,63 @@ export function mapAttendanceRole(role: string): Role {
   return role === "super_admin" || role === "manager" ? "admin" : "member";
 }
 
+/** One employee's recorded day, as the Attendance app keeps it. */
+export interface AttendanceDay {
+  employee_id: number;
+  /** Local (IST) calendar date, "YYYY-MM-DD". */
+  work_date: string;
+  status: "present" | "late" | "early_departure" | "absent" | "leave" | "holiday";
+  /** Minutes between clock-in and clock-out; null when they never clocked in. */
+  total_minutes: number | null;
+}
+
+/**
+ * Recorded days for these employees over a date range.
+ *
+ * Read-only, like everything else here: the Attendance app owns this data and
+ * PM never writes to it. Rows only exist for days that have happened — there
+ * is nothing scheduled ahead — so this answers "what happened" and can never
+ * answer "will they be in on Thursday".
+ */
+export async function fetchAttendanceDays(
+  employeeIds: number[],
+  fromDate: string,
+  toDate: string
+): Promise<AttendanceDay[]> {
+  if (!employeeIds.length) return [];
+  const holes = employeeIds.map(() => "?").join(",");
+  const [rows] = await attendancePool.query(
+    `SELECT employee_id, work_date, status, total_minutes
+       FROM attendance
+      WHERE employee_id IN (${holes}) AND work_date BETWEEN ? AND ?
+      ORDER BY work_date`,
+    [...employeeIds, fromDate, toDate]
+  );
+  return (Array.isArray(rows) ? rows : []) as AttendanceDay[];
+}
+
+/** Who reports to whom, plus the details PM has no column for. */
+export interface EmployeeProfile {
+  id: number;
+  emp_id: string;
+  name: string;
+  department: string | null;
+  manager_id: number | null;
+  phone: string | null;
+  is_active: number;
+}
+
+/** The employee directory, optionally narrowed to some ids. */
+export async function fetchEmployeeProfiles(ids?: number[]): Promise<EmployeeProfile[]> {
+  const where = ids?.length ? ` WHERE id IN (${ids.map(() => "?").join(",")})` : "";
+  const [rows] = await attendancePool.query(
+    `SELECT id, emp_id, name, department, manager_id, phone, is_active
+       FROM employees${where} ORDER BY name`,
+    ids?.length ? ids : []
+  );
+  return (Array.isArray(rows) ? rows : []) as EmployeeProfile[];
+}
+
 /** Look up an active-or-inactive employee by their emp_id (e.g. "RACE005"). */
 export async function findEmployeeByEmpId(
   empId: string

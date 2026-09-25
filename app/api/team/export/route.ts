@@ -12,7 +12,10 @@ export async function GET() {
   try {
     const user = await requireUser();
     const { scope, members } = await getTeamPerformance(user);
-    if (scope === "self") {
+    // Seeing who you work with is not the same as taking away a spreadsheet
+    // of their performance — that stays with admins and the leads
+    // accountable for it.
+    if (scope !== "all" && scope !== "led") {
       throw forbidden("Only an admin or project lead can export the team report");
     }
 

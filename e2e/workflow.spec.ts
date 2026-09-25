@@ -69,9 +69,10 @@ test("My Tasks shows a calendar even for someone with no tasks", async () => {
   await expect(olivia.getByText("Sat", { exact: true })).toBeVisible();
   await expect(olivia.getByText(/nothing on the calendar/i)).toBeVisible();
 
-  // The list view keeps its own plain empty state.
+  // The list view keeps its own plain empty state. Olivia is on no project,
+  // so neither her own work nor anyone else's appears.
   await olivia.getByRole("button", { name: "list" }).click();
-  await expect(olivia.getByText("You have no assigned tasks.")).toBeVisible();
+  await expect(olivia.getByText(/You have no assigned tasks/)).toBeVisible();
 });
 
 test("the nominated lead approves the project and adds a member", async () => {

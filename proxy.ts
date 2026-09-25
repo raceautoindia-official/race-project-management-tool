@@ -51,6 +51,9 @@ function isPublic(pathname: string): boolean {
   // Calendar subscriptions authenticate with the secret token in the URL:
   // Google/Outlook/Apple fetch them with no cookies.
   if (pathname.startsWith("/api/calendar/feed/")) return true;
+  // Server-to-server endpoints for the other company apps: they present a
+  // shared key in a header (x-integration-key), never a session cookie.
+  if (pathname.startsWith("/api/integrations/")) return true;
   return false;
 }
 

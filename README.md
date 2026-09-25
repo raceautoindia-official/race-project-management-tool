@@ -96,6 +96,7 @@ mysql -u root -p pm_app < db/migrations/2026-09-17_phase4_requests_signoff.sql
 mysql -u root -p pm_app < db/migrations/2026-09-18_phase5_calendar_video_whatsapp.sql
 mysql -u root -p pm_app < db/migrations/2026-09-18_fix_legacy_completed_at.sql
 mysql -u root -p pm_app < db/migrations/2026-09-19_calendar_feed_activity.sql
+mysql -u root -p pm_app < db/migrations/2026-09-25_time_log_reporting_index.sql
 ```
 
 It is safe to re-run and backfills existing tasks (their creator — or the project owner —
@@ -138,6 +139,8 @@ node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 | `MEETINGS_APP_URL`   | Video meetings app (default `https://meetings.raceinnovations.in`) |
 | `MEETINGS_API_KEY`   | Shared secret so PMApp can schedule meetings there (blank = room links only) |
 | `WHATSAPP_*`         | WhatsApp Cloud API (blank = WhatsApp alerts off) |
+| `INTEGRATION_API_KEY` | Key the Attendance app sends to read PM work (blank = `/api/integrations/*` off) |
+| `ATTENDANCE_DB_NAME` | The Attendance schema — **`attendance_db`** on this install, not the `attendance` default |
 
 `.env.local` is git-ignored; `.env.example` is committed.
 
@@ -274,6 +277,40 @@ after any change: email failures are logged rather than shown — a notification
 can't be sent must not break the action behind it — so nothing else tells you the
 password is wrong.
 
+## Working with the Attendance app
+
+The Attendance app owns identity and time; PM reads it and never writes to it.
+`pm_app.users.employee_id` → `attendance_db.employees.id` is the whole link.
+
+**Work hours** (sidebar) puts the two halves side by side for a week: time at work
+(`attendance.total_minutes`) against time logged on tasks (`task_time_logs`). Everyone
+sees their own week; a manager also sees whoever reports to them via
+`employees.manager_id`; an admin sees everyone. Time logged is grouped by **IST** date —
+grouping by UTC would push an evening's work onto the next day.
+
+Read a gap as time not yet logged, not as idleness: meetings, travel and reading rarely
+have a task open. On this install 31% of attendance rows are `absent`, which means "no
+clock-in recorded" rather than "did not work", and the `leave` status is unused — so PM
+deliberately makes no claim about who is on leave.
+
+If the Attendance database can't be reached, the page still shows the PM half with a
+notice rather than failing.
+
+**The other direction** is `GET /api/integrations/employee-work?empId=RACE005`, for the
+Attendance app to show someone their PM work on the screen they already open each
+morning. Send the shared key as a header:
+
+```bash
+curl -H "x-integration-key: $INTEGRATION_API_KEY" \
+  "https://projectmanager.raceinnovations.in/api/integrations/employee-work?empId=RACE005"
+```
+
+It returns `openCount`, `dueTodayCount`, `overdueCount`, `loggedTodayMinutes` and up to 25
+open tasks (soonest deadline first, signed-off work excluded). An employee who has never
+opened PM returns `known: false` with empty lists — not an error, so the Attendance app
+shows nothing rather than a failure. Set `INTEGRATION_API_KEY` in PM's env; without it the
+endpoint answers 503.
+
 ### Meeting invitations (nothing to set up)
 
 Scheduling a meeting emails every attendee a **calendar invitation** — the same kind
@@ -400,7 +437,8 @@ Do these in order — the new code needs the new database columns.
    `2026-09-18_fix_legacy_completed_at.sql` (that one corrects completion
    times left in the server's time zone by the July 2026 backfill; it records that it
    ran, so a second run changes nothing), then
-   `2026-09-19_calendar_feed_activity.sql`.
+   `2026-09-19_calendar_feed_activity.sql`, then
+   `2026-09-25_time_log_reporting_index.sql`.
 6. **Start the new build** (`npm run start`) and run the phase 4 migration **once more** — it
    backfills any task created by the old app in between. Check
    `SELECT COUNT(*) FROM tasks WHERE requested_by IS NULL` returns 0.

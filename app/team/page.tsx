@@ -15,13 +15,16 @@ export const dynamic = "force-dynamic";
 const SUBTITLES = {
   all: "Individual status and 30-day performance for every member.",
   led: "Individual status and 30-day performance for members of the projects you lead.",
+  shared: "The people you share projects with, and what they are working on.",
   self: "Your individual status and 30-day performance.",
 } as const;
 
 export default async function TeamPage() {
   const user = await requirePageUser();
   const { scope, members } = await getTeamPerformance(user);
-  const showExport = scope !== "self";
+  // Exporting a spreadsheet of colleagues' performance stays with the people
+  // accountable for it. Seeing who you work with is not the same thing.
+  const showExport = scope === "all" || scope === "led";
 
   return (
     <AppShell user={user}>

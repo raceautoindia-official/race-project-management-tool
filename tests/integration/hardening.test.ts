@@ -334,3 +334,43 @@ describe("separation of duties and small fixes", () => {
     expect(ok.status).toBe(201);
   });
 });
+
+describe("who you see on the Team page", () => {
+  /**
+   * A member should see the people they actually work with — otherwise the
+   * page shows them a single card of themselves, which tells them nothing.
+   */
+  it("a member sees everyone on their projects, and nobody else", async () => {
+    // alice and sam are both on the "Hardening" project created above; zoe is
+    // on none of it.
+    const team = await getTeamPerformance(alice);
+    expect(team.scope).toBe("shared");
+
+    const seen = team.members.map((m) => m.id);
+    expect(seen).toContain(alice.id); // themselves
+    expect(seen).toContain(sam.id); // a project-mate
+    expect(seen).toContain(lead.id); // the project's lead
+    expect(seen).not.toContain(zoe.id); // shares no project
+  });
+
+  it("someone on no project still sees themselves", async () => {
+    const solo = await createUser("Hsolo");
+    const team = await getTeamPerformance(solo);
+    expect(team.scope).toBe("self");
+    expect(team.members.map((m) => m.id)).toEqual([solo.id]);
+  });
+
+  it("a lead still sees their project's members, and is told so", async () => {
+    const team = await getTeamPerformance(lead);
+    expect(team.scope).toBe("led");
+    expect(team.members.map((m) => m.id)).toContain(sam.id);
+  });
+
+  it("only admins and leads may export the performance spreadsheet", async () => {
+    const teamExport = await import("@/app/api/team/export/route");
+    actAs(alice);
+    expect((await call(teamExport.GET)).status).toBe(403);
+    actAs(lead);
+    expect((await call(teamExport.GET)).status).toBe(200);
+  });
+});

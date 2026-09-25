@@ -32,6 +32,14 @@ const MEETING = `SMOKE MEETING ${STAMP}`;
 
 const results = [];
 let failed = false;
+/**
+ * Something that isn't a failure but that someone should know — a setting
+ * that will misbehave in front of real users. Printed with the results so it
+ * isn't lost in the scroll.
+ */
+function warn(message) {
+  results.push(`  warn ${message}`);
+}
 async function step(name, fn) {
   const started = Date.now();
   try {
@@ -190,8 +198,25 @@ try {
     const create = admin.getByRole("button", { name: "Create my calendar link" });
     if (await create.isVisible()) await create.click();
     const url = await admin.getByLabel("Your private calendar link").inputValue();
+
+    // The link people are handed is built from APP_BASE_URL. If that points
+    // somewhere other than the site under test, say so — a wrong
+    // APP_BASE_URL is the reason a subscription silently never fills in —
+    // then test the feed on the site we are actually smoke-testing, so
+    // running on a spare port doesn't look like a broken feed.
+    const feed = new URL(url);
+    const base = new URL(BASE);
+    let target = url;
+    if (feed.origin !== base.origin) {
+      warn(
+        `APP_BASE_URL points at ${feed.origin}, not ${base.origin} — ` +
+          `that is the address handed to Google, Outlook and Apple`
+      );
+      target = base.origin + feed.pathname + feed.search;
+    }
+
     // The feed must work with no session at all — calendars send no cookies.
-    const res = await admin.request.get(url, { headers: { cookie: "" } });
+    const res = await admin.request.get(target, { headers: { cookie: "" } });
     if (res.status() !== 200) throw new Error(`feed returned ${res.status()}`);
     if (!(await res.text()).includes(`SUMMARY:${MEETING}`)) {
       throw new Error("the meeting is missing from the feed");
