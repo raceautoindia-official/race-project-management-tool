@@ -317,9 +317,12 @@ describe("project request → lead approval", () => {
       const approved = await call<{ request: TaskRequest; task: Task }>(requestDecision.POST, {
         method: "POST",
         id: req.id,
+        // priority and dueDate are sent but must be ignored: they belong to
+        // the request, and this request was raised without either.
         body: { decision: "approve", assigneeId: sam.id, priority: "high", dueDate: "2026-12-31" },
       });
       expect(approved.status).toBe(200);
+      expect(approved.body.task.due_date).toBeNull();
       taskB = approved.body.task;
       expect(approved.body.request).toMatchObject({ status: "approved", decided_by: lead.id, task_id: taskB.id });
       expect(taskB).toMatchObject({
@@ -331,7 +334,7 @@ describe("project request → lead approval", () => {
         requested_by: sam.id,
         request_approved_by: lead.id,
         assignee_id: sam.id,
-        priority: "high",
+        priority: "medium", // the request's own, not the approver's "high"
         status: "todo",
       });
 
@@ -607,21 +610,25 @@ describe("the requester states urgency and effort", () => {
     expect(String(decided.body.task.due_date)).toContain("2026-12-24");
   });
 
-  it("still lets the approver disagree", async () => {
+  it("cannot be quietly rewritten at the moment of approval", async () => {
     actAs(sam);
     const raised = await call<{ request: TaskRequest }>(projectRequests.POST, {
       method: "POST",
       id: pid,
-      body: { ...feature, title: "Overridden", priority: "urgent", estimatedHours: 6.5 },
+      body: { ...feature, title: "Not overridable", priority: "urgent", estimatedHours: 6.5 },
     });
+
+    // The approver sends their own figures anyway — straight at the API,
+    // past the form, which no longer offers the fields at all.
     actAs(lead);
     const decided = await call<{ task: Task }>(requestDecision.POST, {
       method: "POST",
       id: raised.body.request.id,
       body: { decision: "approve", assigneeId: sam.id, priority: "low", estimatedHours: 1 },
     });
-    expect(decided.body.task).toMatchObject({ priority: "low" });
-    expect(Number(decided.body.task.estimated_hours)).toBe(1);
+    expect(decided.status).toBe(200);
+    expect(decided.body.task).toMatchObject({ priority: "urgent" });
+    expect(Number(decided.body.task.estimated_hours)).toBe(6.5);
   });
 
   it("defaults sensibly when the requester says nothing", async () => {

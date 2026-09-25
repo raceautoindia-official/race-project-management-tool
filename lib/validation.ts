@@ -219,10 +219,9 @@ export const taskRequestDecisionSchema = z
     decision: z.enum(["approve", "reject"]),
     note: z.string().trim().max(1000).optional().nullable(),
     assigneeId: optionalId.optional(),
-    priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
-    estimatedHours: optionalHours.optional(),
-    dueDate: optionalDate.optional(),
-    startDate: optionalDate.optional(),
+    // Priority, effort and dates belong to the requester. Anything sent here
+    // is ignored rather than honoured — approving is not the moment to
+    // quietly rewrite what someone asked for.
   })
   .superRefine((d, ctx) => {
     if (d.decision === "approve" && !d.assigneeId) {

@@ -13,9 +13,11 @@ type Params = { params: Promise<{ id: string }> };
 /**
  * POST /api/requests/:id/decision — an admin/project lead decides a raised
  * task request.
- *   approve { assigneeId, priority?, estimatedHours?, startDate?, dueDate?, note? }
+ *   approve { assigneeId, note? }
  *     → creates the task (requested by the raiser, approved by the decider,
- *       owned by the assignee) and links it to the request.
+ *       owned by the assignee) and links it to the request. Its priority,
+ *       effort and dates come from the request: the approver decides who
+ *       does the work, not how urgent someone else's need is.
  *   reject { note }  → the request is closed with the reason.
  */
 export async function POST(req: NextRequest, { params }: Params) {
@@ -87,12 +89,12 @@ export async function POST(req: NextRequest, { params }: Params) {
             // The requester said how urgent it is and how long it should
             // take; the approver's job is to approve, so their values are
             // only used where they deliberately changed something.
-            data.priority ?? request.priority ?? "medium",
-            data.estimatedHours ?? request.estimated_hours ?? null,
+            request.priority ?? "medium",
+            request.estimated_hours ?? null,
             data.assigneeId ?? null,
             user.id,
-            data.dueDate ?? request.due_date ?? null,
-            data.startDate ?? request.start_date ?? null,
+            request.due_date ?? null,
+            request.start_date ?? null,
             requestId,
             request.requested_by ?? null,
             user.id,

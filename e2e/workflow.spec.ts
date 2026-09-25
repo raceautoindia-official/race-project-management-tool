@@ -143,7 +143,11 @@ test("the lead approves a request with an owner and the task records its trail",
   await requestRow(lead, CORRECTION).getByRole("button", { name: "Approve" }).click();
   const dialog = lead.getByRole("dialog", { name: "Approve request" });
   await dialog.getByLabel(/Assigned owner/).selectOption({ label: USERS.sam.name });
-  await dialog.getByLabel("Priority").selectOption("high");
+  // Priority, effort and dates are the requester's — the approver only sees
+  // them, and picks who does the work.
+  await expect(dialog).toContainText("As requested:");
+  await expect(dialog).toContainText("Medium priority");
+  await expect(dialog.getByLabel("Priority")).toHaveCount(0);
   await dialog.getByRole("button", { name: "Approve & create task" }).click();
   await expect(dialog).toBeHidden();
 

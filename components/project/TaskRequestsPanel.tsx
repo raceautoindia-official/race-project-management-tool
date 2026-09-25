@@ -17,6 +17,13 @@ import type {
 import type { SpecType } from "@/lib/workflow";
 import { pickSpec, SpecView, specPayload, WorkSpecFields } from "./WorkSpec";
 
+const PRIORITY_WORD: Record<TaskPriority, string> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  urgent: "Urgent",
+};
+
 const inputClass =
   "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
 
@@ -452,18 +459,6 @@ function DecisionModal({
   onDecided: (request: TaskRequest, task: Task | null) => void;
 }) {
   const [assigneeId, setAssigneeId] = useState("");
-  // Opens showing what the requester asked for. The lead approves; they
-  // change these only when they actually disagree.
-  const [priority, setPriority] = useState<TaskPriority>(request.priority ?? "medium");
-  const [startDate, setStartDate] = useState(
-    request.start_date ? String(request.start_date).slice(0, 10) : ""
-  );
-  const [dueDate, setDueDate] = useState(
-    request.due_date ? String(request.due_date).slice(0, 10) : ""
-  );
-  const [estimatedHours, setEstimatedHours] = useState(
-    request.estimated_hours != null ? String(request.estimated_hours) : ""
-  );
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -481,12 +476,10 @@ function DecisionModal({
           body: JSON.stringify(
             approving
               ? {
+                  // Only the owner and an optional note. Priority, dates and
+                  // effort come from the request itself.
                   decision: "approve",
                   assigneeId: assigneeId ? Number(assigneeId) : null,
-                  priority,
-                  startDate: startDate || null,
-                  dueDate: dueDate || null,
-                  estimatedHours: estimatedHours === "" ? null : Number(estimatedHours),
                   note: note || null,
                 }
               : { decision: "reject", note }
@@ -548,59 +541,19 @@ function DecisionModal({
                 ))}
               </select>
             </div>
-            <div>
-              <label htmlFor="decide-priority" className="mb-1 block text-sm font-medium text-slate-700">
-                Priority
-              </label>
-              <select
-                id="decide-priority"
-                value={priority}
-                onChange={(e) => setPriority(e.target.value as TaskPriority)}
-                className={inputClass}
-              >
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-                <option value="urgent">Urgent</option>
-              </select>
-            </div>
-            <div>
-              <label htmlFor="decide-start" className="mb-1 block text-sm font-medium text-slate-700">
-                Start date
-              </label>
-              <input
-                id="decide-start"
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className={inputClass}
-              />
-            </div>
-            <div>
-              <label htmlFor="decide-due" className="mb-1 block text-sm font-medium text-slate-700">
-                Due date
-              </label>
-              <input
-                id="decide-due"
-                type="date"
-                value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-                className={inputClass}
-              />
-            </div>
-            <div>
-              <label htmlFor="decide-estimate" className="mb-1 block text-sm font-medium text-slate-700">
-                Estimated hours
-              </label>
-              <input
-                id="decide-estimate"
-                type="number"
-                min="0"
-                step="0.5"
-                value={estimatedHours}
-                onChange={(e) => setEstimatedHours(e.target.value)}
-                className={inputClass}
-              />
+            {/* Priority, dates and effort belong to the person who asked for
+                the work. Shown here so nobody approves something without
+                seeing what they are agreeing to, but not editable: changing
+                them is a conversation with the requester, not a silent edit
+                at the moment of approval. */}
+            <div className="sm:col-span-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+              <span className="font-medium">As requested:</span>{" "}
+              {PRIORITY_WORD[request.priority ?? "medium"]} priority
+              {request.estimated_hours != null && ` · ${request.estimated_hours}h estimated`}
+              {(request.start_date || request.due_date) &&
+                ` · ${request.start_date ? formatDate(request.start_date) : "any time"} → ${
+                  request.due_date ? formatDate(request.due_date) : "no deadline"
+                }`}
             </div>
             <div>
               <label htmlFor="decide-note" className="mb-1 block text-sm font-medium text-slate-700">
