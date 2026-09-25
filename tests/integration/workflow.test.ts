@@ -569,3 +569,70 @@ describe("project request → lead approval", () => {
     });
   });
 });
+
+describe("the requester states urgency and effort", () => {
+  /**
+   * Priority, estimated hours and a needed-by date used to be invented by
+   * whoever approved the request. The person asking is closer to the work.
+   */
+  let pid: number;
+
+  beforeAll(async () => {
+    pid = await createLedProject(lead, "Requester-led figures");
+    await query(`INSERT INTO project_members (project_id, user_id) VALUES (?, ?)`, [pid, sam.id]);
+  });
+
+  it("keeps what the requester asked for, and carries it onto the task", async () => {
+    actAs(sam);
+    const raised = await call<{ request: TaskRequest }>(projectRequests.POST, {
+      method: "POST",
+      id: pid,
+      body: { ...feature, priority: "urgent", estimatedHours: 6.5, dueDate: "2026-12-24" },
+    });
+    expect(raised.status).toBe(201);
+    expect(raised.body.request).toMatchObject({ priority: "urgent" });
+    expect(Number(raised.body.request.estimated_hours)).toBe(6.5);
+    expect(String(raised.body.request.due_date)).toContain("2026-12-24");
+
+    // The approver supplies only the owner — the rest comes from the request.
+    actAs(lead);
+    const decided = await call<{ task: Task }>(requestDecision.POST, {
+      method: "POST",
+      id: raised.body.request.id,
+      body: { decision: "approve", assigneeId: sam.id },
+    });
+    expect(decided.status).toBe(200);
+    expect(decided.body.task).toMatchObject({ priority: "urgent" });
+    expect(Number(decided.body.task.estimated_hours)).toBe(6.5);
+    expect(String(decided.body.task.due_date)).toContain("2026-12-24");
+  });
+
+  it("still lets the approver disagree", async () => {
+    actAs(sam);
+    const raised = await call<{ request: TaskRequest }>(projectRequests.POST, {
+      method: "POST",
+      id: pid,
+      body: { ...feature, title: "Overridden", priority: "urgent", estimatedHours: 6.5 },
+    });
+    actAs(lead);
+    const decided = await call<{ task: Task }>(requestDecision.POST, {
+      method: "POST",
+      id: raised.body.request.id,
+      body: { decision: "approve", assigneeId: sam.id, priority: "low", estimatedHours: 1 },
+    });
+    expect(decided.body.task).toMatchObject({ priority: "low" });
+    expect(Number(decided.body.task.estimated_hours)).toBe(1);
+  });
+
+  it("defaults sensibly when the requester says nothing", async () => {
+    actAs(sam);
+    const raised = await call<{ request: TaskRequest }>(projectRequests.POST, {
+      method: "POST",
+      id: pid,
+      body: { ...feature, title: "No figures given" },
+    });
+    expect(raised.body.request.priority).toBe("medium");
+    expect(raised.body.request.estimated_hours).toBeNull();
+    expect(raised.body.request.due_date).toBeNull();
+  });
+});

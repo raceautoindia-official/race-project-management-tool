@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import Modal from "@/components/Modal";
-import { RequestStatusBadge, WorkTypeBadge } from "@/components/Badge";
+import { RequestStatusBadge, TaskPriorityBadge, WorkTypeBadge } from "@/components/Badge";
 import { apiFetch, isConflict } from "@/lib/api-client";
 import { useToast } from "@/components/ToastProvider";
 import { formatIst } from "@/lib/tz";
+import { formatDate } from "@/lib/format";
 import type {
   ProjectMember,
   SpecColumns,
@@ -101,9 +102,16 @@ export default function TaskRequestsPanel({
             {r.status !== "pending" && r.decider_name && (
               <>
                 {" "}· {r.status === "approved" ? "Approved" : "Rejected"} by {r.decider_name}
+                {r.decided_at ? ` · ${formatIst(r.decided_at)}` : ""}
                 {r.decision_note ? ` — “${r.decision_note}”` : ""}
               </>
             )}
+          </div>
+          {/* What the requester asked for, so a lead sees it before deciding. */}
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+            <TaskPriorityBadge priority={r.priority ?? "medium"} />
+            {r.estimated_hours != null && <span>Est. {r.estimated_hours}h</span>}
+            {r.due_date && <span>Needed by {formatDate(r.due_date)}</span>}
           </div>
         </div>
         {r.status === "approved" && r.task_id && (
@@ -249,6 +257,10 @@ function RaiseRequestModal({
   const [type, setType] = useState<SpecType>("correction");
   const [title, setTitle] = useState("");
   const [spec, setSpec] = useState<SpecColumns>(pickSpec(null));
+  // Urgency and effort come from the person asking, not the approver.
+  const [priority, setPriority] = useState<TaskPriority>("medium");
+  const [estimatedHours, setEstimatedHours] = useState("");
+  const [dueDate, setDueDate] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -261,7 +273,14 @@ function RaiseRequestModal({
         `/api/projects/${projectId}/requests`,
         {
           method: "POST",
-          body: JSON.stringify({ taskType: type, title, ...specPayload(type, spec) }),
+          body: JSON.stringify({
+            taskType: type,
+            title,
+            priority,
+            estimatedHours: estimatedHours.trim() || null,
+            dueDate: dueDate || null,
+            ...specPayload(type, spec),
+          }),
         }
       );
       onRaised(res.request);
@@ -303,6 +322,65 @@ function RaiseRequestModal({
             className={inputClass}
           />
         </div>
+
+        {/* You know how urgent your own request is, and roughly what it takes.
+            The lead can adjust when approving, but shouldn't have to guess. */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div>
+            <label
+              htmlFor="request-priority"
+              className="mb-1 block text-sm font-medium text-slate-700"
+            >
+              Priority
+            </label>
+            <select
+              id="request-priority"
+              value={priority}
+              onChange={(e) => setPriority(e.target.value as TaskPriority)}
+              className={inputClass}
+            >
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="urgent">Urgent</option>
+            </select>
+          </div>
+          <div>
+            <label
+              htmlFor="request-hours"
+              className="mb-1 block text-sm font-medium text-slate-700"
+            >
+              Estimated hours
+            </label>
+            <input
+              id="request-hours"
+              type="number"
+              min="0"
+              step="0.5"
+              inputMode="decimal"
+              placeholder="e.g. 4"
+              value={estimatedHours}
+              onChange={(e) => setEstimatedHours(e.target.value)}
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label
+              htmlFor="request-due"
+              className="mb-1 block text-sm font-medium text-slate-700"
+            >
+              Needed by
+            </label>
+            <input
+              id="request-due"
+              type="date"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+              className={inputClass}
+            />
+          </div>
+        </div>
+
         <div className="flex justify-end gap-2">
           <button
             type="button"
@@ -340,10 +418,16 @@ function DecisionModal({
   onDecided: (request: TaskRequest, task: Task | null) => void;
 }) {
   const [assigneeId, setAssigneeId] = useState("");
-  const [priority, setPriority] = useState<TaskPriority>("medium");
+  // Opens showing what the requester asked for. The lead approves; they
+  // change these only when they actually disagree.
+  const [priority, setPriority] = useState<TaskPriority>(request.priority ?? "medium");
   const [startDate, setStartDate] = useState("");
-  const [dueDate, setDueDate] = useState("");
-  const [estimatedHours, setEstimatedHours] = useState("");
+  const [dueDate, setDueDate] = useState(
+    request.due_date ? String(request.due_date).slice(0, 10) : ""
+  );
+  const [estimatedHours, setEstimatedHours] = useState(
+    request.estimated_hours != null ? String(request.estimated_hours) : ""
+  );
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);

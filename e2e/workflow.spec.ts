@@ -131,9 +131,11 @@ test("the lead rejects a request with a reason and the requester sees it", async
 
   await alice.goto(projectPath);
   await alice.getByRole("button", { name: /Show decided/ }).click();
-  await expect(requestRow(alice, FEATURE_REQUEST)).toContainText(
-    `Rejected by ${USERS.lead.name} — “Not planned this quarter”`
-  );
+  const decided = requestRow(alice, FEATURE_REQUEST);
+  // Who, why, and — since the decision is now timestamped — when.
+  await expect(decided).toContainText(`Rejected by ${USERS.lead.name}`);
+  await expect(decided).toContainText("“Not planned this quarter”");
+  await expect(decided).toContainText(/\d{1,2} \w{3,5} \d{4}/); // e.g. 25 Sept 2026
 });
 
 test("the lead approves a request with an owner and the task records its trail", async () => {

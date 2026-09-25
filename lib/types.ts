@@ -154,6 +154,10 @@ export interface TaskRequest extends SpecColumns {
   project_id: number;
   task_type: Exclude<WorkType, "general">;
   title: string;
+  /** Urgency and effort as stated by whoever asked for the work. */
+  priority: TaskPriority;
+  estimated_hours: number | null;
+  due_date: string | null;
   status: RequestStatus;
   requested_by: number | null;
   requester_name?: string | null;

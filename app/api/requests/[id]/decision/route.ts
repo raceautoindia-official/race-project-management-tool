@@ -84,11 +84,14 @@ export async function POST(req: NextRequest, { params }: Params) {
             request.title,
             request.task_type,
             ...SPEC_KEYS.map((k) => request[k] ?? null),
-            data.priority ?? "medium",
-            data.estimatedHours ?? null,
+            // The requester said how urgent it is and how long it should
+            // take; the approver's job is to approve, so their values are
+            // only used where they deliberately changed something.
+            data.priority ?? request.priority ?? "medium",
+            data.estimatedHours ?? request.estimated_hours ?? null,
             data.assigneeId ?? null,
             user.id,
-            data.dueDate ?? null,
+            data.dueDate ?? request.due_date ?? null,
             data.startDate ?? null,
             requestId,
             request.requested_by ?? null,

@@ -139,6 +139,10 @@ CREATE TABLE IF NOT EXISTS task_requests (
   features            TEXT NULL,
   flow                TEXT NULL,
   rules               TEXT NULL,
+  -- Urgency and effort, stated by whoever asked for the work.
+  priority            ENUM('low','medium','high','urgent') NOT NULL DEFAULT 'medium',
+  estimated_hours     DECIMAL(6,2) NULL,
+  due_date            DATE NULL,
   status              ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
   requested_by        INT NULL,
   requested_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

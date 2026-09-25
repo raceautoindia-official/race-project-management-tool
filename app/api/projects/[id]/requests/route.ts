@@ -57,11 +57,23 @@ export async function POST(req: NextRequest, { params }: Params) {
       // completed since the check above).
       `INSERT INTO task_requests
          (project_id, task_type, title, ${SPEC_KEYS.join(", ")},
+          priority, estimated_hours, due_date,
           status, requested_by, requested_at)
-       SELECT ?, ?, ?, ${SPEC_KEYS.map(() => "?").join(", ")}, 'pending', ?, UTC_TIMESTAMP()
+       SELECT ?, ?, ?, ${SPEC_KEYS.map(() => "?").join(", ")}, ?, ?, ?,
+              'pending', ?, UTC_TIMESTAMP()
          FROM projects
         WHERE id = ? AND approval_status = 'approved' AND status <> 'completed'`,
-      [projectId, data.taskType, data.title, ...SPEC_KEYS.map((k) => spec[k]), user.id, projectId]
+      [
+        projectId,
+        data.taskType,
+        data.title,
+        ...SPEC_KEYS.map((k) => spec[k]),
+        data.priority ?? "medium",
+        data.estimatedHours ?? null,
+        data.dueDate ?? null,
+        user.id,
+        projectId,
+      ]
     )) as unknown as DbResult;
     if (result.affectedRows === 0) {
       throw new ApiError(409, "This project is read-only — the request wasn't raised.");

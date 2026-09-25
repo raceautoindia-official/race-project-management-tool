@@ -178,6 +178,11 @@ export const createTaskRequestSchema = z
   .object({
     taskType: specTypeField,
     title: z.string().trim().min(1, "Title is required").max(200),
+    // How urgent it is and how long it should take are stated by the person
+    // asking for the work, who is usually closer to it than the approver.
+    priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
+    estimatedHours: optionalHours.optional(),
+    dueDate: optionalDate.optional(),
     ...specShape,
   })
   .superRefine((d, ctx) => specIssues(d).forEach((i) => ctx.addIssue(i)));

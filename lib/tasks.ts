@@ -49,6 +49,7 @@ export async function fetchTaskRequests(
     `SELECT r.id, r.project_id, r.task_type, r.title,
             r.existing_behavior, r.expected_behavior, r.acceptance_criteria,
             r.reason, r.scope, r.features, r.flow, r.rules,
+            r.priority, r.estimated_hours, r.due_date,
             r.status, r.requested_by, r.requested_at, r.decided_by, r.decided_at,
             r.decision_note, r.task_id,
             rq.name AS requester_name, dc.name AS decider_name

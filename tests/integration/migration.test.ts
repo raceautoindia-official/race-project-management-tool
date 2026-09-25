@@ -4,6 +4,16 @@ import { inject } from "vitest";
 import type { Connection, RowDataPacket } from "mysql2/promise";
 import { createSchemaDatabase, serverConnection } from "./db";
 
+/**
+ * Migrations that shape the tables compared below, in the order a deployment
+ * applies them. A new migration that adds a column to projects, tasks or
+ * task_requests belongs here, or "same columns as a fresh install" fails —
+ * which is the point: schema.sql and the migrations must not drift apart.
+ */
+const LATER_MIGRATIONS = ["2026-09-25_request_priority_and_time.sql"].map((f) =>
+  readFileSync(new URL(`../../db/migrations/${f}`, import.meta.url), "utf8")
+);
+
 const MIGRATION = readFileSync(
   new URL("../../db/migrations/2026-09-17_phase4_requests_signoff.sql", import.meta.url),
   "utf8"
@@ -99,6 +109,10 @@ describe("2026-09-17 phase 4 migration", () => {
   });
 
   it("produces the same columns as a fresh schema.sql install", async () => {
+    // Bring the migrated database up to date, as a real deployment would,
+    // before comparing it with a fresh install.
+    for (const sql of LATER_MIGRATIONS) await conn.query(`USE pm_migrate; ${sql}`);
+
     for (const table of ["projects", "tasks", "task_requests"]) {
       expect({ table, columns: await columns("pm_migrate", table) }).toEqual({
         table,

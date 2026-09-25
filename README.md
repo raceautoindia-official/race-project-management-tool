@@ -18,7 +18,9 @@ there is **no public sign-up** — an admin provisions every account.
   read-only until that lead (or an admin) approves.
 - **Two kinds of work**: every task is either an **existing work correction** (title,
   existing behavior, expected behavior, acceptance criteria; reason and scope optional)
-  or a **new feature** (title, features, rules; flow optional). Leads create tasks
+  or a **new feature** (title, features, rules; flow optional). The person raising a
+  request also sets its **priority, estimated hours and needed-by date** — the approver
+  can adjust them, but never has to guess. Leads create tasks
   directly; members **raise task requests** that a lead approves (assigning an owner) or
   rejects with a reason.
 - **Approval trail + sign-off lock**: each task records who **requested** it, who
@@ -97,6 +99,7 @@ mysql -u root -p pm_app < db/migrations/2026-09-18_phase5_calendar_video_whatsap
 mysql -u root -p pm_app < db/migrations/2026-09-18_fix_legacy_completed_at.sql
 mysql -u root -p pm_app < db/migrations/2026-09-19_calendar_feed_activity.sql
 mysql -u root -p pm_app < db/migrations/2026-09-25_time_log_reporting_index.sql
+mysql -u root -p pm_app < db/migrations/2026-09-25_request_priority_and_time.sql
 ```
 
 It is safe to re-run and backfills existing tasks (their creator — or the project owner —
@@ -438,7 +441,8 @@ Do these in order — the new code needs the new database columns.
    times left in the server's time zone by the July 2026 backfill; it records that it
    ran, so a second run changes nothing), then
    `2026-09-19_calendar_feed_activity.sql`, then
-   `2026-09-25_time_log_reporting_index.sql`.
+   `2026-09-25_time_log_reporting_index.sql` and
+   `2026-09-25_request_priority_and_time.sql`.
 6. **Start the new build** (`npm run start`) and run the phase 4 migration **once more** — it
    backfills any task created by the old app in between. Check
    `SELECT COUNT(*) FROM tasks WHERE requested_by IS NULL` returns 0.
