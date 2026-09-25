@@ -92,7 +92,7 @@ export async function POST(req: NextRequest, { params }: Params) {
             data.assigneeId ?? null,
             user.id,
             data.dueDate ?? request.due_date ?? null,
-            data.startDate ?? null,
+            data.startDate ?? request.start_date ?? null,
             requestId,
             request.requested_by ?? null,
             user.id,

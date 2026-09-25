@@ -10,7 +10,10 @@ import { createSchemaDatabase, serverConnection } from "./db";
  * task_requests belongs here, or "same columns as a fresh install" fails —
  * which is the point: schema.sql and the migrations must not drift apart.
  */
-const LATER_MIGRATIONS = ["2026-09-25_request_priority_and_time.sql"].map((f) =>
+const LATER_MIGRATIONS = [
+  "2026-09-25_request_priority_and_time.sql",
+  "2026-09-26_request_start_date.sql",
+].map((f) =>
   readFileSync(new URL(`../../db/migrations/${f}`, import.meta.url), "utf8")
 );
 

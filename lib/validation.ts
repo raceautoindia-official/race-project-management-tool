@@ -21,6 +21,24 @@ export const optionalDate = z.preprocess(
     .nullable()
 );
 
+/**
+ * A date range has to run forwards. Checked only when both ends are in the
+ * same request: a partial update that touches one date cannot be compared
+ * against the other without reading the stored row.
+ */
+function checkDateOrder(
+  d: { startDate?: string | null; dueDate?: string | null },
+  ctx: z.RefinementCtx
+) {
+  if (d.startDate && d.dueDate && d.dueDate < d.startDate) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["dueDate"],
+      message: "The end date can't be before the start date",
+    });
+  }
+}
+
 export const optionalText = z
   .string()
   .max(5000)
@@ -150,7 +168,10 @@ export const createTaskSchema = z
     parentTaskId: optionalId.optional(),
     isAdditional: z.boolean().optional(),
   })
-  .superRefine((d, ctx) => specIssues(d).forEach((i) => ctx.addIssue(i)));
+  .superRefine((d, ctx) => {
+    specIssues(d).forEach((i) => ctx.addIssue(i));
+    checkDateOrder(d, ctx);
+  });
 
 // Required spec fields are checked in the route against the merged task, so a
 // partial update cannot blank them out.
@@ -169,6 +190,7 @@ export const updateTaskSchema = z
     startDate: optionalDate.optional(),
     labelIds: labelIdsField,
   })
+  .superRefine(checkDateOrder)
   .refine((d) => Object.keys(d).length > 0, {
     message: "No fields to update",
   });
@@ -182,10 +204,14 @@ export const createTaskRequestSchema = z
     // asking for the work, who is usually closer to it than the approver.
     priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
     estimatedHours: optionalHours.optional(),
+    startDate: optionalDate.optional(),
     dueDate: optionalDate.optional(),
     ...specShape,
   })
-  .superRefine((d, ctx) => specIssues(d).forEach((i) => ctx.addIssue(i)));
+  .superRefine((d, ctx) => {
+    specIssues(d).forEach((i) => ctx.addIssue(i));
+    checkDateOrder(d, ctx);
+  });
 
 /** Approving a request turns it into a task, so it needs an assigned owner. */
 export const taskRequestDecisionSchema = z

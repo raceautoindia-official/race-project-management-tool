@@ -57,9 +57,9 @@ export async function POST(req: NextRequest, { params }: Params) {
       // completed since the check above).
       `INSERT INTO task_requests
          (project_id, task_type, title, ${SPEC_KEYS.join(", ")},
-          priority, estimated_hours, due_date,
+          priority, estimated_hours, start_date, due_date,
           status, requested_by, requested_at)
-       SELECT ?, ?, ?, ${SPEC_KEYS.map(() => "?").join(", ")}, ?, ?, ?,
+       SELECT ?, ?, ?, ${SPEC_KEYS.map(() => "?").join(", ")}, ?, ?, ?, ?,
               'pending', ?, UTC_TIMESTAMP()
          FROM projects
         WHERE id = ? AND approval_status = 'approved' AND status <> 'completed'`,
@@ -70,6 +70,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         ...SPEC_KEYS.map((k) => spec[k]),
         data.priority ?? "medium",
         data.estimatedHours ?? null,
+        data.startDate ?? null,
         data.dueDate ?? null,
         user.id,
         projectId,

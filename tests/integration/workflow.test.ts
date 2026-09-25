@@ -636,3 +636,63 @@ describe("the requester states urgency and effort", () => {
     expect(raised.body.request.due_date).toBeNull();
   });
 });
+
+describe("a request carries a date range", () => {
+  let rangePid: number;
+
+  beforeAll(async () => {
+    rangePid = await createLedProject(lead, "Date range project");
+    await query(`INSERT INTO project_members (project_id, user_id) VALUES (?, ?)`, [rangePid, sam.id]);
+  });
+
+  it("keeps both ends and puts them on the task", async () => {
+    actAs(sam);
+    const raised = await call<{ request: TaskRequest }>(projectRequests.POST, {
+      method: "POST",
+      id: rangePid,
+      body: { ...feature, startDate: "2026-11-02", dueDate: "2026-11-20" },
+    });
+    expect(raised.status).toBe(201);
+    expect(String(raised.body.request.start_date)).toContain("2026-11-02");
+    expect(String(raised.body.request.due_date)).toContain("2026-11-20");
+
+    actAs(lead);
+    const decided = await call<{ task: Task }>(requestDecision.POST, {
+      method: "POST",
+      id: raised.body.request.id,
+      body: { decision: "approve", assigneeId: sam.id },
+    });
+    expect(String(decided.body.task.start_date)).toContain("2026-11-02");
+    expect(String(decided.body.task.due_date)).toContain("2026-11-20");
+  });
+
+  it("refuses a range that runs backwards", async () => {
+    actAs(sam);
+    const bad = await call<Json>(projectRequests.POST, {
+      method: "POST",
+      id: rangePid,
+      body: { ...feature, title: "Backwards", startDate: "2026-11-20", dueDate: "2026-11-02" },
+    });
+    expect(bad.status).toBe(400);
+    expect(bad.body.error).toMatch(/end date can't be before the start date/i);
+  });
+
+  it("accepts one end on its own, and neither", async () => {
+    actAs(sam);
+    const onlyEnd = await call<{ request: TaskRequest }>(projectRequests.POST, {
+      method: "POST",
+      id: rangePid,
+      body: { ...feature, title: "Only a deadline", dueDate: "2026-11-30" },
+    });
+    expect(onlyEnd.status).toBe(201);
+    expect(onlyEnd.body.request.start_date).toBeNull();
+
+    const neither = await call<{ request: TaskRequest }>(projectRequests.POST, {
+      method: "POST",
+      id: rangePid,
+      body: { ...feature, title: "No dates at all" },
+    });
+    expect(neither.status).toBe(201);
+    expect(neither.body.request.due_date).toBeNull();
+  });
+});

@@ -111,7 +111,12 @@ export default function TaskRequestsPanel({
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-600">
             <TaskPriorityBadge priority={r.priority ?? "medium"} />
             {r.estimated_hours != null && <span>Est. {r.estimated_hours}h</span>}
-            {r.due_date && <span>Needed by {formatDate(r.due_date)}</span>}
+            {(r.start_date || r.due_date) && (
+              <span>
+                {r.start_date ? formatDate(r.start_date) : "Any time"} →{" "}
+                {r.due_date ? formatDate(r.due_date) : "no deadline"}
+              </span>
+            )}
           </div>
         </div>
         {r.status === "approved" && r.task_id && (
@@ -260,6 +265,7 @@ function RaiseRequestModal({
   // Urgency and effort come from the person asking, not the approver.
   const [priority, setPriority] = useState<TaskPriority>("medium");
   const [estimatedHours, setEstimatedHours] = useState("");
+  const [startDate, setStartDate] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -278,6 +284,7 @@ function RaiseRequestModal({
             title,
             priority,
             estimatedHours: estimatedHours.trim() || null,
+            startDate: startDate || null,
             dueDate: dueDate || null,
             ...specPayload(type, spec),
           }),
@@ -325,7 +332,7 @@ function RaiseRequestModal({
 
         {/* You know how urgent your own request is, and roughly what it takes.
             The lead can adjust when approving, but shouldn't have to guess. */}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label
               htmlFor="request-priority"
@@ -364,22 +371,49 @@ function RaiseRequestModal({
               className={inputClass}
             />
           </div>
-          <div>
-            <label
-              htmlFor="request-due"
-              className="mb-1 block text-sm font-medium text-slate-700"
-            >
-              Needed by
-            </label>
-            <input
-              id="request-due"
-              type="date"
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-              className={inputClass}
-            />
-          </div>
         </div>
+
+        {/* When the work can start and when it is needed by. Either end can be
+            left blank — a request with no dates is still a valid request. */}
+        <fieldset>
+          <legend className="mb-1 block text-sm font-medium text-slate-700">
+            Dates
+          </legend>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label
+                htmlFor="request-start"
+                className="mb-1 block text-xs font-medium text-slate-600"
+              >
+                From
+              </label>
+              <input
+                id="request-start"
+                type="date"
+                value={startDate}
+                max={dueDate || undefined}
+                onChange={(e) => setStartDate(e.target.value)}
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="request-due"
+                className="mb-1 block text-xs font-medium text-slate-600"
+              >
+                To (needed by)
+              </label>
+              <input
+                id="request-due"
+                type="date"
+                value={dueDate}
+                min={startDate || undefined}
+                onChange={(e) => setDueDate(e.target.value)}
+                className={inputClass}
+              />
+            </div>
+          </div>
+        </fieldset>
 
         <div className="flex justify-end gap-2">
           <button
@@ -421,7 +455,9 @@ function DecisionModal({
   // Opens showing what the requester asked for. The lead approves; they
   // change these only when they actually disagree.
   const [priority, setPriority] = useState<TaskPriority>(request.priority ?? "medium");
-  const [startDate, setStartDate] = useState("");
+  const [startDate, setStartDate] = useState(
+    request.start_date ? String(request.start_date).slice(0, 10) : ""
+  );
   const [dueDate, setDueDate] = useState(
     request.due_date ? String(request.due_date).slice(0, 10) : ""
   );

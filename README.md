@@ -19,7 +19,7 @@ there is **no public sign-up** — an admin provisions every account.
 - **Two kinds of work**: every task is either an **existing work correction** (title,
   existing behavior, expected behavior, acceptance criteria; reason and scope optional)
   or a **new feature** (title, features, rules; flow optional). The person raising a
-  request also sets its **priority, estimated hours and needed-by date** — the approver
+  request also sets its **priority, estimated hours and a from–to date range** — the approver
   can adjust them, but never has to guess. Leads create tasks
   directly; members **raise task requests** that a lead approves (assigning an owner) or
   rejects with a reason.
@@ -100,6 +100,7 @@ mysql -u root -p pm_app < db/migrations/2026-09-18_fix_legacy_completed_at.sql
 mysql -u root -p pm_app < db/migrations/2026-09-19_calendar_feed_activity.sql
 mysql -u root -p pm_app < db/migrations/2026-09-25_time_log_reporting_index.sql
 mysql -u root -p pm_app < db/migrations/2026-09-25_request_priority_and_time.sql
+mysql -u root -p pm_app < db/migrations/2026-09-26_request_start_date.sql
 ```
 
 It is safe to re-run and backfills existing tasks (their creator — or the project owner —
