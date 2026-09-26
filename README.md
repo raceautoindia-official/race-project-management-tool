@@ -32,7 +32,15 @@ there is **no public sign-up** — an admin provisions every account.
 - **Checklist from the spec**: a new task arrives with a checklist built from what
   it was asked for — acceptance criteria and expected behaviour for a correction,
   features and rules for a new feature — so progress is ticked off against the
-  request rather than a list someone retypes.
+  request rather than a list someone retypes. A task whose checklist has fallen
+  behind its spec (created before this existed, or its spec written afterwards)
+  shows **+ From specification** on the checklist; it only ever adds, so nothing
+  already ticked is disturbed. To bring every existing task up at once:
+
+  ```bash
+  npm run backfill:checklists -- --dry-run   # show what it would add
+  npm run backfill:checklists                # add it
+  ```
 - **Task PDF**: download any task (spec, approval trail, checklist, files, comments) as
   a PDF.
 - **Calendar**: meetings arrive as real **calendar invitations** by email, so they appear

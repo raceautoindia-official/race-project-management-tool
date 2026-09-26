@@ -187,6 +187,24 @@ test("the lead creates a new-feature task directly", async () => {
   await expect(taskCard(lead, FEATURE_TASK)).toContainText("New feature");
 });
 
+test("a checklist that falls behind the spec can be brought back up to it", async () => {
+  const task = await openTask(lead, FEATURE_TASK);
+  await expect(task.getByText("Checklist (0/2)")).toBeVisible();
+  // Nothing to offer while the checklist already says what the spec says.
+  await expect(task.getByRole("button", { name: /From specification/ })).toHaveCount(0);
+
+  // A task whose checklist no longer covers the spec — the state every task
+  // created before this feature was in.
+  await task.getByRole("button", { name: "Delete subtask" }).last().click();
+  await expect(task.getByText("Checklist (0/1)")).toBeVisible();
+
+  await task.getByRole("button", { name: "+ From specification (1)" }).click();
+  await expect(task.getByText("Checklist (0/2)")).toBeVisible();
+  await expect(task.getByText("Only leads can export.").first()).toBeVisible();
+  await expect(task.getByRole("button", { name: /From specification/ })).toHaveCount(0);
+  await closeDialog(task);
+});
+
 test("the owner submits for review but can't mark the task Done", async () => {
   await sam.goto(projectPath);
   const task = await openTask(sam, CORRECTION);

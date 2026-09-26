@@ -15,7 +15,8 @@
     "test:e2e": "next build && playwright test",
     "smoke": "node scripts/smoke.mjs",
     "flow": "node scripts/flow-test.mjs",
-    "a11y": "node scripts/a11y-audit.mjs"
+    "a11y": "node scripts/a11y-audit.mjs",
+    "backfill:checklists": "node scripts/backfill-checklists.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-sesv2": "^3.1081.0",

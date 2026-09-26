@@ -294,3 +294,35 @@ export function checklistFromSpec(
   }
   return items;
 }
+
+/**
+ * The spec's checklist items that a task does not have yet.
+ *
+ * Used to bring an existing task's checklist up to date with its
+ * specification — tasks created before this existed, and tasks whose spec was
+ * written or corrected after they were created. An item already on the list is
+ * left alone (matched ignoring case), so nothing is duplicated and a ticked box
+ * is never reset.
+ */
+export function pendingChecklistItems(
+  type: WorkType | null | undefined,
+  spec: SpecColumns,
+  existingTitles: Iterable<string>
+): string[] {
+  const seen = new Set<string>();
+  let have = 0;
+  for (const title of existingTitles) {
+    seen.add(String(title).trim().toLowerCase());
+    have += 1;
+  }
+  const pending: string[] = [];
+  for (const item of checklistFromSpec(type, spec)) {
+    const fingerprint = item.toLowerCase();
+    if (seen.has(fingerprint)) continue;
+    seen.add(fingerprint);
+    pending.push(item);
+    // The same guardrail as a new task: a long spec cannot flood the list.
+    if (have + pending.length >= MAX_CHECKLIST_ITEMS) break;
+  }
+  return pending;
+}

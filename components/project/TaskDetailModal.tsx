@@ -16,7 +16,12 @@ import { ProgressBar } from "@/components/ProgressBar";
 import { taskProgress } from "@/lib/progress";
 import { formatDate, formatRelative, isOverdue } from "@/lib/format";
 import { formatHM, formatMinutes, formatIst } from "@/lib/tz";
-import { canSignOff, signOffBlockers, specFieldsFor } from "@/lib/workflow";
+import {
+  canSignOff,
+  pendingChecklistItems,
+  signOffBlockers,
+  specFieldsFor,
+} from "@/lib/workflow";
 import { SpecView } from "./WorkSpec";
 
 interface TimeLog {
@@ -82,6 +87,7 @@ export default function TaskDetailModal({
   const { toast } = useToast();
   const [comments, setComments] = useState<Comment[]>([]);
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
+  const [seedingSpec, setSeedingSpec] = useState(false);
   const [deps, setDeps] = useState<Dependency[]>([]);
   const [depToAdd, setDepToAdd] = useState("");
   const [newSub, setNewSub] = useState("");
@@ -170,6 +176,14 @@ export default function TaskDetailModal({
   const subPct = subtasks.length
     ? Math.round((subDone / subtasks.length) * 100)
     : 0;
+  // What the specification asks for but the checklist doesn't have yet.
+  // A task created before its spec was seeded — or whose spec was written
+  // afterwards — can be brought up to date in one click.
+  const specPending = pendingChecklistItems(
+    currentTask.task_type,
+    currentTask,
+    subtasks.map((s) => s.title)
+  );
   const progress = taskProgress({
     status: currentTask.status,
     subtask_total: subtasks.length,
@@ -453,6 +467,37 @@ export default function TaskDetailModal({
     } catch (e) {
       void reloadIfChanged(e);
       toast(e instanceof Error ? e.message : "Could not remove file", "error");
+    }
+  }
+
+  /**
+   * Bring the checklist up to date with the specification. A new task is
+   * seeded at creation; this is for the ones created before that, and for a
+   * spec written or corrected afterwards. The server re-reads the stored
+   * spec — this only asks it to.
+   */
+  async function addChecklistFromSpec() {
+    setSeedingSpec(true);
+    try {
+      const res = await apiFetch<{ added: number; subtasks: Subtask[] }>(
+        `/api/tasks/${currentTask.id}/subtasks/from-spec`,
+        { method: "POST" }
+      );
+      setSubtasks(res.subtasks);
+      syncCounts(res.subtasks);
+      toast(
+        res.added === 1
+          ? "1 item added from the specification"
+          : `${res.added} items added from the specification`
+      );
+    } catch (e) {
+      void reloadIfChanged(e);
+      toast(
+        e instanceof Error ? e.message : "Could not read the specification",
+        "error"
+      );
+    } finally {
+      setSeedingSpec(false);
     }
   }
 
@@ -944,10 +989,21 @@ export default function TaskDetailModal({
 
       {/* Subtasks / checklist */}
       <div className="mt-6 border-t border-slate-100 pt-4">
-        <div className="mb-2 flex items-center justify-between">
+        <div className="mb-2 flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold text-slate-700">
             Checklist {subtasks.length > 0 && `(${subDone}/${subtasks.length})`}
           </h3>
+          {canEditExecution && specPending.length > 0 && (
+            <button
+              type="button"
+              onClick={addChecklistFromSpec}
+              disabled={seedingSpec}
+              title="Add what this task asks for — its expected behaviour and acceptance criteria, or its features and rules — as checklist items"
+              className="shrink-0 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {seedingSpec ? "Adding…" : `+ From specification (${specPending.length})`}
+            </button>
+          )}
         </div>
         {subtasks.length > 0 && (
           <div className="mb-3 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">

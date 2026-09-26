@@ -18,6 +18,7 @@ import * as task from "@/app/api/tasks/[id]/route";
 import * as signoff from "@/app/api/tasks/[id]/signoff/route";
 import * as pdf from "@/app/api/tasks/[id]/pdf/route";
 import * as subtasks from "@/app/api/tasks/[id]/subtasks/route";
+import * as fromSpec from "@/app/api/tasks/[id]/subtasks/from-spec/route";
 import * as subtask from "@/app/api/subtasks/[id]/route";
 import * as comments from "@/app/api/tasks/[id]/comments/route";
 import * as comment from "@/app/api/comments/[id]/route";
@@ -740,5 +741,87 @@ describe("an approved request arrives with its checklist", () => {
     ]);
     // Nothing is ticked: it is a list of work, not a record of it.
     expect(items.every((i) => Number(i.is_done) === 0)).toBe(true);
+  });
+});
+
+describe("a task created before checklists can catch up with its spec", () => {
+  let pid: number;
+  let taskId: number;
+
+  beforeAll(async () => {
+    pid = await createLedProject(lead, "Catch up with the spec");
+    await query(`INSERT INTO project_members (project_id, user_id) VALUES (?, ?)`, [pid, sam.id]);
+    actAs(lead);
+    const made = await call<{ task: Task }>(projectTasks.POST, {
+      method: "POST",
+      id: pid,
+      body: {
+        ...correction,
+        title: "Old task",
+        expectedBehavior: "Totals round half-up",
+        acceptanceCriteria: "- 12.345 shows as 12.35\n- 12.344 shows as 12.34",
+        assigneeId: sam.id,
+      },
+    });
+    taskId = made.body.task.id;
+    // How a task looked before its checklist came from its spec.
+    await query(`DELETE FROM subtasks WHERE task_id = ?`, [taskId]);
+  });
+
+  it("adds what the specification asks for", async () => {
+    actAs(sam);
+    const res = await call<{ added: number; subtasks: { title: string }[] }>(
+      fromSpec.POST,
+      { method: "POST", id: taskId }
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.added).toBe(3);
+    expect(res.body.subtasks.map((s) => s.title)).toEqual([
+      "Totals round half-up",
+      "12.345 shows as 12.35",
+      "12.344 shows as 12.34",
+    ]);
+  });
+
+  it("adds nothing the second time, and keeps what was ticked", async () => {
+    await query(`UPDATE subtasks SET is_done = 1 WHERE task_id = ? AND title = ?`, [
+      taskId,
+      "Totals round half-up",
+    ]);
+    actAs(sam);
+    const again = await call<{ added: number; subtasks: { title: string; is_done: boolean }[] }>(
+      fromSpec.POST,
+      { method: "POST", id: taskId }
+    );
+    expect(again.status).toBe(200);
+    expect(again.body.added).toBe(0);
+    expect(again.body.subtasks).toHaveLength(3);
+    expect(again.body.subtasks.find((s) => s.title === "Totals round half-up")?.is_done).toBe(true);
+  });
+
+  it("picks up a criterion added to the spec afterwards", async () => {
+    actAs(lead);
+    await call(task.PATCH, {
+      method: "PATCH",
+      id: taskId,
+      body: {
+        taskType: "correction",
+        existingBehavior: "Totals are truncated to 2 decimals",
+        expectedBehavior: "Totals round half-up",
+        acceptanceCriteria: "- 12.345 shows as 12.35\n- 12.344 shows as 12.34\n- 0.005 shows as 0.01",
+      },
+    });
+    const res = await call<{ added: number; subtasks: { title: string }[] }>(fromSpec.POST, {
+      method: "POST",
+      id: taskId,
+    });
+    expect(res.body.added).toBe(1);
+    expect(res.body.subtasks.map((s) => s.title)).toContain("0.005 shows as 0.01");
+  });
+
+  it("is not open to someone outside the project", async () => {
+    actAs(outsider);
+    const res = await call(fromSpec.POST, { method: "POST", id: taskId });
+    expect(res.status).toBe(403);
   });
 });

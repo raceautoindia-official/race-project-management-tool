@@ -226,3 +226,101 @@ describe("a task's checklist comes from its own specification", () => {
     expect(item).toHaveLength(255);
   });
 });
+
+describe("an existing task can be brought up to its specification", () => {
+  const spec = (over: Record<string, unknown> = {}) =>
+    ({
+      existing_behavior: null,
+      expected_behavior: null,
+      acceptance_criteria: null,
+      reason: null,
+      scope: null,
+      features: null,
+      flow: null,
+      rules: null,
+      ...over,
+    }) as never;
+
+  it("offers only what the checklist does not have yet", async () => {
+    const { pendingChecklistItems } = await import("@/lib/workflow");
+    expect(
+      pendingChecklistItems(
+        "feature",
+        spec({ features: "Export CSV\nEmail it", rules: "Admins only" }),
+        ["Email it"]
+      )
+    ).toEqual(["Export CSV", "Admins only"]);
+  });
+
+  it("matches an existing item ignoring case and surrounding space", async () => {
+    const { pendingChecklistItems } = await import("@/lib/workflow");
+    expect(
+      pendingChecklistItems("feature", spec({ features: "Export CSV" }), ["  export csv  "])
+    ).toEqual([]);
+  });
+
+  it("offers nothing when the checklist is already complete", async () => {
+    const { pendingChecklistItems } = await import("@/lib/workflow");
+    expect(
+      pendingChecklistItems("correction", spec({ expected_behavior: "It works" }), ["It works"])
+    ).toEqual([]);
+  });
+
+  it("offers the whole spec to a task with an empty checklist", async () => {
+    const { pendingChecklistItems } = await import("@/lib/workflow");
+    expect(
+      pendingChecklistItems(
+        "correction",
+        spec({ expected_behavior: "Codes match", acceptance_criteria: "- D-1042 found" }),
+        []
+      )
+    ).toEqual(["Codes match", "D-1042 found"]);
+  });
+
+  it("will not push a checklist past the cap", async () => {
+    const { pendingChecklistItems } = await import("@/lib/workflow");
+    const existing = Array.from({ length: 48 }, (_, i) => `Old ${i}`);
+    const many = Array.from({ length: 30 }, (_, i) => `New ${i}`).join("\n");
+    expect(pendingChecklistItems("feature", spec({ features: many }), existing)).toHaveLength(2);
+  });
+});
+
+describe("the backfill script reads a spec the same way the app does", () => {
+  const spec = (over: Record<string, unknown> = {}) =>
+    ({
+      existing_behavior: null,
+      expected_behavior: null,
+      acceptance_criteria: null,
+      reason: null,
+      scope: null,
+      features: null,
+      flow: null,
+      rules: null,
+      ...over,
+    }) as never;
+
+  // scripts/backfill-checklists.mjs cannot import the TypeScript module, so it
+  // carries its own copy of the parser. This is the guard against the two
+  // drifting apart.
+  it("agrees with checklistFromSpec on every case that matters", async () => {
+    const { checklistFromSpec } = await import("@/lib/workflow");
+    const { checklistItems } = await import("../../scripts/backfill-checklists.mjs");
+
+    const cases: Array<[string, Record<string, unknown>]> = [
+      ["correction", { expected_behavior: "A\nB", acceptance_criteria: "- C\n2) D" }],
+      ["feature", { features: "1. Export CSV\n• Email it", rules: "Admins only\n\n\nAudited" }],
+      ["feature", { features: "Export CSV", rules: "export csv" }],
+      ["correction", { expected_behavior: "   \n  \n" }],
+      ["correction", { existing_behavior: "Not a source", scope: "Nor this" }],
+      ["feature", { features: "x".repeat(400) }],
+      ["feature", { features: Array.from({ length: 200 }, (_, i) => `Item ${i}`).join("\n") }],
+      ["general", { features: "Ignored" }],
+    ];
+
+    for (const [type, fields] of cases) {
+      expect(checklistItems(type, spec(fields))).toEqual(
+        checklistFromSpec(type as never, spec(fields))
+      );
+    }
+  });
+});
