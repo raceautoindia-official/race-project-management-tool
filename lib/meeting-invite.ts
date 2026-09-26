@@ -52,10 +52,15 @@ export async function sendMeetingInvite(
   attendees: InvitePerson[],
   method: "REQUEST" | "CANCEL" = "REQUEST"
 ): Promise<number> {
-  const recipients = attendees.filter(
+  if (!organizer.email) return 0;
+
+  const guests = attendees.filter(
     (a) => a.email && a.email.includes("@") && a.email !== organizer.email
   );
-  if (recipients.length === 0 || !organizer.email) return 0;
+  // The organizer gets it too, marked as already attending. They scheduled
+  // the meeting here rather than in their calendar app, so without this the
+  // one person certain to be at it is the only one whose calendar is empty.
+  const recipients: InvitePerson[] = [...guests, { ...organizer, accepted: true }];
 
   const start = parseUtc(meeting.startTime as string);
   const end = new Date(start.getTime() + Number(meeting.durationMinutes ?? 30) * 60_000);

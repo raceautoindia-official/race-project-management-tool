@@ -155,8 +155,14 @@ describe("meeting invitations by email", () => {
       const invite = sent.mock.calls[0][0];
       expect(invite.method).toBe("REQUEST");
       expect(invite.subject).toBe("Invitation: Invited review");
-      // The guest, not the organizer — you don't invite yourself.
-      expect(invite.to).toEqual([sam.email]);
+      // The guest, and the organizer too: they scheduled it here rather than
+      // in their calendar app, so otherwise the one person certain to attend
+      // is the only one whose calendar stays empty.
+      expect(invite.to).toEqual([sam.email, lead.email]);
+      // They are not asked to accept their own meeting, though.
+      const unfolded = invite.ics.replace(/\r\n /g, "");
+      expect(unfolded).toContain(`PARTSTAT=ACCEPTED;RSVP=FALSE;CN=${lead.name}`);
+      expect(unfolded).toContain(`PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN=${sam.name}`);
       expect(invite.ics).toContain("METHOD:REQUEST");
       expect(invite.ics).toContain(`UID:meeting-${created.body.meeting.id}@pmapp`);
       expect(invite.ics).toContain("DTSTART:20261211T093000Z");
@@ -172,7 +178,7 @@ describe("meeting invitations by email", () => {
       const cancel = sent.mock.calls[0][0];
       expect(cancel.method).toBe("CANCEL");
       expect(cancel.subject).toBe("Cancelled: Invited review");
-      expect(cancel.to).toEqual([sam.email]);
+      expect(cancel.to).toEqual([sam.email, lead.email]);
       // Same UID, so the entry is withdrawn rather than duplicated.
       expect(cancel.ics).toContain(`UID:meeting-${created.body.meeting.id}@pmapp`);
       expect(cancel.ics).toContain("STATUS:CANCELLED");

@@ -121,6 +121,12 @@ export function buildIcs(
 export interface InvitePerson {
   name: string;
   email: string;
+  /**
+   * Already attending, so not asked to reply. The organizer is listed this
+   * way — the same as every calendar system does — so the meeting lands in
+   * their own calendar without asking them to accept their own invitation.
+   */
+  accepted?: boolean;
 }
 
 export interface InviteInput {
@@ -177,8 +183,9 @@ export function buildInvite(input: InviteInput): string {
   ];
 
   for (const a of input.attendees) {
+    const reply = a.accepted ? "PARTSTAT=ACCEPTED;RSVP=FALSE" : "PARTSTAT=NEEDS-ACTION;RSVP=TRUE";
     lines.push(
-      `ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;` +
+      `ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;${reply};` +
         `CN=${escapeIcsText(a.name)}:${calAddress(a.email)}`
     );
   }

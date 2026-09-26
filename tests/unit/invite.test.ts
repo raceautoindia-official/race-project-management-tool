@@ -257,3 +257,21 @@ describe("choosing how mail leaves the server", () => {
     expect(await transport()).toEqual({ kind: "none", configured: false });
   });
 });
+
+describe("the organizer's own calendar", () => {
+  it("lists them as already attending, so they are not asked to accept", () => {
+    const ics = buildInvite({
+      ...base,
+      method: "REQUEST",
+      attendees: [
+        { name: "Sam Owner", email: "sam@example.test" },
+        { name: "Lee Lead", email: "lee@example.test", accepted: true },
+      ],
+    });
+    const unfolded = ics.replace(/\r\n /g, "");
+    expect(unfolded).toContain("PARTSTAT=ACCEPTED;RSVP=FALSE;CN=Lee Lead");
+    expect(unfolded).toContain("PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN=Sam Owner");
+    // Still one event, with the organizer named once as organizer.
+    expect(ics.split("\r\n").filter((l) => l.startsWith("ORGANIZER"))).toHaveLength(1);
+  });
+});
