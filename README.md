@@ -29,6 +29,10 @@ there is **no public sign-up** — an admin provisions every account.
   — comments, checklist, files, time logs — **permanently read-only**. A project can
   only be marked **Completed** once every task is signed off, and is then read-only
   (an admin can reopen it).
+- **Checklist from the spec**: a new task arrives with a checklist built from what
+  it was asked for — acceptance criteria and expected behaviour for a correction,
+  features and rules for a new feature — so progress is ticked off against the
+  request rather than a list someone retypes.
 - **Task PDF**: download any task (spec, approval trail, checklist, files, comments) as
   a PDF.
 - **Calendar**: meetings arrive as real **calendar invitations** by email, so they appear

@@ -994,9 +994,10 @@ export default function TaskDetailModal({
             <button
               type="submit"
               disabled={!newSub.trim()}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+              title={!newSub.trim() ? "Type an item first" : undefined}
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
             >
-              Add
+              Add item
             </button>
           </form>
         )}
@@ -1058,10 +1059,11 @@ export default function TaskDetailModal({
         )}
       </div>
 
-      {/* Comments */}
-      <div className="mt-6 border-t border-slate-100 pt-4">
+      {/* Comments — set apart from the checklist above, which has its own
+          input and button and was being mistaken for this one. */}
+      <div className="mt-6 rounded-xl border-2 border-slate-200 bg-slate-50/60 p-4">
         <h3 className="mb-3 text-sm font-semibold text-slate-700">
-          Comments ({comments.length})
+          💬 Comments ({comments.length})
         </h3>
         {loading ? (
           <p className="text-sm text-slate-500">Loading…</p>
@@ -1170,9 +1172,11 @@ export default function TaskDetailModal({
           <button
             type="submit"
             disabled={busy || !body.trim()}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+            // A permanently faded button reads as broken. Say why it is off.
+            title={!body.trim() ? "Write something first" : undefined}
+            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600"
           >
-            Send
+            {busy ? "Posting…" : "Post comment"}
           </button>
         </form>
         )}

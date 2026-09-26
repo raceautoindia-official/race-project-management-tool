@@ -10,7 +10,7 @@ import {
 import { forbidden } from "@/lib/http";
 import { createTaskSchema } from "@/lib/validation";
 import { logActivity, notify } from "@/lib/activity";
-import { fetchTasks, syncTaskLabels } from "@/lib/tasks";
+import { fetchTasks, syncTaskLabels, seedChecklistFromSpec } from "@/lib/tasks";
 import { normalizeSpec, SPEC_KEYS, specFromBody } from "@/lib/workflow";
 
 type Params = { params: Promise<{ id: string }> };
@@ -135,6 +135,10 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (data.labelIds && data.labelIds.length > 0) {
       await syncTaskLabels(result.insertId, projectId, data.labelIds);
     }
+
+    // The checklist starts as what the task's own specification says "done"
+    // means, so progress is measured against what was asked for.
+    await seedChecklistFromSpec(result.insertId, data.taskType, spec);
 
     await logActivity({
       userId: user.id,

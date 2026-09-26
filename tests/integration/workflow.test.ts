@@ -703,3 +703,42 @@ describe("a request carries a date range", () => {
     expect(neither.body.request.due_date).toBeNull();
   });
 });
+
+describe("an approved request arrives with its checklist", () => {
+  it("builds the checklist from what the requester wrote", async () => {
+    const pid = await createLedProject(lead, "Checklist from spec");
+    await query(`INSERT INTO project_members (project_id, user_id) VALUES (?, ?)`, [pid, sam.id]);
+
+    actAs(sam);
+    const raised = await call<{ request: TaskRequest }>(projectRequests.POST, {
+      method: "POST",
+      id: pid,
+      body: {
+        ...feature,
+        title: "Dealer export",
+        features: "- Export as CSV\n- Email the file",
+        rules: "Only leads can export",
+      },
+    });
+
+    actAs(lead);
+    const decided = await call<{ task: Task }>(requestDecision.POST, {
+      method: "POST",
+      id: raised.body.request.id,
+      body: { decision: "approve", assigneeId: sam.id },
+    });
+    expect(decided.status).toBe(200);
+
+    const items = await query<DbRow[]>(
+      `SELECT title, is_done FROM subtasks WHERE task_id = ? ORDER BY position`,
+      [decided.body.task.id]
+    );
+    expect(items.map((i) => i.title)).toEqual([
+      "Export as CSV",
+      "Email the file",
+      "Only leads can export",
+    ]);
+    // Nothing is ticked: it is a list of work, not a record of it.
+    expect(items.every((i) => Number(i.is_done) === 0)).toBe(true);
+  });
+});

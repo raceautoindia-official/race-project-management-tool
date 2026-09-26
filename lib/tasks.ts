@@ -1,5 +1,6 @@
 import { pool, query, DbRow } from "./db";
-import type { Label } from "./types";
+import type { Label, SpecColumns, WorkType } from "./types";
+import { checklistFromSpec } from "./workflow";
 
 /**
  * SQL converting a TIMESTAMP column (returned in the session time zone) to UTC,
@@ -142,5 +143,34 @@ export async function syncTaskLabels(
       `INSERT IGNORE INTO task_labels (task_id, label_id) VALUES (?, ?)`,
       [taskId, row.id]
     );
+  }
+}
+
+/**
+ * Give a new task a checklist built from its own specification — the
+ * acceptance criteria and expected behaviour it was created with.
+ *
+ * Never fails the task: a task without its checklist is a small loss, a task
+ * that failed to save is a real one. Anyone can edit or delete the items
+ * afterwards like any other checklist.
+ */
+export async function seedChecklistFromSpec(
+  taskId: number,
+  taskType: WorkType | null | undefined,
+  spec: SpecColumns
+): Promise<number> {
+  const items = checklistFromSpec(taskType, spec);
+  if (!items.length) return 0;
+  try {
+    await query(
+      `INSERT INTO subtasks (task_id, title, position) VALUES ${items
+        .map(() => "(?, ?, ?)")
+        .join(", ")}`,
+      items.flatMap((title, i) => [taskId, title, i])
+    );
+    return items.length;
+  } catch (err) {
+    console.error("[tasks] could not seed the checklist:", (err as Error).message);
+    return 0;
   }
 }

@@ -6,7 +6,8 @@ import { assertProjectManage, assertProjectWritable } from "@/lib/rbac";
 import { taskRequestDecisionSchema } from "@/lib/validation";
 import { logActivity, notify } from "@/lib/activity";
 import { fetchTaskRequests, fetchTasks } from "@/lib/tasks";
-import { SPEC_KEYS } from "@/lib/workflow";
+import { checklistFromSpec, SPEC_KEYS } from "@/lib/workflow";
+import type { SpecColumns, WorkType } from "@/lib/types";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -101,6 +102,22 @@ export async function POST(req: NextRequest, { params }: Params) {
           ]
         );
         taskId = (res as DbResult).insertId;
+
+        // The checklist starts as what the request itself said "done" means.
+        // Inside the transaction, on the same connection, so a task never
+        // exists with half a checklist.
+        const items = checklistFromSpec(
+          request.task_type as WorkType,
+          Object.fromEntries(SPEC_KEYS.map((k) => [k, request[k] ?? null])) as SpecColumns
+        );
+        if (items.length) {
+          await conn.execute(
+            `INSERT INTO subtasks (task_id, title, position) VALUES ${items
+              .map(() => "(?, ?, ?)")
+              .join(", ")}`,
+            items.flatMap((title, i) => [taskId, title, i])
+          );
+        }
       }
 
       await conn.execute(

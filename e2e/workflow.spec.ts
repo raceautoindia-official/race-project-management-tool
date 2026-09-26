@@ -158,7 +158,10 @@ test("the lead approves a request with an owner and the task records its trail",
   await expect(trail.getByRole("listitem").nth(1)).toContainText(USERS.lead.name);
   await expect(trail.getByRole("listitem").nth(2)).toContainText(USERS.sam.name);
   await expect(trail.getByRole("listitem").nth(4)).toContainText("Pending");
-  await expect(task.getByText("Typing D-1042 shows dealer D-1042.")).toBeVisible();
+  // It reads twice now, on purpose: once in the specification, and once as a
+  // checklist item built from it.
+  await expect(task.getByText("Typing D-1042 shows dealer D-1042.").first()).toBeVisible();
+  await expect(task.getByText(/Checklist \(0\/\d+\)/)).toBeVisible();
   await closeDialog(task);
 
   // The approved request links to the task it became.

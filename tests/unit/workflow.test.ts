@@ -146,3 +146,83 @@ describe("project decisions and completion", () => {
     ]);
   });
 });
+
+describe("a task's checklist comes from its own specification", () => {
+  const spec = (over: Record<string, unknown> = {}) =>
+    ({
+      existing_behavior: null,
+      expected_behavior: null,
+      acceptance_criteria: null,
+      reason: null,
+      scope: null,
+      features: null,
+      flow: null,
+      rules: null,
+      ...over,
+    }) as never;
+
+  it("turns a written list into one item per line", async () => {
+    const { checklistFromSpec } = await import("@/lib/workflow");
+    expect(
+      checklistFromSpec(
+        "correction",
+        spec({
+          expected_behavior: "Searching a dealer code finds that dealer.",
+          acceptance_criteria: "- Typing D-1042 shows dealer D-1042\n- Partial codes still work",
+        })
+      )
+    ).toEqual([
+      "Searching a dealer code finds that dealer.",
+      "Typing D-1042 shows dealer D-1042",
+      "Partial codes still work",
+    ]);
+  });
+
+  it("strips the ways people write lists", async () => {
+    const { checklistFromSpec } = await import("@/lib/workflow");
+    expect(
+      checklistFromSpec("feature", spec({ features: "1. Export CSV\n2) Email it\n• Schedule it\n* Done" }))
+    ).toEqual(["Export CSV", "Email it", "Schedule it", "Done"]);
+  });
+
+  it("takes features and rules for a new feature", async () => {
+    const { checklistFromSpec } = await import("@/lib/workflow");
+    expect(
+      checklistFromSpec("feature", spec({ features: "Dark mode toggle", rules: "Remember per user" }))
+    ).toEqual(["Dark mode toggle", "Remember per user"]);
+  });
+
+  it("keeps a paragraph as a single item", async () => {
+    const { checklistFromSpec } = await import("@/lib/workflow");
+    const prose = "The report should open in under two seconds on a normal connection.";
+    expect(checklistFromSpec("correction", spec({ expected_behavior: prose }))).toEqual([prose]);
+  });
+
+  it("says nothing when the spec says nothing checkable", async () => {
+    const { checklistFromSpec } = await import("@/lib/workflow");
+    expect(checklistFromSpec("correction", spec())).toEqual([]);
+    expect(checklistFromSpec("correction", spec({ acceptance_criteria: "   \n\n  " }))).toEqual([]);
+    // A task with no type (created before task types existed) gets nothing.
+    expect(checklistFromSpec("general", spec({ features: "x" }))).toEqual([]);
+    expect(checklistFromSpec(null, spec({ features: "x" }))).toEqual([]);
+  });
+
+  it("does not repeat the same line written in two fields", async () => {
+    const { checklistFromSpec } = await import("@/lib/workflow");
+    expect(
+      checklistFromSpec("feature", spec({ features: "Export CSV", rules: "export csv" }))
+    ).toEqual(["Export CSV"]);
+  });
+
+  it("will not turn a pasted document into a hundred checkboxes", async () => {
+    const { checklistFromSpec } = await import("@/lib/workflow");
+    const many = Array.from({ length: 200 }, (_, i) => `Item ${i}`).join("\n");
+    expect(checklistFromSpec("feature", spec({ features: many }))).toHaveLength(50);
+  });
+
+  it("trims an over-long line to what the column holds", async () => {
+    const { checklistFromSpec } = await import("@/lib/workflow");
+    const [item] = checklistFromSpec("feature", spec({ features: "x".repeat(400) }));
+    expect(item).toHaveLength(255);
+  });
+});

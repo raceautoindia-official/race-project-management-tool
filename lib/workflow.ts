@@ -240,3 +240,57 @@ export function canDecideProject(
 ): boolean {
   return user.role === "admin" || (project.owner_id != null && project.owner_id === user.id);
 }
+
+/**
+ * Which spec fields describe "done" for each kind of work. These become the
+ * task's checklist, so progress is measured against what was actually asked
+ * for rather than against a list someone retypes afterwards.
+ */
+const CHECKLIST_SOURCES: Record<SpecType, SpecKey[]> = {
+  correction: ["expected_behavior", "acceptance_criteria"],
+  feature: ["features", "rules"],
+};
+
+/** One checklist item per line, with list markers and numbering removed. */
+function linesOf(value: string | null | undefined): string[] {
+  return String(value ?? "")
+    .split(/\r?\n/)
+    .map((line) =>
+      line
+        // "- ", "* ", "• ", "1. ", "1) " — how people write lists.
+        .replace(/^\s*(?:[-*•‣▪]|\d+[.)])\s+/, "")
+        .trim()
+    )
+    .filter((line) => line.length > 0)
+    .map((line) => line.slice(0, 255));
+}
+
+/** Guardrail: a pasted document should not become a hundred checkboxes. */
+const MAX_CHECKLIST_ITEMS = 50;
+
+/**
+ * Checklist items for a new task, taken from its own specification.
+ *
+ * A single paragraph becomes a single item; a written list becomes one item
+ * per line. Nothing is invented — if the spec says nothing checkable, the
+ * task starts with an empty checklist as before.
+ */
+export function checklistFromSpec(
+  type: WorkType | null | undefined,
+  spec: SpecColumns
+): string[] {
+  const keys = type === "correction" || type === "feature" ? CHECKLIST_SOURCES[type] : [];
+  const items: string[] = [];
+  const seen = new Set<string>();
+  for (const key of keys) {
+    for (const line of linesOf(spec[key])) {
+      // The same sentence in two fields is one thing to do, not two.
+      const fingerprint = line.toLowerCase();
+      if (seen.has(fingerprint)) continue;
+      seen.add(fingerprint);
+      items.push(line);
+      if (items.length >= MAX_CHECKLIST_ITEMS) return items;
+    }
+  }
+  return items;
+}
