@@ -300,6 +300,9 @@ deliberately makes no claim about who is on leave.
 If the Attendance database can't be reached, the page still shows the PM half with a
 notice rather than failing.
 
+**A drop-in for the Attendance side** lives in `integrations/attendance-app/` —
+the helper, the panel and the steps to wire it up.
+
 **The other direction** is `GET /api/integrations/employee-work?empId=RACE005`, for the
 Attendance app to show someone their PM work on the screen they already open each
 morning. Send the shared key as a header:
