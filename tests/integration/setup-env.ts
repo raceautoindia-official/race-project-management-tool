@@ -36,6 +36,7 @@ vi.mock("@/lib/mailer", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/mailer")>()),
   mailerConfigured: vi.fn(() => false),
   sendEmail: vi.fn(async () => false),
+  sendCalendarInvite: vi.fn(async () => false),
 }));
 
 afterAll(async () => {

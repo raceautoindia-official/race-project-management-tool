@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { query, DbRow } from "@/lib/db";
 import { buildIcs, icsResponse, parseUtc, type IcsEvent } from "@/lib/ics";
-import { appBaseUrl, mailerConfigured } from "@/lib/mailer";
+import { appBaseUrl } from "@/lib/mailer";
 import { checkRateLimit } from "@/lib/ratelimit";
 
 export const dynamic = "force-dynamic";
@@ -57,20 +57,25 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
 
   // Meetings arrive as calendar invitations by email, which put themselves in
   // the person's own calendar. Repeating them here would show every meeting
-  // twice. They stay in the feed only for people no invitation can reach —
-  // email switched off on the server, or no address on their account.
-  const invitedByEmail = mailerConfigured() && Boolean(user.email);
+  // twice, so a meeting that was emailed is left out.
+  //
+  // A meeting whose invitation did not go out is a different matter: nothing
+  // put it in anyone's calendar, and it belongs here. That is decided per
+  // meeting, by whether the send actually happened — a configured mailer
+  // that cannot send would otherwise hide every meeting from every calendar.
+  const reachableByEmail = Boolean(user.email);
 
-  const meetings = invitedByEmail ? [] : await query<DbRow[]>(
+  const meetings = await query<DbRow[]>(
     `SELECT m.id, m.title, m.description, m.location, m.video_url, m.start_time,
             m.duration_minutes, m.reminder_minutes, p.name AS project_name
        FROM meetings m
        LEFT JOIN projects p ON p.id = m.project_id
       WHERE (m.created_by = ? OR m.id IN (SELECT meeting_id FROM meeting_attendees WHERE user_id = ?))
         AND m.start_time >= UTC_TIMESTAMP() - INTERVAL ? DAY
+        AND (m.invite_sent_at IS NULL OR ? = 0)
       ORDER BY m.start_time
       LIMIT 500`,
-    [userId, userId, PAST_DAYS]
+    [userId, userId, PAST_DAYS, reachableByEmail ? 1 : 0]
   );
   for (const m of meetings) {
     const start = parseUtc(String(m.start_time));

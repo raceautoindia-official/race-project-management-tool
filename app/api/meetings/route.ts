@@ -201,6 +201,7 @@ export async function POST(req: NextRequest) {
     // And as a real calendar invitation, so it lands in their own calendar
     // without anyone having to subscribe to anything. Failure here must not
     // fail the request — the meeting exists and is visible in the app.
+    let invitedByEmail = 0;
     try {
       const guests = await query<DbRow[]>(
         `SELECT id, name, email FROM users WHERE id IN (${
@@ -212,7 +213,7 @@ export async function POST(req: NextRequest) {
       const [project] = data.projectId
         ? await query<DbRow[]>(`SELECT name FROM projects WHERE id = ?`, [data.projectId])
         : [];
-      await sendMeetingInvite(
+      invitedByEmail = await sendMeetingInvite(
         {
           id: meetingId,
           title: data.title,
@@ -236,6 +237,14 @@ export async function POST(req: NextRequest) {
       console.error("[meetings] invitation failed:", (err as Error).message);
     }
 
+    // Only a send that happened counts. Until it does, the calendar feed
+    // carries this meeting, so it reaches people's calendars either way.
+    if (invitedByEmail > 0) {
+      await query(`UPDATE meetings SET invite_sent_at = UTC_TIMESTAMP() WHERE id = ?`, [
+        meetingId,
+      ]);
+    }
+
     const rows = await query<DbRow[]>(
       `SELECT m.id, m.title, m.description, m.project_id, m.location,
               m.video_url, m.video_room_id, m.duration_minutes,
@@ -248,7 +257,10 @@ export async function POST(req: NextRequest) {
       [meetingId]
     );
     await attachAttendees(rows);
-    return json({ meeting: rows[0], videoWarning }, 201);
+    return json(
+      { meeting: rows[0], videoWarning, invitationsEmailed: invitedByEmail > 0 },
+      201
+    );
   } catch (err) {
     return errorResponse(err);
   }

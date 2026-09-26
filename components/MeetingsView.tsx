@@ -262,7 +262,11 @@ function NewMeetingModal({
     setError("");
     setBusy(true);
     try {
-      const res = await apiFetch<{ meeting: Meeting; videoWarning?: string | null }>("/api/meetings", {
+      const res = await apiFetch<{
+        meeting: Meeting;
+        videoWarning?: string | null;
+        invitationsEmailed?: boolean;
+      }>("/api/meetings", {
         method: "POST",
         body: JSON.stringify({
           title,
@@ -281,6 +285,14 @@ function NewMeetingModal({
       onCreated(res.meeting);
       toast("Meeting scheduled");
       if (res.videoWarning) toast(res.videoWarning, "error");
+      // Say so rather than let people find out by looking at an empty
+      // calendar: the meeting is saved, but nothing was emailed.
+      if (res.invitationsEmailed === false) {
+        toast(
+          "Saved, but the invitation could not be emailed. It appears in the PMApp calendar feed instead — anyone subscribed will still see it.",
+          "error"
+        );
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not schedule");
     } finally {

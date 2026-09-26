@@ -2,7 +2,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { query, DbRow, DbResult } from "@/lib/db";
 import type { Meeting, User } from "@/lib/types";
 import { actAs, call, createLedProject, createUser } from "./helpers";
-import { mailerConfigured } from "@/lib/mailer";
+import { mailerConfigured, sendCalendarInvite } from "@/lib/mailer";
 
 import * as calendarToken from "@/app/api/calendar/token/route";
 import * as calendarFeed from "@/app/api/calendar/feed/[token]/route";
@@ -319,34 +319,101 @@ describe("“check it works” explains a subscription that never fills in", () 
   });
 });
 
-describe("the feed and invitations do not both carry meetings", () => {
-  afterEach(() => {
-    vi.mocked(mailerConfigured).mockReturnValue(false);
-  });
+describe("the feed carries exactly the meetings no invitation reached", () => {
+  let token: string;
 
-  it("drops meetings once email invitations can reach you", async () => {
+  beforeAll(async () => {
     actAs(lead);
     const { body } = await call<Json>(calendarToken.POST, { method: "POST", body: {} });
-    const token = String(body.token);
+    token = String(body.token);
+  });
 
-    // With email off, the feed is the only way a meeting reaches a calendar.
-    const withoutMail = await (
-      await call(calendarFeed.GET, { params: { token } })
-    ).res.text();
-    expect(withoutMail).toContain("SUMMARY:Sprint review");
-    expect(withoutMail).toContain("Due: Ship the dealer portal");
+  afterEach(async () => {
+    vi.mocked(mailerConfigured).mockReturnValue(false);
+    vi.mocked(sendCalendarInvite).mockResolvedValue(false);
+    await query(`UPDATE meetings SET invite_sent_at = NULL WHERE id = ?`, [meeting.id]);
+  });
 
-    // With SES configured, the meeting arrives as an invitation instead, and
-    // repeating it here would show it twice in the same calendar.
-    vi.mocked(mailerConfigured).mockReturnValue(true);
+  const feed = async (t: string) =>
+    (await call(calendarFeed.GET, { params: { token: t } })).res.text();
 
-    const withMail = await (
-      await call(calendarFeed.GET, { params: { token } })
-    ).res.text();
-    expect(withMail).not.toContain("SUMMARY:Sprint review");
+  it("drops a meeting once its invitation has really been emailed", async () => {
+    // Nothing was emailed, so the feed is the only way this meeting reaches
+    // a calendar.
+    expect(await feed(token)).toContain("SUMMARY:Sprint review");
+
+    // The invitation went out: it put itself in their calendar, and
+    // repeating it here would show the same meeting twice.
+    await query(`UPDATE meetings SET invite_sent_at = UTC_TIMESTAMP() WHERE id = ?`, [
+      meeting.id,
+    ]);
+    const after = await feed(token);
+    expect(after).not.toContain("SUMMARY:Sprint review");
     // Due dates and reminders are still the feed's job — nobody wants an
     // email invitation for every deadline.
-    expect(withMail).toContain("Due: Ship the dealer portal");
-    expect(withMail).toContain("SUMMARY:Renew the domain");
+    expect(after).toContain("Due: Ship the dealer portal");
+    expect(after).toContain("SUMMARY:Renew the domain");
+  });
+
+  it("keeps a meeting mail was configured for but never sent", async () => {
+    // The production failure this exists for: SES is set up, the sender is
+    // not verified, every send fails. Judging by configuration alone put the
+    // meeting in no calendar at all.
+    vi.mocked(mailerConfigured).mockReturnValue(true);
+    expect(await feed(token)).toContain("SUMMARY:Sprint review");
+  });
+
+  it("gives every meeting to someone with no email address", async () => {
+    const noAddress = await createUser("Canomail");
+    await query(`UPDATE users SET email = NULL WHERE id = ?`, [noAddress.id]);
+    await query(
+      `INSERT IGNORE INTO meeting_attendees (meeting_id, user_id) VALUES (?, ?)`,
+      [meeting.id, noAddress.id]
+    );
+    await query(`UPDATE meetings SET invite_sent_at = UTC_TIMESTAMP() WHERE id = ?`, [
+      meeting.id,
+    ]);
+
+    actAs(noAddress);
+    const { body } = await call<Json>(calendarToken.POST, { method: "POST", body: {} });
+    // No invitation can reach them, so the feed carries it however the
+    // email went for everyone else.
+    expect(await feed(String(body.token))).toContain("SUMMARY:Sprint review");
+    actAs(lead);
+  });
+
+  it("records the send, so a meeting that was emailed leaves the feed", async () => {
+    vi.mocked(mailerConfigured).mockReturnValue(true);
+    vi.mocked(sendCalendarInvite).mockResolvedValue(true);
+
+    actAs(lead);
+    const res = await call<{ meeting: Meeting; invitationsEmailed: boolean }>(meetings.POST, {
+      method: "POST",
+      body: { title: "Emailed meeting", startTime: START, attendeeIds: [sam.id] },
+    });
+    expect(res.body.invitationsEmailed).toBe(true);
+    const [row] = await query<DbRow[]>(
+      `SELECT invite_sent_at FROM meetings WHERE id = ?`,
+      [res.body.meeting.id]
+    );
+    expect(row.invite_sent_at).not.toBeNull();
+    expect(await feed(token)).not.toContain("SUMMARY:Emailed meeting");
+
+    await query(`DELETE FROM meetings WHERE id = ?`, [res.body.meeting.id]);
+  });
+
+  it("tells the organizer when nothing could be emailed", async () => {
+    vi.mocked(mailerConfigured).mockReturnValue(true);
+    vi.mocked(sendCalendarInvite).mockResolvedValue(false);
+
+    actAs(lead);
+    const res = await call<{ meeting: Meeting; invitationsEmailed: boolean }>(meetings.POST, {
+      method: "POST",
+      body: { title: "Unsent meeting", startTime: START, attendeeIds: [sam.id] },
+    });
+    expect(res.body.invitationsEmailed).toBe(false);
+    expect(await feed(token)).toContain("SUMMARY:Unsent meeting");
+
+    await query(`DELETE FROM meetings WHERE id = ?`, [res.body.meeting.id]);
   });
 });

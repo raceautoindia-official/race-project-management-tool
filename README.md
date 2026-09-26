@@ -46,7 +46,10 @@ there is **no public sign-up** — an admin provisions every account.
 - **Calendar**: meetings arrive as real **calendar invitations** by email, so they appear
   in Google, Outlook or Apple Calendar by themselves — no setting up, and cancelling one
   withdraws it again. A private subscription link adds **task due dates and reminders** on
-  top; single entries can be added with one click or downloaded as `.ics`.
+  top; single entries can be added with one click or downloaded as `.ics`. When an
+  invitation genuinely can't be emailed, that meeting joins the subscription feed instead,
+  so it still reaches a calendar without anyone adding it by hand — and the organizer is
+  told at the moment they schedule it.
 - **Video meetings**: scheduling a meeting creates a room in the company meetings app
   (or takes a Zoom/Meet/Teams link you already have), with a **Join** button on the
   meeting, in reminder emails and in the calendar entry.

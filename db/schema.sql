@@ -241,6 +241,7 @@ CREATE TABLE IF NOT EXISTS meetings (
   duration_minutes INT NOT NULL DEFAULT 30,
   reminder_minutes INT NULL,
   reminder_sent    TINYINT(1) NOT NULL DEFAULT 0,
+  invite_sent_at   DATETIME NULL,                  -- when the email invitation actually went out
   recurrence       ENUM('none','daily','weekly','monthly') NOT NULL DEFAULT 'none',
   series_id        INT NULL,
   created_by       INT NULL,

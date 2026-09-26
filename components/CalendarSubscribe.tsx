@@ -104,8 +104,9 @@ export default function CalendarSubscribe({
       <p className="text-slate-600">
         {meetingsByEmail ? (
           <>
-            Meetings already reach you as calendar invitations by email. Subscribe here to
-            add your <strong>task due dates and reminders</strong> too, kept up to date.
+            Meetings reach you as calendar invitations by email and add themselves.
+            Subscribe here for your <strong>task due dates and reminders</strong> — and
+            for any meeting whose invitation could not be emailed.
           </>
         ) : (
           <>

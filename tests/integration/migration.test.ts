@@ -13,6 +13,7 @@ import { createSchemaDatabase, serverConnection } from "./db";
 const LATER_MIGRATIONS = [
   "2026-09-25_request_priority_and_time.sql",
   "2026-09-26_request_start_date.sql",
+  "2026-09-26_meeting_invite_delivery.sql",
 ].map((f) =>
   readFileSync(new URL(`../../db/migrations/${f}`, import.meta.url), "utf8")
 );
@@ -64,6 +65,7 @@ beforeAll(async () => {
       DROP INDEX idx_projects_approval,
       DROP COLUMN approval_status, DROP COLUMN requested_by, DROP COLUMN requested_at,
       DROP COLUMN decided_by, DROP COLUMN decided_at, DROP COLUMN decision_note;
+    ALTER TABLE meetings DROP COLUMN invite_sent_at;
 
     INSERT INTO users (id, employee_id, emp_id, name, role) VALUES
       (1, 1, 'E1', 'Owner', 'admin'), (2, 2, 'E2', 'Creator', 'member');
@@ -116,7 +118,7 @@ describe("2026-09-17 phase 4 migration", () => {
     // before comparing it with a fresh install.
     for (const sql of LATER_MIGRATIONS) await conn.query(`USE pm_migrate; ${sql}`);
 
-    for (const table of ["projects", "tasks", "task_requests"]) {
+    for (const table of ["projects", "tasks", "task_requests", "meetings"]) {
       expect({ table, columns: await columns("pm_migrate", table) }).toEqual({
         table,
         columns: await columns("pm_fresh", table),
