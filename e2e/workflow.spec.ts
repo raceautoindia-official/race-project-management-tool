@@ -205,6 +205,26 @@ test("a checklist that falls behind the spec can be brought back up to it", asyn
   await closeDialog(task);
 });
 
+test("the comment button says what it needs instead of looking broken", async () => {
+  const task = await openTask(lead, FEATURE_TASK);
+  const box = task.getByPlaceholder(/Write a comment/);
+  const post = task.getByRole("button", { name: "Post comment" });
+
+  // Pressing it with nothing written used to do nothing at all.
+  await expect(post).toBeEnabled();
+  await post.click();
+  await expect(
+    task.getByText("Write your comment in the box above, then press Post comment.")
+  ).toBeVisible();
+  await expect(box).toBeFocused();
+
+  await box.fill("Looks right on staging.");
+  await post.click();
+  await expect(task.getByText("Looks right on staging.")).toBeVisible();
+  await expect(task.getByText("Write your comment in the box above")).toHaveCount(0);
+  await closeDialog(task);
+});
+
 test("the owner submits for review but can't mark the task Done", async () => {
   await sam.goto(projectPath);
   const task = await openTask(sam, CORRECTION);

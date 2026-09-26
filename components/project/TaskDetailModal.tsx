@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Modal from "@/components/Modal";
 import {
   ReadOnlyBadge,
@@ -88,6 +88,9 @@ export default function TaskDetailModal({
   const [comments, setComments] = useState<Comment[]>([]);
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
   const [seedingSpec, setSeedingSpec] = useState(false);
+  // Said only when someone presses Post comment with nothing written.
+  const [commentHint, setCommentHint] = useState(false);
+  const commentInput = useRef<HTMLInputElement>(null);
   const [deps, setDeps] = useState<Dependency[]>([]);
   const [depToAdd, setDepToAdd] = useState("");
   const [newSub, setNewSub] = useState("");
@@ -331,6 +334,7 @@ export default function TaskDetailModal({
 
   function onBodyChange(v: string) {
     setBody(v);
+    if (v.trim()) setCommentHint(false);
     const m = v.match(/@(\w*)$/);
     setMentionQuery(m ? m[1] : null);
   }
@@ -381,7 +385,14 @@ export default function TaskDetailModal({
 
   async function addComment(e: React.FormEvent) {
     e.preventDefault();
-    if (!body.trim()) return;
+    // Pressing it with an empty box used to do nothing at all, which reads
+    // as a broken button. Put the cursor where the comment goes and say so.
+    if (!body.trim()) {
+      setCommentHint(true);
+      commentInput.current?.focus();
+      return;
+    }
+    setCommentHint(false);
     setBusy(true);
     const mentionIds = picked
       .filter((p) => body.includes("@" + p.name))
@@ -1202,9 +1213,11 @@ export default function TaskDetailModal({
         )}
 
         {!readOnly && (
-        <form onSubmit={addComment} className="mt-4 flex gap-2">
+        <div className="mt-4">
+        <form onSubmit={addComment} className="flex gap-2">
           <div className="relative flex-1">
             <input
+              ref={commentInput}
               value={body}
               onChange={(e) => onBodyChange(e.target.value)}
               placeholder="Write a comment… use @ to mention"
@@ -1227,14 +1240,20 @@ export default function TaskDetailModal({
           </div>
           <button
             type="submit"
-            disabled={busy || !body.trim()}
-            // A permanently faded button reads as broken. Say why it is off.
-            title={!body.trim() ? "Write something first" : undefined}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600"
+            // Only ever off while a comment is on its way. An empty box is
+            // answered with a hint, not with a button that looks broken.
+            disabled={busy}
+            className="shrink-0 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-wait disabled:opacity-70"
           >
             {busy ? "Posting…" : "Post comment"}
           </button>
         </form>
+        {commentHint && (
+          <p role="status" className="mt-2 text-xs text-amber-700">
+            Write your comment in the box above, then press Post comment.
+          </p>
+        )}
+        </div>
         )}
       </div>
     </Modal>

@@ -229,7 +229,7 @@ try {
   await step("3a comments, with an @mention", async () => {
     const task = await openTask(admin, CORRECTION);
     await task.getByPlaceholder(/Write a comment/).fill("Checked on staging — looks right.");
-    await task.getByRole("button", { name: "Send", exact: true }).click();
+    await task.getByRole("button", { name: "Post comment", exact: true }).click();
     await task.getByText("Checked on staging — looks right.").waitFor({ timeout: 20000 });
   });
 
