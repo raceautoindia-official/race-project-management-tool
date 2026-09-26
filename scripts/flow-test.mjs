@@ -160,6 +160,7 @@ try {
     await d.getByLabel(/^Existing behavior/).fill("Searching D-1042 finds nothing.");
     await d.getByLabel(/^Expected behavior/).fill("It finds dealer D-1042.");
     await d.getByLabel(/^Acceptance criteria/).fill("Typing D-1042 shows that dealer.");
+    await d.getByLabel(/^Priority/).selectOption("high");
     await d.getByRole("button", { name: "Raise request", exact: true }).click();
     await d.waitFor({ state: "hidden", timeout: 20000 });
   };
@@ -197,7 +198,9 @@ try {
     await admin.locator("section li", { hasText: CORRECTION }).getByRole("button", { name: "Approve" }).click();
     const d = admin.getByRole("dialog", { name: "Approve request" });
     await pick(d.getByLabel(/Assigned owner/), "Test Employee One");
-    await d.getByLabel("Priority").selectOption("high");
+    // The approver picks who does the work; how urgent it is came with the
+    // request, so there is nothing here to set it with.
+    must(!(await d.getByLabel("Priority").count()), "the approver can still set priority");
     await d.getByRole("button", { name: "Approve & create task" }).click();
     await d.waitFor({ state: "hidden", timeout: 20000 });
     await admin.locator("[draggable]", { hasText: CORRECTION }).first().waitFor({ timeout: 20000 });
