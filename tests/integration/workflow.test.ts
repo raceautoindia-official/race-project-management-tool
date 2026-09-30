@@ -884,7 +884,7 @@ describe("a blocker is raised by whoever is stuck, and confirmed by a lead", () 
     expect(String(rows[0].message)).toContain("Export dealers as CSV");
     expect(String(rows[0].message)).toContain("Add the dealer date filter");
     // Landing on the board and having to find the task is landing nowhere.
-    expect(String(rows[0].link)).toBe(`/projects/${pid}?task=${stuck}`);
+    expect(String(rows[0].link)).toBe(`/projects/${pid}?task=${stuck}&focus=blockers`);
   });
 
   it("is not for the person who raised it to confirm", async () => {
@@ -915,7 +915,7 @@ describe("a blocker is raised by whoever is stuck, and confirmed by a lead", () 
       [sam.id, "blocker_approved"]
     );
     expect(String(note.message)).toContain("Add the dealer date filter");
-    expect(String(note.link)).toBe(`/projects/${pid}?task=${stuck}`);
+    expect(String(note.link)).toBe(`/projects/${pid}?task=${stuck}&focus=blockers`);
   });
 
   it("cannot be decided twice", async () => {

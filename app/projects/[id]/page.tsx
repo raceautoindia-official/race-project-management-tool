@@ -19,12 +19,17 @@ export default async function ProjectDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  /** ?task=12 opens that task straight away — what notifications link to. */
-  searchParams: Promise<{ task?: string }>;
+  /**
+   * ?task=12 opens that task straight away — what notifications link to —
+   * and &focus=blockers scrolls to the part the notification was about.
+   */
+  searchParams: Promise<{ task?: string; focus?: string }>;
 }) {
   const user = await requirePageUser();
   const { id } = await params;
-  const openTaskId = Number((await searchParams).task);
+  const search = await searchParams;
+  const openTaskId = Number(search.task);
+  const focus = search.focus === "blockers" ? "blockers" : null;
   const projectId = Number(id);
   if (!Number.isInteger(projectId)) notFound();
 
@@ -103,7 +108,7 @@ export default async function ProjectDetailPage({
           the board: a client-side navigation to the same page would
           otherwise keep the old state and open nothing. */}
       <ProjectBoard
-        key={Number.isInteger(openTaskId) ? `task-${openTaskId}` : "board"}
+        key={Number.isInteger(openTaskId) ? `task-${openTaskId}-${focus ?? ""}` : "board"}
         project={{
           id: project.id,
           name: project.name,
@@ -125,6 +130,7 @@ export default async function ProjectDetailPage({
         initialMilestones={milestones}
         initialRequests={requests}
         openTaskId={Number.isInteger(openTaskId) ? openTaskId : null}
+        focus={focus}
         allUsers={allUsers.map((u) => ({ id: u.id, name: u.name, email: u.email }))}
         currentUser={{ id: user.id, role: user.role, name: user.name }}
         canManage={canManage}

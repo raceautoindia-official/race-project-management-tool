@@ -135,7 +135,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (!manager) {
       // To the task itself: the person deciding should land on the thing
       // they were told about, not on the board it sits somewhere on.
-      const link = `/projects/${task.project_id}?task=${taskId}`;
+      const link = `/projects/${task.project_id}?task=${taskId}&focus=blockers`;
       const recipients = await projectAlertRecipients(task.project_id as number);
       for (const r of recipients.filter((r) => r.id !== user.id)) {
         await notify(

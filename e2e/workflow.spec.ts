@@ -291,7 +291,8 @@ test("a member reports a blocker; it counts once a lead agrees", async () => {
   await lead.getByText(/is blocked by/).first().click();
   const asLead = lead.getByRole("dialog", { name: CORRECTION });
   await expect(asLead).toBeVisible();
-  await expect(asLead.getByText("Waiting for the CSV export")).toBeVisible();
+  // …and on the part it was about, not the top of a long task.
+  await expect(asLead.getByText("Waiting for the CSV export")).toBeInViewport();
   // A lead has nothing to add here: approving their own claim is the one
   // thing this is meant to prevent.
   await expect(asLead.getByLabel("Add a blocking task")).toHaveCount(0);

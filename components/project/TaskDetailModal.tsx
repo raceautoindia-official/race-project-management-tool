@@ -67,6 +67,7 @@ export default function TaskDetailModal({
   open,
   onClose,
   task,
+  focus = null,
   currentUser,
   canManage,
   projectReadOnlyReason,
@@ -80,6 +81,8 @@ export default function TaskDetailModal({
   open: boolean;
   onClose: () => void;
   task: Task | null;
+  /** The part to scroll to on opening (a notification was about it). */
+  focus?: "blockers" | null;
   currentUser: { id: number; role: Role };
   canManage: boolean;
   /** Set when the whole project is read-only (pending, rejected, completed). */
@@ -95,6 +98,9 @@ export default function TaskDetailModal({
   const [comments, setComments] = useState<Comment[]>([]);
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
   const [seedingSpec, setSeedingSpec] = useState(false);
+  // The section a notification was about, so opening lands on it rather
+  // than at the top of a long task.
+  const focusRef = useRef<HTMLDivElement>(null);
   // Seconds left before the finished checklist sends itself for review,
   // and whether this person has already said not yet.
   const [reviewIn, setReviewIn] = useState<number | null>(null);
@@ -165,6 +171,12 @@ export default function TaskDetailModal({
       active = false;
     };
   }, [taskId, open]);
+
+  // Once the task has loaded — the section may not exist before then.
+  useEffect(() => {
+    if (loading || !focus || !focusRef.current) return;
+    focusRef.current.scrollIntoView({ block: "center" });
+  }, [loading, focus]);
 
   // Counts the offer down a second at a time. The send happens inside the
   // timer rather than in the effect body, so nothing cascades a render.
@@ -1021,7 +1033,7 @@ export default function TaskDetailModal({
           before it counts. A lead has nothing to add here: approving
           their own claim is the one thing this is meant to prevent. */}
       {(deps.length > 0 || mayReportBlocker) && (
-        <div className="mt-4">
+        <div ref={focus === "blockers" ? focusRef : null} className="mt-4">
           <h3 className="mb-1 text-sm font-semibold text-slate-700">Blocked by</h3>
           {deps.length === 0 ? (
             <p className="text-xs text-slate-500">Nothing is holding this up.</p>

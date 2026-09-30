@@ -77,6 +77,7 @@ export default function ProjectBoard({
   initialMilestones,
   initialRequests,
   openTaskId = null,
+  focus = null,
   allUsers,
   currentUser,
   canManage,
@@ -89,6 +90,8 @@ export default function ProjectBoard({
   initialRequests: TaskRequest[];
   /** Opened as soon as the page loads (a notification linked straight to it). */
   openTaskId?: number | null;
+  /** The part of that task the notification was about. */
+  focus?: "blockers" | null;
   allUsers: PickUser[];
   currentUser: { id: number; role: Role; name: string };
   canManage: boolean;
@@ -639,6 +642,7 @@ export default function ProjectBoard({
         open={detailOpen}
         onClose={() => setDetailOpen(false)}
         task={detailTask}
+        focus={detailTask?.id === openTaskId ? focus : null}
         currentUser={currentUser}
         canManage={canManage}
         projectReadOnlyReason={lockReason}

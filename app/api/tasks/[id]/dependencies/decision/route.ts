@@ -82,7 +82,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         decision === "approve"
           ? `${user.name} agreed: "${task.title}" is blocked by "${row.title}"`
           : `${user.name} did not agree that "${task.title}" is blocked by "${row.title}": ${note}`,
-        `/projects/${task.project_id}?task=${taskId}`
+        `/projects/${task.project_id}?task=${taskId}&focus=blockers`
       );
     }
 
