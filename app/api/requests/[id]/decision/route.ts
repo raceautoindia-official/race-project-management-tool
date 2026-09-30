@@ -112,10 +112,10 @@ export async function POST(req: NextRequest, { params }: Params) {
         );
         if (items.length) {
           await conn.execute(
-            `INSERT INTO subtasks (task_id, title, position) VALUES ${items
-              .map(() => "(?, ?, ?)")
+            `INSERT INTO subtasks (task_id, title, position, source) VALUES ${items
+              .map(() => "(?, ?, ?, ?)")
               .join(", ")}`,
-            items.flatMap((title, i) => [taskId, title, i])
+            items.flatMap((item, i) => [taskId, item.title, i, item.source])
           );
         }
       }

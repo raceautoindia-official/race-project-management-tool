@@ -57,16 +57,21 @@ export async function POST(_req: NextRequest, { params }: Params) {
         [taskId]
       );
       await query(
-        `INSERT INTO subtasks (task_id, title, position) VALUES ${pending
-          .map(() => "(?, ?, ?)")
+        `INSERT INTO subtasks (task_id, title, position, source) VALUES ${pending
+          .map(() => "(?, ?, ?, ?)")
           .join(", ")}`,
-        pending.flatMap((title, i) => [taskId, title, Number(nextPos) + i])
+        pending.flatMap((item, i) => [
+          taskId,
+          item.title,
+          Number(nextPos) + i,
+          item.source,
+        ])
       );
     }
 
     // The whole list back, so the caller shows exactly what is stored.
     const subtasks = await query<DbRow[]>(
-      `SELECT id, task_id, title, is_done, position FROM subtasks
+      `SELECT id, task_id, title, source, is_done, position FROM subtasks
         WHERE task_id = ? ORDER BY position ASC, id ASC`,
       [taskId]
     );
@@ -76,6 +81,7 @@ export async function POST(_req: NextRequest, { params }: Params) {
         id: r.id,
         task_id: r.task_id,
         title: r.title,
+        source: r.source ?? null,
         is_done: Boolean(r.is_done),
         position: r.position,
       })),

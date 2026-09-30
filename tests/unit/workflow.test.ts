@@ -171,10 +171,12 @@ describe("a task's checklist comes from its own specification", () => {
           acceptance_criteria: "- Typing D-1042 shows dealer D-1042\n- Partial codes still work",
         })
       )
+      // Each item remembers the field that asked for it, so the task can
+      // show them under that heading instead of as one flat list.
     ).toEqual([
-      "Searching a dealer code finds that dealer.",
-      "Typing D-1042 shows dealer D-1042",
-      "Partial codes still work",
+      { title: "Searching a dealer code finds that dealer.", source: "expected_behavior" },
+      { title: "Typing D-1042 shows dealer D-1042", source: "acceptance_criteria" },
+      { title: "Partial codes still work", source: "acceptance_criteria" },
     ]);
   });
 
@@ -182,20 +184,30 @@ describe("a task's checklist comes from its own specification", () => {
     const { checklistFromSpec } = await import("@/lib/workflow");
     expect(
       checklistFromSpec("feature", spec({ features: "1. Export CSV\n2) Email it\n• Schedule it\n* Done" }))
-    ).toEqual(["Export CSV", "Email it", "Schedule it", "Done"]);
+    ).toEqual([
+      { title: "Export CSV", source: "features" },
+      { title: "Email it", source: "features" },
+      { title: "Schedule it", source: "features" },
+      { title: "Done", source: "features" },
+    ]);
   });
 
   it("takes features and rules for a new feature", async () => {
     const { checklistFromSpec } = await import("@/lib/workflow");
     expect(
       checklistFromSpec("feature", spec({ features: "Dark mode toggle", rules: "Remember per user" }))
-    ).toEqual(["Dark mode toggle", "Remember per user"]);
+    ).toEqual([
+      { title: "Dark mode toggle", source: "features" },
+      { title: "Remember per user", source: "rules" },
+    ]);
   });
 
   it("keeps a paragraph as a single item", async () => {
     const { checklistFromSpec } = await import("@/lib/workflow");
     const prose = "The report should open in under two seconds on a normal connection.";
-    expect(checklistFromSpec("correction", spec({ expected_behavior: prose }))).toEqual([prose]);
+    expect(checklistFromSpec("correction", spec({ expected_behavior: prose }))).toEqual([
+      { title: prose, source: "expected_behavior" },
+    ]);
   });
 
   it("says nothing when the spec says nothing checkable", async () => {
@@ -211,7 +223,7 @@ describe("a task's checklist comes from its own specification", () => {
     const { checklistFromSpec } = await import("@/lib/workflow");
     expect(
       checklistFromSpec("feature", spec({ features: "Export CSV", rules: "export csv" }))
-    ).toEqual(["Export CSV"]);
+    ).toEqual([{ title: "Export CSV", source: "features" }]);
   });
 
   it("will not turn a pasted document into a hundred checkboxes", async () => {
@@ -223,7 +235,7 @@ describe("a task's checklist comes from its own specification", () => {
   it("trims an over-long line to what the column holds", async () => {
     const { checklistFromSpec } = await import("@/lib/workflow");
     const [item] = checklistFromSpec("feature", spec({ features: "x".repeat(400) }));
-    expect(item).toHaveLength(255);
+    expect(item.title).toHaveLength(255);
   });
 });
 
@@ -249,7 +261,10 @@ describe("an existing task can be brought up to its specification", () => {
         spec({ features: "Export CSV\nEmail it", rules: "Admins only" }),
         ["Email it"]
       )
-    ).toEqual(["Export CSV", "Admins only"]);
+    ).toEqual([
+      { title: "Export CSV", source: "features" },
+      { title: "Admins only", source: "rules" },
+    ]);
   });
 
   it("matches an existing item ignoring case and surrounding space", async () => {
@@ -274,7 +289,10 @@ describe("an existing task can be brought up to its specification", () => {
         spec({ expected_behavior: "Codes match", acceptance_criteria: "- D-1042 found" }),
         []
       )
-    ).toEqual(["Codes match", "D-1042 found"]);
+    ).toEqual([
+      { title: "Codes match", source: "expected_behavior" },
+      { title: "D-1042 found", source: "acceptance_criteria" },
+    ]);
   });
 
   it("will not push a checklist past the cap", async () => {
@@ -322,5 +340,32 @@ describe("the backfill script reads a spec the same way the app does", () => {
         checklistFromSpec(type as never, spec(fields))
       );
     }
+  });
+});
+
+describe("a spec field is either points to tick off or a sentence", () => {
+  it("makes exactly the checklist fields points", async () => {
+    const { isPointField, POINT_FIELDS } = await import("@/lib/workflow");
+    expect(POINT_FIELDS).toEqual([
+      "expected_behavior",
+      "acceptance_criteria",
+      "features",
+      "rules",
+    ]);
+    expect(isPointField("acceptance_criteria")).toBe(true);
+    expect(isPointField("features")).toBe(true);
+    // Background, not something anyone ticks off.
+    expect(isPointField("existing_behavior")).toBe(false);
+    expect(isPointField("reason")).toBe(false);
+    expect(isPointField("flow")).toBe(false);
+  });
+
+  it("names every field, whichever work type it belongs to", async () => {
+    const { SPEC_LABELS, SPEC_KEYS } = await import("@/lib/workflow");
+    // The checklist groups by these, so a missing one would leave a
+    // heading blank.
+    for (const key of SPEC_KEYS) expect(SPEC_LABELS[key]).toBeTruthy();
+    expect(SPEC_LABELS.acceptance_criteria).toBe("Acceptance criteria");
+    expect(SPEC_LABELS.rules).toBe("Rules");
   });
 });

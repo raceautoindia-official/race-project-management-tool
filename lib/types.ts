@@ -183,6 +183,8 @@ export interface Subtask {
   title: string;
   is_done: boolean;
   position: number;
+  /** The spec field this came from, or null when typed on the task. */
+  source?: string | null;
 }
 
 export interface Comment {

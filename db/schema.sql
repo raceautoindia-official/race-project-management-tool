@@ -221,6 +221,7 @@ CREATE TABLE IF NOT EXISTS subtasks (
   id         INT AUTO_INCREMENT PRIMARY KEY,
   task_id    INT NOT NULL,
   title      VARCHAR(255) NOT NULL,
+  source     VARCHAR(32) NULL,                 -- spec field it came from (NULL = typed here)
   is_done    BOOLEAN NOT NULL DEFAULT FALSE,
   position   INT NOT NULL DEFAULT 0,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

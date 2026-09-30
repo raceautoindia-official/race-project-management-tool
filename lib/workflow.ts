@@ -246,10 +246,37 @@ export function canDecideProject(
  * task's checklist, so progress is measured against what was actually asked
  * for rather than against a list someone retypes afterwards.
  */
-const CHECKLIST_SOURCES: Record<SpecType, SpecKey[]> = {
+export const CHECKLIST_SOURCES: Record<SpecType, SpecKey[]> = {
   correction: ["expected_behavior", "acceptance_criteria"],
   feature: ["features", "rules"],
 };
+
+/**
+ * Every field written as a list of points rather than prose. Each point
+ * becomes one checklist item on the task, which is why they are entered one
+ * at a time instead of as a paragraph.
+ */
+export const POINT_FIELDS: SpecKey[] = [
+  ...CHECKLIST_SOURCES.correction,
+  ...CHECKLIST_SOURCES.feature,
+];
+
+/** Points (one checklist item each) or a sentence describing the situation. */
+export function isPointField(key: SpecKey): boolean {
+  return POINT_FIELDS.includes(key);
+}
+
+/** A spec field's label, whichever work type it belongs to. */
+export const SPEC_LABELS: Record<SpecKey, string> = Object.fromEntries(
+  SPEC_TYPES.flatMap((t) => SPEC_FIELDS[t].map((f) => [f.key, f.label]))
+) as Record<SpecKey, string>;
+
+/** One checklist item, and the part of the spec that asked for it. */
+export interface ChecklistSeed {
+  title: string;
+  /** Which spec field this came from, so the task can group by it. */
+  source: SpecKey;
+}
 
 /** One checklist item per line, with list markers and numbering removed. */
 function linesOf(value: string | null | undefined): string[] {
@@ -269,7 +296,9 @@ function linesOf(value: string | null | undefined): string[] {
 const MAX_CHECKLIST_ITEMS = 50;
 
 /**
- * Checklist items for a new task, taken from its own specification.
+ * Checklist items for a new task, taken from its own specification, each
+ * carrying the field it came from so the task can show them under that
+ * heading rather than as one undifferentiated list.
  *
  * A single paragraph becomes a single item; a written list becomes one item
  * per line. Nothing is invented — if the spec says nothing checkable, the
@@ -278,9 +307,9 @@ const MAX_CHECKLIST_ITEMS = 50;
 export function checklistFromSpec(
   type: WorkType | null | undefined,
   spec: SpecColumns
-): string[] {
+): ChecklistSeed[] {
   const keys = type === "correction" || type === "feature" ? CHECKLIST_SOURCES[type] : [];
-  const items: string[] = [];
+  const items: ChecklistSeed[] = [];
   const seen = new Set<string>();
   for (const key of keys) {
     for (const line of linesOf(spec[key])) {
@@ -288,7 +317,7 @@ export function checklistFromSpec(
       const fingerprint = line.toLowerCase();
       if (seen.has(fingerprint)) continue;
       seen.add(fingerprint);
-      items.push(line);
+      items.push({ title: line, source: key });
       if (items.length >= MAX_CHECKLIST_ITEMS) return items;
     }
   }
@@ -308,16 +337,16 @@ export function pendingChecklistItems(
   type: WorkType | null | undefined,
   spec: SpecColumns,
   existingTitles: Iterable<string>
-): string[] {
+): ChecklistSeed[] {
   const seen = new Set<string>();
   let have = 0;
   for (const title of existingTitles) {
     seen.add(String(title).trim().toLowerCase());
     have += 1;
   }
-  const pending: string[] = [];
+  const pending: ChecklistSeed[] = [];
   for (const item of checklistFromSpec(type, spec)) {
-    const fingerprint = item.toLowerCase();
+    const fingerprint = item.title.toLowerCase();
     if (seen.has(fingerprint)) continue;
     seen.add(fingerprint);
     pending.push(item);

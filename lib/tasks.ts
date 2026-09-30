@@ -163,10 +163,10 @@ export async function seedChecklistFromSpec(
   if (!items.length) return 0;
   try {
     await query(
-      `INSERT INTO subtasks (task_id, title, position) VALUES ${items
-        .map(() => "(?, ?, ?)")
+      `INSERT INTO subtasks (task_id, title, position, source) VALUES ${items
+        .map(() => "(?, ?, ?, ?)")
         .join(", ")}`,
-      items.flatMap((title, i) => [taskId, title, i])
+      items.flatMap((item, i) => [taskId, item.title, i, item.source])
     );
     return items.length;
   } catch (err) {

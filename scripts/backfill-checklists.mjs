@@ -55,7 +55,7 @@ export function checklistItems(type, spec) {
       const fingerprint = line.toLowerCase();
       if (seen.has(fingerprint)) continue;
       seen.add(fingerprint);
-      items.push(line);
+      items.push({ title: line, source: key });
       if (items.length >= MAX_CHECKLIST_ITEMS) return items;
     }
   }
@@ -97,7 +97,7 @@ async function main() {
     );
     const have = new Set(existing.map((r) => String(r.title).trim().toLowerCase()));
     const pending = wanted
-      .filter((item) => !have.has(item.toLowerCase()))
+      .filter((item) => !have.has(item.title.toLowerCase()))
       .slice(0, Math.max(0, MAX_CHECKLIST_ITEMS - existing.length));
     if (!pending.length) continue;
 
@@ -109,7 +109,7 @@ async function main() {
     }
 
     console.log(`  #${task.id} ${task.title} — ${pending.length} item(s)`);
-    for (const item of pending) console.log(`      + ${item}`);
+    for (const item of pending) console.log(`      + [${item.source}] ${item.title}`);
 
     if (!dryRun) {
       const [[{ nextPos }]] = await db.execute(
@@ -117,10 +117,15 @@ async function main() {
         [task.id]
       );
       await db.execute(
-        `INSERT INTO subtasks (task_id, title, position) VALUES ${pending
-          .map(() => "(?, ?, ?)")
+        `INSERT INTO subtasks (task_id, title, position, source) VALUES ${pending
+          .map(() => "(?, ?, ?, ?)")
           .join(", ")}`,
-        pending.flatMap((title, i) => [task.id, title, Number(nextPos) + i])
+        pending.flatMap((item, i) => [
+          task.id,
+          item.title,
+          Number(nextPos) + i,
+          item.source,
+        ])
       );
     }
     touched += 1;

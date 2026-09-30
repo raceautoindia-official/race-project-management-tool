@@ -102,7 +102,7 @@ test("members raise requests; each type's required fields are enforced", async (
   await dialog.getByRole("button", { name: "Raise request", exact: true }).click();
   // Blocked: acceptance criteria is required for a correction.
   await expect(dialog).toBeVisible();
-  expect(await criteria.evaluate((el: HTMLTextAreaElement) => el.validity.valueMissing)).toBe(true);
+  expect(await criteria.evaluate((el: HTMLInputElement) => el.validity.valueMissing)).toBe(true);
   await criteria.fill("Typing D-1042 shows dealer D-1042.");
   await dialog.getByRole("button", { name: "Raise request", exact: true }).click();
   await expect(dialog).toBeHidden();
@@ -222,6 +222,48 @@ test("the comment button says what it needs instead of looking broken", async ()
   await post.click();
   await expect(task.getByText("Looks right on staging.")).toBeVisible();
   await expect(task.getByText("Write your comment in the box above")).toHaveCount(0);
+  await closeDialog(task);
+});
+
+test("the checklist says which part of the spec each item came from", async () => {
+  const task = await openTask(lead, FEATURE_TASK);
+  // Not one flat list: the features and the rules are told apart.
+  await expect(task.getByText("Features (0/1)")).toBeVisible();
+  await expect(task.getByText("Rules (0/1)")).toBeVisible();
+  await closeDialog(task);
+});
+
+test("finishing the checklist offers to hand the task over, and takes no for an answer", async () => {
+  const task = await openTask(lead, FEATURE_TASK);
+  const boxes = task.locator('input[type="checkbox"]');
+  await expect(boxes).toHaveCount(2);
+  // Click and wait: a box only ticks once the server has saved it, so
+  // check() would race the round trip.
+  await boxes.nth(0).click();
+  await expect(boxes.nth(0)).toBeChecked();
+  await boxes.nth(1).click();
+  await expect(boxes.nth(1)).toBeChecked();
+
+  const offer = task.getByRole("alertdialog", { name: "Checklist finished" });
+  await expect(offer).toBeVisible();
+  await offer.getByRole("button", { name: "Not yet" }).click();
+  await expect(offer).toBeHidden();
+  // Declining leaves the task exactly where it was.
+  await expect(task.getByLabel("Task status")).toHaveValue("todo");
+  await closeDialog(task);
+});
+
+test("or sends it for review on the spot", async () => {
+  const task = await openTask(lead, FEATURE_TASK);
+  const boxes = task.locator('input[type="checkbox"]');
+  // Raise the offer again: unticking takes it back, ticking brings it out.
+  await boxes.nth(1).click();
+  await expect(boxes.nth(1)).not.toBeChecked();
+  await boxes.nth(1).click();
+  await expect(boxes.nth(1)).toBeChecked();
+  const offer = task.getByRole("alertdialog", { name: "Checklist finished" });
+  await offer.getByRole("button", { name: "Send for review now" }).click();
+  await expect(task.getByLabel("Task status")).toHaveValue("review");
   await closeDialog(task);
 });
 

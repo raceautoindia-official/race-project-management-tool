@@ -23,6 +23,7 @@ function mapSubtask(r: DbRow) {
     id: r.id,
     task_id: r.task_id,
     title: r.title,
+    source: r.source ?? null,
     is_done: Boolean(r.is_done),
     position: r.position,
   };
@@ -38,7 +39,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
     await assertProjectAccess(user, ref.project_id);
 
     const rows = await query<DbRow[]>(
-      `SELECT id, task_id, title, is_done, position FROM subtasks
+      `SELECT id, task_id, title, source, is_done, position FROM subtasks
        WHERE task_id = ? ORDER BY position ASC, id ASC`,
       [taskId]
     );
@@ -76,6 +77,8 @@ export async function POST(req: NextRequest, { params }: Params) {
           id: result.insertId,
           task_id: taskId,
           title,
+          // Typed here rather than taken from the specification.
+          source: null,
           is_done: false,
           position: nextPos,
         },

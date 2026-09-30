@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  isPointField,
   SPEC_FIELDS,
   SPEC_KEYS,
   SPEC_TYPES,
@@ -10,6 +11,7 @@ import {
   type SpecType,
 } from "@/lib/workflow";
 import type { SpecColumns, WorkType } from "@/lib/types";
+import PointsInput, { pointsOf } from "./PointsInput";
 
 const inputClass =
   "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
@@ -95,31 +97,50 @@ export function WorkSpecFields({
 
       {children}
 
-      {specFieldsFor(type).map((f) => (
-        <div key={f.key}>
-          <label
-            htmlFor={`spec-${f.key}`}
-            className="mb-1 block text-sm font-medium text-slate-700"
-          >
-            {f.label}
-            {f.required ? (
-              <span className="text-red-500"> *</span>
-            ) : (
-              <span className="font-normal text-slate-500"> (optional)</span>
-            )}
-          </label>
-          <textarea
+      {specFieldsFor(type).map((f) =>
+        isPointField(f.key) ? (
+          // Points: each one becomes a checklist item on the task, so they
+          // are added one at a time rather than typed as a paragraph.
+          <PointsInput
+            key={f.key}
             id={`spec-${f.key}`}
+            label={f.label}
             required={f.required}
-            rows={f.required ? 3 : 2}
-            maxLength={5000}
+            hint={f.hint}
             value={spec[f.key] ?? ""}
-            onChange={(e) => onSpecChange({ ...spec, [f.key]: e.target.value })}
-            placeholder={f.hint}
-            className={inputClass}
+            onChange={(v) => onSpecChange({ ...spec, [f.key]: v })}
           />
-        </div>
-      ))}
+        ) : (
+          <div key={f.key}>
+            <label
+              htmlFor={`spec-${f.key}`}
+              className="mb-1 block text-sm font-medium text-slate-700"
+            >
+              {f.label}
+              {f.required ? (
+                <span className="text-red-500"> *</span>
+              ) : (
+                <span className="font-normal text-slate-500"> (optional)</span>
+              )}
+            </label>
+            {/* Every field says what it wants, so it is never a guess. */}
+            <p className="mb-1 text-xs text-slate-500">
+              Write this as a sentence — {f.hint.toLowerCase()}. It is
+              background, not something to tick off.
+            </p>
+            <textarea
+              id={`spec-${f.key}`}
+              required={f.required}
+              rows={f.required ? 3 : 2}
+              maxLength={5000}
+              value={spec[f.key] ?? ""}
+              onChange={(e) => onSpecChange({ ...spec, [f.key]: e.target.value })}
+              placeholder={f.hint}
+              className={inputClass}
+            />
+          </div>
+        )
+      )}
     </>
   );
 }
@@ -143,9 +164,22 @@ export function SpecView({
             <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               {f.label}
             </dt>
-            <dd className="mt-0.5 whitespace-pre-wrap text-sm text-slate-700">
-              {value || <span className="text-slate-500">—</span>}
-            </dd>
+            {isPointField(f.key) && pointsOf(value).length > 0 ? (
+              <dd className="mt-0.5 space-y-0.5 text-sm text-slate-700">
+                {pointsOf(value).map((point, i) => (
+                  <p key={i} className="flex gap-1.5">
+                    <span aria-hidden="true" className="text-slate-400">
+                      ☐
+                    </span>
+                    <span>{point}</span>
+                  </p>
+                ))}
+              </dd>
+            ) : (
+              <dd className="mt-0.5 whitespace-pre-wrap text-sm text-slate-700">
+                {value || <span className="text-slate-500">—</span>}
+              </dd>
+            )}
           </div>
         );
       })}

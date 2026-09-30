@@ -41,6 +41,18 @@ there is **no public sign-up** — an admin provisions every account.
   npm run backfill:checklists -- --dry-run   # show what it would add
   npm run backfill:checklists                # add it
   ```
+
+  Each item remembers the field that asked for it, so the checklist is grouped under
+  **Expected behavior**, **Acceptance criteria**, **Features** or **Rules** rather than
+  reading as one flat list. Items typed on the task sit under **Added on this task**.
+- **Points, not paragraphs**: the fields that become the checklist are written one point
+  per box — each one is a checkbox later, so it is entered as one. The rest (existing
+  behaviour, reason, scope, flow) stay sentences, and every field says which it wants.
+  Pasting a list into a point splits it into one point per line.
+- **Finished checklist hands the task over**: tick the last box and the task offers to
+  send itself for review, in five seconds, with **Not yet** to stop it. Nobody has to
+  find the status menu — and **Done** stays where it belongs, out of the owner's reach,
+  since marking work complete is the lead's call.
 - **Task PDF**: download any task (spec, approval trail, checklist, files, comments) as
   a PDF.
 - **Calendar**: meetings arrive as real **calendar invitations** by email, so they appear

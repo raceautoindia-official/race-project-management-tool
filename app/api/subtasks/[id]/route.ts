@@ -9,7 +9,7 @@ type Params = { params: Promise<{ id: string }> };
 
 async function loadSubtask(subtaskId: number): Promise<DbRow> {
   const rows = await query<DbRow[]>(
-    `SELECT s.id, s.task_id, s.title, s.is_done, s.position,
+    `SELECT s.id, s.task_id, s.title, s.source, s.is_done, s.position,
             t.project_id, t.assignee_id
      FROM subtasks s JOIN tasks t ON t.id = s.task_id
      WHERE s.id = ? LIMIT 1`,
@@ -55,6 +55,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
         id: updated.id,
         task_id: updated.task_id,
         title: updated.title,
+        source: updated.source ?? null,
         is_done: Boolean(updated.is_done),
         position: updated.position,
       },

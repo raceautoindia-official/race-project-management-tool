@@ -20,7 +20,9 @@ import {
   canSignOff,
   pendingChecklistItems,
   signOffBlockers,
+  SPEC_LABELS,
   specFieldsFor,
+  type SpecKey,
 } from "@/lib/workflow";
 import { SpecView } from "./WorkSpec";
 
@@ -88,6 +90,10 @@ export default function TaskDetailModal({
   const [comments, setComments] = useState<Comment[]>([]);
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
   const [seedingSpec, setSeedingSpec] = useState(false);
+  // Seconds left before the finished checklist sends itself for review,
+  // and whether this person has already said not yet.
+  const [reviewIn, setReviewIn] = useState<number | null>(null);
+  const [reviewDeclined, setReviewDeclined] = useState(false);
   // Said only when someone presses Post comment with nothing written.
   const [commentHint, setCommentHint] = useState(false);
   const commentInput = useRef<HTMLInputElement>(null);
@@ -152,6 +158,24 @@ export default function TaskDetailModal({
     };
   }, [taskId, open]);
 
+  // Counts the offer down a second at a time. The send happens inside the
+  // timer rather than in the effect body, so nothing cascades a render.
+  useEffect(() => {
+    if (reviewIn === null) return;
+    const timer = setTimeout(() => {
+      if (reviewIn > 1) {
+        setReviewIn(reviewIn - 1);
+        return;
+      }
+      setReviewIn(null);
+      void changeStatus("review");
+    }, 1000);
+    return () => clearTimeout(timer);
+    // changeStatus is rebuilt every render; listing it here would restart
+    // the countdown on each tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reviewIn]);
+
   if (!task) return null;
   const currentTask = task;
 
@@ -187,6 +211,21 @@ export default function TaskDetailModal({
     currentTask,
     subtasks.map((s) => s.title)
   );
+  // Grouped by the spec field each item came from, in the order the spec
+  // asks for them, so it is plain which are the expected behaviour and
+  // which are the acceptance criteria. Items typed here come last.
+  const checklistGroups = (() => {
+    const groups = new Map<string, Subtask[]>();
+    for (const s of subtasks) {
+      const key = s.source ?? "";
+      const list = groups.get(key);
+      if (list) list.push(s);
+      else groups.set(key, [s]);
+    }
+    return [...groups.entries()];
+  })();
+  // One unlabelled group is just a list; headings would say nothing.
+  const showChecklistGroups = checklistGroups.some(([source]) => source !== "");
   const progress = taskProgress({
     status: currentTask.status,
     subtask_total: subtasks.length,
@@ -530,6 +569,19 @@ export default function TaskDetailModal({
     }
   }
 
+  /**
+   * Every box ticked means the work is done, so the task offers to hand
+   * itself over rather than waiting for someone to find the status menu.
+   * It waits five seconds first — a box ticked by mistake is common, and
+   * moving a task back out of review is not this person's to do.
+   */
+  function offerReview(list: Subtask[]) {
+    if (reviewDeclined || !canEditExecution) return;
+    if (currentTask.status === "review" || currentTask.status === "done") return;
+    if (!list.length || list.some((x) => !x.is_done)) return;
+    setReviewIn(5);
+  }
+
   async function toggleSubtask(s: Subtask) {
     try {
       const res = await apiFetch<{ subtask: Subtask }>(`/api/subtasks/${s.id}`, {
@@ -539,6 +591,9 @@ export default function TaskDetailModal({
       const list = subtasks.map((x) => (x.id === s.id ? res.subtask : x));
       setSubtasks(list);
       syncCounts(list);
+      offerReview(list);
+      // Unticking something takes back the offer.
+      if (list.some((x) => !x.is_done)) setReviewIn(null);
     } catch (e) {
       void reloadIfChanged(e);
       toast(e instanceof Error ? e.message : "Could not update subtask", "error");
@@ -593,6 +648,54 @@ export default function TaskDetailModal({
 
   return (
     <Modal open={open} onClose={onClose} title={currentTask.title} widthClass="max-w-2xl">
+      {/* The checklist is finished: the task is going for review unless
+          this is stopped. Inside the modal's own content, so clicking it
+          does not fall through and close the task. */}
+      {reviewIn !== null && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 p-4">
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-label="Checklist finished"
+            className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl"
+          >
+            <h3 className="text-base font-semibold text-slate-900">
+              ✅ Checklist finished
+            </h3>
+            <p aria-live="polite" className="mt-1 text-sm text-slate-600">
+              Every item is ticked, so this task is going for review in{" "}
+              <strong className="text-slate-900">{reviewIn}</strong>{" "}
+              second{reviewIn === 1 ? "" : "s"}.
+            </p>
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setReviewIn(null);
+                  void changeStatus("review");
+                }}
+                className="flex-1 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+              >
+                Send for review now
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setReviewIn(null);
+                  setReviewDeclined(true);
+                }}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Not yet
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-slate-500">
+              “Not yet” leaves it where it is — nobody is told, and you can send
+              it whenever you are ready.
+            </p>
+          </div>
+        </div>
+      )}
       {error && (
         <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
           {error}
@@ -1021,35 +1124,49 @@ export default function TaskDetailModal({
             <div className="h-full bg-green-500" style={{ width: `${subPct}%` }} />
           </div>
         )}
-        <ul className="space-y-1">
-          {subtasks.map((s) => (
-            <li key={s.id} className="group flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={s.is_done}
-                disabled={!canEditExecution}
-                onChange={() => toggleSubtask(s)}
-                className="h-4 w-4 rounded border-slate-300 disabled:opacity-60"
-              />
-              <span
-                className={`flex-1 text-sm ${
-                  s.is_done ? "text-slate-500 line-through" : "text-slate-700"
-                }`}
-              >
-                {s.title}
-              </span>
-              {canEditExecution && (
-                <button
-                  onClick={() => deleteSubtask(s.id)}
-                  className="text-xs text-slate-300 hover:text-red-500"
-                  aria-label="Delete subtask"
-                >
-                  ✕
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
+        {checklistGroups.map(([source, items]) => (
+          <div key={source || "typed-here"} className="mb-2">
+            {showChecklistGroups && (
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                {source
+                  ? SPEC_LABELS[source as SpecKey]
+                  : "Added on this task"}{" "}
+                <span className="font-normal normal-case text-slate-400">
+                  ({items.filter((i) => i.is_done).length}/{items.length})
+                </span>
+              </p>
+            )}
+            <ul className="space-y-1">
+              {items.map((s) => (
+                <li key={s.id} className="group flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={s.is_done}
+                    disabled={!canEditExecution}
+                    onChange={() => toggleSubtask(s)}
+                    className="h-4 w-4 rounded border-slate-300 disabled:opacity-60"
+                  />
+                  <span
+                    className={`flex-1 text-sm ${
+                      s.is_done ? "text-slate-500 line-through" : "text-slate-700"
+                    }`}
+                  >
+                    {s.title}
+                  </span>
+                  {canEditExecution && (
+                    <button
+                      onClick={() => deleteSubtask(s.id)}
+                      className="text-xs text-slate-300 hover:text-red-500"
+                      aria-label="Delete subtask"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
         {canEditExecution && (
           <form onSubmit={addSubtask} className="mt-2 flex gap-2">
             <input

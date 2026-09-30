@@ -731,13 +731,15 @@ describe("an approved request arrives with its checklist", () => {
     expect(decided.status).toBe(200);
 
     const items = await query<DbRow[]>(
-      `SELECT title, is_done FROM subtasks WHERE task_id = ? ORDER BY position`,
+      `SELECT title, source, is_done FROM subtasks WHERE task_id = ? ORDER BY position`,
       [decided.body.task.id]
     );
-    expect(items.map((i) => i.title)).toEqual([
-      "Export as CSV",
-      "Email the file",
-      "Only leads can export",
+    // Each item remembers which part of the request asked for it, so the
+    // task shows them under that heading rather than as one flat list.
+    expect(items.map((i) => [i.title, i.source])).toEqual([
+      ["Export as CSV", "features"],
+      ["Email the file", "features"],
+      ["Only leads can export", "rules"],
     ]);
     // Nothing is ticked: it is a list of work, not a record of it.
     expect(items.every((i) => Number(i.is_done) === 0)).toBe(true);
@@ -770,16 +772,16 @@ describe("a task created before checklists can catch up with its spec", () => {
 
   it("adds what the specification asks for", async () => {
     actAs(sam);
-    const res = await call<{ added: number; subtasks: { title: string }[] }>(
-      fromSpec.POST,
-      { method: "POST", id: taskId }
-    );
+    const res = await call<{
+      added: number;
+      subtasks: { title: string; source: string | null }[];
+    }>(fromSpec.POST, { method: "POST", id: taskId });
     expect(res.status).toBe(200);
     expect(res.body.added).toBe(3);
-    expect(res.body.subtasks.map((s) => s.title)).toEqual([
-      "Totals round half-up",
-      "12.345 shows as 12.35",
-      "12.344 shows as 12.34",
+    expect(res.body.subtasks.map((s) => [s.title, s.source])).toEqual([
+      ["Totals round half-up", "expected_behavior"],
+      ["12.345 shows as 12.35", "acceptance_criteria"],
+      ["12.344 shows as 12.34", "acceptance_criteria"],
     ]);
   });
 
