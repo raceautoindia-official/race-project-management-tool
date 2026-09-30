@@ -50,9 +50,10 @@ there is **no public sign-up** — an admin provisions every account.
   behaviour, reason, scope, flow) stay sentences, and every field says which it wants.
   Pasting a list into a point splits it into one point per line.
 - **Finished checklist hands the task over**: tick the last box and the task offers to
-  send itself for review, in five seconds, with **Not yet** to stop it. Nobody has to
-  find the status menu — and **Done** stays where it belongs, out of the owner's reach,
-  since marking work complete is the lead's call.
+  send itself for review, in five seconds, with **Not yet** to stop it. There is a plain
+  **Send for review** button on the task as well, so handing work on is never something
+  you have to find in a menu. **Done** stays out of the owner's reach either way —
+  marking work complete is the lead's call.
 - **Task PDF**: download any task (spec, approval trail, checklist, files, comments) as
   a PDF.
 - **Calendar**: meetings arrive as real **calendar invitations** by email, so they appear

@@ -248,8 +248,10 @@ test("finishing the checklist offers to hand the task over, and takes no for an 
   await expect(offer).toBeVisible();
   await offer.getByRole("button", { name: "Not yet" }).click();
   await expect(offer).toBeHidden();
-  // Declining leaves the task exactly where it was.
+  // Declining leaves the task exactly where it was — and the manual way to
+  // send it is a button on the task, not a menu you have to know about.
   await expect(task.getByLabel("Task status")).toHaveValue("todo");
+  await expect(task.getByRole("button", { name: "Send for review" })).toBeVisible();
   await closeDialog(task);
 });
 
@@ -272,7 +274,10 @@ test("the owner submits for review but can't mark the task Done", async () => {
   const task = await openTask(sam, CORRECTION);
   const status = task.getByLabel("Task status");
   await expect(status.locator("option")).toHaveText(["To Do", "In Progress", "Review (submit)"]);
-  await status.selectOption("review");
+  // The button does it without going near the menu.
+  await task.getByRole("button", { name: "Send for review" }).click();
+  await expect(status).toHaveValue("review");
+  await expect(task.getByRole("button", { name: "Send for review" })).toHaveCount(0);
   await expect(task.getByText("Review", { exact: true }).first()).toBeVisible();
   await expect(task.getByRole("button", { name: "Sign off", exact: true })).toHaveCount(0);
   await closeDialog(task);

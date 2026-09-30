@@ -690,8 +690,9 @@ export default function TaskDetailModal({
               </button>
             </div>
             <p className="mt-2 text-xs text-slate-500">
-              “Not yet” leaves it where it is — nobody is told, and you can send
-              it whenever you are ready.
+              “Not yet” leaves it where it is and tells nobody. Send it whenever
+              you are ready with the <strong>Send for review</strong> button at the
+              top of the task.
             </p>
           </div>
         </div>
@@ -737,6 +738,19 @@ export default function TaskDetailModal({
               📅 Add to calendar
             </a>
           )}
+          {canChangeStatus &&
+            (currentTask.status === "todo" ||
+              currentTask.status === "in_progress") && (
+              <button
+                onClick={() => {
+                  setReviewIn(null);
+                  void changeStatus("review");
+                }}
+                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700"
+              >
+                Send for review
+              </button>
+            )}
           {maySignOff && (
             <button
               onClick={() => setSignOffOpen((v) => !v)}
