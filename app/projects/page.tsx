@@ -9,8 +9,8 @@ import type { Project } from "@/lib/types";
 export const dynamic = "force-dynamic";
 
 const PROJECT_SELECT = `
-  p.id, p.name, p.description, p.status, p.owner_id,
-  p.created_at, p.updated_at, u.name AS owner_name,
+  p.id, p.name, p.description, p.status, p.approval_status, p.owner_id,
+  p.requested_by, p.created_at, p.updated_at, u.name AS owner_name,
   pm_self.role_in_project AS role_in_project,
   (SELECT COUNT(*) FROM project_members pm WHERE pm.project_id = p.id) AS member_count,
   (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id) AS task_count,
@@ -42,6 +42,8 @@ export default async function ProjectsPage({
   if (["active", "completed", "archived"].includes(status)) {
     where.push("p.status = ?");
     params.push(status);
+  } else if (status === "pending") {
+    where.push("p.approval_status = 'pending'");
   } else if (status !== "all") {
     // Default view hides archived projects.
     where.push("p.status <> 'archived'");
@@ -60,12 +62,18 @@ export default async function ProjectsPage({
   );
   const projects = rows as unknown as Project[];
 
-  let users: DbRow[] = [];
-  if (user.role === "admin") {
-    users = await query<DbRow[]>(
-      `SELECT id, name, email FROM users WHERE is_active = TRUE ORDER BY name`
-    );
-  }
+  // Admins pick members; everyone else picks the lead who approves a request.
+  const users = await query<DbRow[]>(
+    `SELECT u.id, u.name, u.email,
+            (u.role = 'admin' OR EXISTS (
+              SELECT 1 FROM project_members pm
+                JOIN projects p ON p.id = pm.project_id AND p.approval_status = 'approved'
+               WHERE pm.user_id = u.id AND pm.role_in_project = 'lead'
+            )) AS can_lead
+       FROM users u
+      WHERE u.is_active = TRUE
+      ORDER BY u.name`
+  );
 
   return (
     <AppShell user={user}>
@@ -74,14 +82,19 @@ export default async function ProjectsPage({
         subtitle={
           user.role === "admin"
             ? "All projects across the organization."
-            : "Projects you are a member of."
+            : "Projects you are a member of, including projects you requested."
         }
         action={
-          user.role === "admin" ? (
-            <NewProjectButton
-              users={users.map((u) => ({ id: u.id, name: u.name, email: u.email }))}
-            />
-          ) : undefined
+          <NewProjectButton
+            isAdmin={user.role === "admin"}
+            currentUserId={user.id}
+            users={users.map((u) => ({
+              id: u.id,
+              name: u.name,
+              email: u.email,
+              canLead: Boolean(Number(u.can_lead)),
+            }))}
+          />
         }
       />
 
@@ -94,13 +107,15 @@ export default async function ProjectsPage({
         />
         <select
           name="status"
+          aria-label="Filter projects by status"
           defaultValue={status}
           className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
         >
-          <option value="">Active &amp; completed</option>
+          <option value="">All except archived</option>
           <option value="active">Active</option>
           <option value="completed">Completed</option>
           <option value="archived">Archived</option>
+          <option value="pending">Pending approval</option>
           <option value="all">All (incl. archived)</option>
         </select>
         <button
@@ -112,7 +127,7 @@ export default async function ProjectsPage({
       </form>
 
       {projects.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-slate-400">
+        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">
           No projects found.
         </div>
       ) : (

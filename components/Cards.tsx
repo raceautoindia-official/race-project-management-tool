@@ -11,9 +11,9 @@ export function StatCard({
 }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5">
-      <div className="text-sm font-medium text-slate-500">{label}</div>
+      <div className="text-sm font-medium text-slate-600">{label}</div>
       <div className={`mt-2 text-3xl font-bold ${accent}`}>{value}</div>
-      {hint && <div className="mt-1 text-xs text-slate-400">{hint}</div>}
+      {hint && <div className="mt-1 text-xs text-slate-500">{hint}</div>}
     </div>
   );
 }
@@ -50,10 +50,10 @@ export function PageHeader({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="mb-6 flex items-start justify-between gap-4">
+    <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
       <div>
         <h1 className="text-2xl font-bold text-slate-900">{title}</h1>
-        {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
+        {subtitle && <p className="mt-1 text-sm text-slate-600">{subtitle}</p>}
       </div>
       {action}
     </div>

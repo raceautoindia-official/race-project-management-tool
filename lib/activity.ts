@@ -1,5 +1,6 @@
 import { pool } from "./db";
 import { sendPushToUser } from "./push";
+import { sendWhatsAppToUser } from "./whatsapp";
 
 interface LogInput {
   userId: number | null;
@@ -31,14 +32,16 @@ export async function logActivity(input: LogInput): Promise<void> {
   }
 }
 
-/** Create an in-app notification (best-effort). Also web-pushes unless
- *  opts.push is false. */
+/**
+ * Create an in-app notification (best-effort). Also web-pushes and sends a
+ * WhatsApp alert (to people who opted in), unless switched off per call.
+ */
 export async function notify(
   userId: number,
   type: string,
   message: string,
   link?: string | null,
-  opts?: { push?: boolean }
+  opts?: { push?: boolean; whatsapp?: boolean }
 ): Promise<void> {
   try {
     await pool.execute(
@@ -49,6 +52,10 @@ export async function notify(
     // Fan out to the browser (best-effort; no-op if push isn't configured).
     if (opts?.push !== false) {
       void sendPushToUser(userId, { title: "PMApp", body: message, url: link ?? "/" });
+    }
+    // …and to WhatsApp (no-op unless configured and opted in).
+    if (opts?.whatsapp !== false) {
+      void sendWhatsAppToUser(userId, message, link ?? null);
     }
   } catch (err) {
     console.error("Failed to write notification:", err);

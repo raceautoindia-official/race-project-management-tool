@@ -2,7 +2,12 @@ import { NextRequest } from "next/server";
 import { query, DbRow, DbResult } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { json, errorResponse, ApiError, forbidden } from "@/lib/http";
-import { assertProjectAccess, assertTaskEdit, canManageProject } from "@/lib/rbac";
+import {
+  assertProjectAccess,
+  assertTaskEdit,
+  assertTaskWritable,
+  canManageProject,
+} from "@/lib/rbac";
 import { logActivity } from "@/lib/activity";
 
 type Params = { params: Promise<{ id: string }> };
@@ -66,6 +71,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       project_id: task.project_id,
       assignee_id: task.assignee_id,
     });
+    await assertTaskWritable(taskId);
 
     const body = await req.json().catch(() => ({}));
     const minutes = Math.round(Number(body.minutes));
@@ -123,6 +129,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     if (!Number.isInteger(taskId)) throw new ApiError(400, "Invalid id");
     const task = await loadTaskRef(taskId);
     const { projectRole } = await assertProjectAccess(user, task.project_id);
+    await assertTaskWritable(taskId);
 
     const logId = Number(new URL(req.url).searchParams.get("logId"));
     if (!Number.isInteger(logId)) throw new ApiError(400, "Invalid logId");

@@ -1,6 +1,11 @@
 import { query, DbRow } from "./db";
-import { forbidden, notFound } from "./http";
-import type { ProjectRole, User } from "./types";
+import { conflict, forbidden, notFound } from "./http";
+import {
+  projectCompletionBlockers,
+  projectLockReason,
+  taskLockReason,
+} from "./workflow";
+import type { ProjectRole, ProjectStatus, RequestStatus, User } from "./types";
 
 /**
  * Is this user a "manager" of the project — i.e. allowed to create/edit/delete
@@ -66,6 +71,78 @@ export async function assertProjectManage(
   const { project, projectRole } = await assertProjectAccess(user, projectId);
   if (canManageProject(user, projectRole)) return project;
   throw forbidden("Only an admin or project lead can do this");
+}
+
+/**
+ * Ensure a project accepts changes: approved (not a pending/rejected request)
+ * and not completed. Throws 409 with the reason otherwise.
+ */
+export function assertProjectWritable(project: DbRow): void {
+  const reason = projectLockReason({
+    status: project.status as ProjectStatus,
+    approval_status: project.approval_status as RequestStatus,
+  });
+  if (reason) throw conflict(reason);
+}
+
+/**
+ * Ensure a task (and its project) accepts changes: the task is not signed off
+ * and the project is writable. Throws 404 if missing, 409 if read-only.
+ */
+export async function assertTaskWritable(taskId: number): Promise<void> {
+  const rows = await query<DbRow[]>(
+    `SELECT t.signed_off_at, p.status, p.approval_status
+       FROM tasks t JOIN projects p ON p.id = t.project_id
+      WHERE t.id = ? LIMIT 1`,
+    [taskId]
+  );
+  const row = rows[0];
+  if (!row) throw notFound("Task not found");
+  const reason =
+    taskLockReason({ signed_off_at: row.signed_off_at }) ??
+    projectLockReason({
+      status: row.status as ProjectStatus,
+      approval_status: row.approval_status as RequestStatus,
+    });
+  if (reason) throw conflict(reason);
+}
+
+/**
+ * Deleting these tasks would silently change a signed-off task (its follow-up
+ * link or "blocked by" list), so refuse while any signed-off task points at them.
+ */
+export async function assertNotReferencedBySignedOff(taskIds: number[]): Promise<void> {
+  if (taskIds.length === 0) return;
+  const ph = taskIds.map(() => "?").join(",");
+  const [row] = await query<DbRow[]>(
+    `SELECT
+       (SELECT COUNT(*) FROM tasks
+         WHERE parent_task_id IN (${ph}) AND signed_off_at IS NOT NULL)
+     + (SELECT COUNT(*) FROM task_dependencies d JOIN tasks t ON t.id = d.task_id
+         WHERE d.depends_on_task_id IN (${ph}) AND t.signed_off_at IS NOT NULL) AS n`,
+    [...taskIds, ...taskIds]
+  );
+  if (Number(row.n) > 0) {
+    throw conflict(
+      "A signed-off task is a follow-up of, or was blocked by, this task — it can't be deleted."
+    );
+  }
+}
+
+/** Why the project can't be marked Completed yet (empty = it can). */
+export async function completionBlockers(projectId: number): Promise<string[]> {
+  const [counts] = await query<DbRow[]>(
+    `SELECT
+       (SELECT COUNT(*) FROM tasks
+         WHERE project_id = ? AND signed_off_at IS NULL) AS unsigned_tasks,
+       (SELECT COUNT(*) FROM task_requests
+         WHERE project_id = ? AND status = 'pending') AS pending_requests`,
+    [projectId, projectId]
+  );
+  return projectCompletionBlockers({
+    unsignedTasks: Number(counts.unsigned_tasks),
+    pendingRequests: Number(counts.pending_requests),
+  });
 }
 
 /**

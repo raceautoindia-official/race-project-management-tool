@@ -24,6 +24,7 @@ const MEMBER_LINKS = [
   { href: "/team", label: "Team", icon: "◉" },
   { href: "/calendar", label: "Calendar", icon: "▤" },
   { href: "/outstanding", label: "Outstanding", icon: "⚠" },
+  { href: "/work-hours", label: "Work hours", icon: "◵" },
   { href: "/meetings", label: "Meetings", icon: "◷" },
   { href: "/reminders", label: "Reminders", icon: "🔔" },
   { href: "/profile", label: "Profile", icon: "◔" },
@@ -97,7 +98,7 @@ export default function AppShell({
           </span>
           <button
             onClick={() => setSidebarOpen(false)}
-            className="text-slate-400 hover:text-white md:hidden"
+            className="-mr-1 flex h-10 w-10 items-center justify-center rounded text-slate-300 hover:bg-white/10 hover:text-white md:hidden"
             aria-label="Close menu"
           >
             ✕
@@ -109,7 +110,7 @@ export default function AppShell({
           ))}
           {user.role === "admin" && (
             <>
-              <div className="mt-4 px-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
+              <div className="mt-4 px-3 text-xs font-semibold uppercase tracking-wider text-slate-300">
                 Administration
               </div>
               {ADMIN_LINKS.map((l) => (
@@ -124,7 +125,7 @@ export default function AppShell({
             <div className="truncate text-sm font-medium text-slate-200">
               {user.name}
             </div>
-            <div className="text-xs capitalize text-slate-500">{user.role}</div>
+            <div className="text-xs capitalize text-slate-300">{user.role}</div>
           </div>
         </div>
       </aside>
@@ -133,7 +134,7 @@ export default function AppShell({
         <header className="flex h-14 items-center gap-3 border-b border-slate-200 bg-white px-4 md:px-6">
           <button
             onClick={() => setSidebarOpen(true)}
-            className="text-xl text-slate-500 md:hidden"
+            className="-ml-2 flex h-10 w-10 items-center justify-center rounded text-xl text-slate-600 hover:bg-slate-100 md:hidden"
             aria-label="Open menu"
           >
             ☰

@@ -8,7 +8,7 @@ import { logActivity } from "@/lib/activity";
 export const dynamic = "force-dynamic";
 
 /** GET — list project templates (admin). */
-export async function GET(_req: NextRequest) {
+export async function GET() {
   try {
     await requireAdmin();
     const rows = await query<DbRow[]>(

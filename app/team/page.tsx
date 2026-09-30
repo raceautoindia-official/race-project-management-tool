@@ -15,13 +15,16 @@ export const dynamic = "force-dynamic";
 const SUBTITLES = {
   all: "Individual status and 30-day performance for every member.",
   led: "Individual status and 30-day performance for members of the projects you lead.",
+  shared: "The people you share projects with, and what they are working on.",
   self: "Your individual status and 30-day performance.",
 } as const;
 
 export default async function TeamPage() {
   const user = await requirePageUser();
   const { scope, members } = await getTeamPerformance(user);
-  const showExport = scope !== "self";
+  // Exporting a spreadsheet of colleagues' performance stays with the people
+  // accountable for it. Seeing who you work with is not the same thing.
+  const showExport = scope === "all" || scope === "led";
 
   return (
     <AppShell user={user}>
@@ -54,7 +57,7 @@ export default async function TeamPage() {
                       <span className="font-semibold text-slate-900">{m.name}</span>
                       <RoleBadge role={m.role} />
                     </div>
-                    <div className="text-xs text-slate-400">
+                    <div className="text-xs text-slate-500">
                       {m.emp_id} ·{" "}
                       {m.online
                         ? "Active now"
@@ -65,11 +68,11 @@ export default async function TeamPage() {
                   </div>
                 </div>
                 <div className="min-w-0 max-w-md text-right">
-                  <div className="text-xs font-medium uppercase tracking-wide text-slate-400">
+                  <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
                     Working on now
                   </div>
                   {m.working_on.length === 0 ? (
-                    <div className="text-sm text-slate-400">
+                    <div className="text-sm text-slate-500">
                       {m.in_review > 0 ? "Awaiting review" : "Nothing in progress"}
                     </div>
                   ) : (
@@ -77,10 +80,10 @@ export default async function TeamPage() {
                       <Link
                         key={w.id}
                         href={`/projects/${w.project_id}`}
-                        className="block truncate text-sm text-indigo-600 hover:underline"
+                        className="block truncate py-1 text-sm text-indigo-600 hover:underline"
                       >
                         {w.title}
-                        <span className="text-slate-400"> · {w.project_name}</span>
+                        <span className="text-slate-500"> · {w.project_name}</span>
                       </Link>
                     ))
                   )}
@@ -110,14 +113,14 @@ export default async function TeamPage() {
               {/* On-time + effort bars */}
               <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
-                  <div className="mb-1 flex justify-between text-xs text-slate-500">
+                  <div className="mb-1 flex justify-between text-xs text-slate-600">
                     <span>On-time completion (30d)</span>
                     <span>{otp === null ? "n/a" : `${otp}%`}</span>
                   </div>
                   <ProgressBar value={otp ?? 0} tone={(otp ?? 0) >= 60 ? "green" : "indigo"} />
                 </div>
                 <div>
-                  <div className="mb-1 flex justify-between text-xs text-slate-500">
+                  <div className="mb-1 flex justify-between text-xs text-slate-600">
                     <span>Effort vs estimate (completed work)</span>
                     <span>
                       {eff === null
@@ -132,7 +135,7 @@ export default async function TeamPage() {
           );
         })}
         {members.length === 0 && (
-          <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-slate-400">
+          <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-slate-500">
             No members in scope.
           </div>
         )}
@@ -163,7 +166,7 @@ function Stat({
   return (
     <div className="rounded-lg bg-slate-50 px-2 py-2" title={hint}>
       <div className={`text-lg font-bold ${ink}`}>{value}</div>
-      <div className="text-[11px] text-slate-500">{label}</div>
+      <div className="text-[11px] text-slate-600">{label}</div>
     </div>
   );
 }

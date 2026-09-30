@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { query, DbRow } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { json, errorResponse, ApiError } from "@/lib/http";
-import { assertProjectAccess, assertProjectManage } from "@/lib/rbac";
+import { assertProjectAccess, assertProjectManage, assertTaskWritable } from "@/lib/rbac";
 import { logActivity } from "@/lib/activity";
 
 type Params = { params: Promise<{ id: string }> };
@@ -57,6 +57,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (!Number.isInteger(taskId)) throw new ApiError(400, "Invalid id");
     const task = await loadTaskRef(taskId);
     await assertProjectManage(user, task.project_id);
+    await assertTaskWritable(taskId);
 
     const body = await req.json().catch(() => ({}));
     const dependsOn = Number(body.dependsOnTaskId);
@@ -102,6 +103,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     if (!Number.isInteger(taskId)) throw new ApiError(400, "Invalid id");
     const task = await loadTaskRef(taskId);
     await assertProjectManage(user, task.project_id);
+    await assertTaskWritable(taskId);
 
     const dependsOn = Number(new URL(req.url).searchParams.get("dependsOnTaskId"));
     if (!Number.isInteger(dependsOn)) throw new ApiError(400, "Invalid dependsOnTaskId");

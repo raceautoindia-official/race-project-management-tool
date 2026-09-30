@@ -2,7 +2,11 @@ import { NextRequest } from "next/server";
 import { query, DbRow, DbResult } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { json, errorResponse, ApiError } from "@/lib/http";
-import { assertProjectAccess, assertProjectManage } from "@/lib/rbac";
+import {
+  assertProjectAccess,
+  assertProjectManage,
+  assertProjectWritable,
+} from "@/lib/rbac";
 import { createRecurringTaskSchema } from "@/lib/validation";
 import { logActivity } from "@/lib/activity";
 
@@ -39,7 +43,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const { id } = await params;
     const projectId = Number(id);
     if (!Number.isInteger(projectId)) throw new ApiError(400, "Invalid id");
-    await assertProjectManage(user, projectId);
+    assertProjectWritable(await assertProjectManage(user, projectId));
 
     const data = createRecurringTaskSchema.parse(
       await req.json().catch(() => ({}))

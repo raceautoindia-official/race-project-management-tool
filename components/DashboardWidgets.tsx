@@ -28,9 +28,9 @@ export function KpiTile({
 }) {
   const inner = (
     <div className="h-full rounded-xl border border-slate-200 bg-white p-5 transition hover:border-indigo-300 hover:shadow-sm">
-      <div className="text-sm font-medium text-slate-500">{label}</div>
+      <div className="text-sm font-medium text-slate-600">{label}</div>
       <div className={`mt-2 text-3xl font-bold ${TONE_INK[tone]}`}>{value}</div>
-      {hint && <div className="mt-1 text-xs text-slate-400">{hint}</div>}
+      {hint && <div className="mt-1 text-xs text-slate-500">{hint}</div>}
     </div>
   );
   return href ? (
@@ -49,7 +49,7 @@ export function ProjectProgressList({
   projects: ProjectProgress[];
 }) {
   if (projects.length === 0) {
-    return <p className="text-sm text-slate-400">No active projects yet.</p>;
+    return <p className="text-sm text-slate-500">No active projects yet.</p>;
   }
   return (
     <ul className="space-y-3">
@@ -62,11 +62,11 @@ export function ProjectProgressList({
             <div className="mb-1 flex items-center justify-between gap-2 text-sm">
               <Link
                 href={`/projects/${p.id}`}
-                className="truncate font-medium text-slate-700 hover:text-indigo-600"
+                className="block truncate py-1 font-medium text-slate-700 hover:text-indigo-600"
               >
                 {p.name}
               </Link>
-              <span className="shrink-0 text-xs text-slate-500">
+              <span className="shrink-0 text-xs text-slate-600">
                 {done}/{total}
                 <span className="ml-1 font-medium text-slate-700">{pct}%</span>
               </span>
@@ -96,14 +96,14 @@ export function HoursMeter({
       <div className="flex items-end justify-between">
         <div>
           <div className="text-3xl font-bold text-slate-900">{sp}h</div>
-          <div className="text-xs text-slate-400">
+          <div className="text-xs text-slate-500">
             logged{est > 0 ? ` of ${est}h estimated` : " (no estimates set)"}
           </div>
         </div>
         {est > 0 && (
           <div
             className={`text-sm font-medium ${
-              over ? "text-amber-600" : "text-slate-500"
+              over ? "text-amber-600" : "text-slate-600"
             }`}
           >
             {pct}%

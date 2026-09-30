@@ -2,9 +2,12 @@ import type {
   TaskStatus,
   TaskPriority,
   ProjectStatus,
+  RequestStatus,
   Role,
+  WorkType,
 } from "@/lib/types";
 import { TASK_STATUS_LABELS } from "@/lib/types";
+import { WORK_TYPE_LABELS } from "@/lib/workflow";
 
 export function Badge({
   children,
@@ -58,6 +61,45 @@ export function ProjectStatusBadge({ status }: { status: ProjectStatus }) {
   return (
     <Badge className={PROJECT_STATUS_STYLES[status]}>
       {status.charAt(0).toUpperCase() + status.slice(1)}
+    </Badge>
+  );
+}
+
+const WORK_TYPE_STYLES: Record<WorkType, string> = {
+  correction: "bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-200",
+  feature: "bg-teal-50 text-teal-800 ring-1 ring-inset ring-teal-200",
+  general: "bg-slate-50 text-slate-600 ring-1 ring-inset ring-slate-200",
+};
+
+export function WorkTypeBadge({ type }: { type: WorkType | undefined }) {
+  const t = type ?? "general";
+  return <Badge className={WORK_TYPE_STYLES[t]}>{WORK_TYPE_LABELS[t]}</Badge>;
+}
+
+const REQUEST_STATUS_STYLES: Record<RequestStatus, string> = {
+  pending: "bg-amber-100 text-amber-800",
+  approved: "bg-green-100 text-green-700",
+  rejected: "bg-red-100 text-red-700",
+};
+
+export function RequestStatusBadge({
+  status,
+  pendingLabel = "Pending approval",
+}: {
+  status: RequestStatus;
+  pendingLabel?: string;
+}) {
+  const label =
+    status === "pending" ? pendingLabel : status === "approved" ? "Approved" : "Rejected";
+  return <Badge className={REQUEST_STATUS_STYLES[status]}>{label}</Badge>;
+}
+
+/** Shown on signed-off tasks and completed projects. */
+export function ReadOnlyBadge({ label = "Signed off" }: { label?: string }) {
+  return (
+    <Badge className="bg-emerald-100 text-emerald-800">
+      <span aria-hidden="true" className="mr-1">🔒</span>
+      {label}
     </Badge>
   );
 }

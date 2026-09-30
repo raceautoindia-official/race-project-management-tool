@@ -39,7 +39,7 @@ function MeetingList({
   meetings: { id: number; title: string; start_time: string; project_name: string | null }[];
 }) {
   if (meetings.length === 0)
-    return <p className="text-sm text-slate-400">No upcoming meetings.</p>;
+    return <p className="text-sm text-slate-500">No upcoming meetings.</p>;
   return (
     <ul className="divide-y divide-slate-100">
       {meetings.map((m) => (
@@ -49,7 +49,7 @@ function MeetingList({
               {m.title}
             </div>
             {m.project_name && (
-              <div className="text-xs text-slate-400">{m.project_name}</div>
+              <div className="text-xs text-slate-500">{m.project_name}</div>
             )}
           </div>
           <span className="shrink-0 text-xs font-medium text-indigo-600">
@@ -133,7 +133,7 @@ async function AdminDashboard() {
           }
         >
           {data.overdue.length === 0 ? (
-            <p className="text-sm text-slate-400">Nothing overdue. 🎉</p>
+            <p className="text-sm text-slate-500">Nothing overdue. 🎉</p>
           ) : (
             <ul className="divide-y divide-slate-100">
               {data.overdue.map((t) => (
@@ -145,7 +145,7 @@ async function AdminDashboard() {
                     >
                       {t.title}
                     </Link>
-                    <div className="text-xs text-slate-400">
+                    <div className="text-xs text-slate-500">
                       {t.project_name} · {t.assignee_name ?? "Unassigned"}
                     </div>
                   </div>
@@ -182,18 +182,18 @@ async function AdminDashboard() {
           }
         >
           {data.recentActivity.length === 0 ? (
-            <p className="text-sm text-slate-400">No activity yet.</p>
+            <p className="text-sm text-slate-500">No activity yet.</p>
           ) : (
             <ul className="divide-y divide-slate-100">
               {data.recentActivity.map((a) => (
                 <li key={a.id} className="flex items-center justify-between py-2 text-sm">
                   <span className="text-slate-700">
                     <span className="font-medium">{a.user_name ?? "System"}</span>{" "}
-                    <span className="text-slate-500">
+                    <span className="text-slate-600">
                       {humanizeAction(a.action).toLowerCase()}
                     </span>
                   </span>
-                  <span className="text-xs text-slate-400">
+                  <span className="text-xs text-slate-500">
                     {formatRelative(a.created_at)}
                   </span>
                 </li>
@@ -270,7 +270,7 @@ async function MemberDashboard({ userId, name }: { userId: number; name: string 
           }
         >
           {data.upcoming.length === 0 ? (
-            <p className="text-sm text-slate-400">No open tasks assigned to you.</p>
+            <p className="text-sm text-slate-500">No open tasks assigned to you.</p>
           ) : (
             <ul className="divide-y divide-slate-100">
               {data.upcoming.map((t) => (
@@ -282,11 +282,11 @@ async function MemberDashboard({ userId, name }: { userId: number; name: string 
                     >
                       {t.title}
                     </Link>
-                    <div className="text-xs text-slate-400">{t.project_name}</div>
+                    <div className="text-xs text-slate-500">{t.project_name}</div>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     <TaskPriorityBadge priority={t.priority} />
-                    <span className="text-xs text-slate-500">
+                    <span className="text-xs text-slate-600">
                       {t.due_date ? formatDate(t.due_date) : "No due date"}
                     </span>
                   </div>
@@ -305,7 +305,7 @@ async function MemberDashboard({ userId, name }: { userId: number; name: string 
           }
         >
           {data.projects.length === 0 ? (
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-slate-500">
               You are not a member of any projects yet.
             </p>
           ) : (
@@ -330,7 +330,7 @@ async function MemberDashboard({ userId, name }: { userId: number; name: string 
                         style={{ width: `${pct}%` }}
                       />
                     </div>
-                    <div className="mt-1 text-xs text-slate-400">
+                    <div className="mt-1 text-xs text-slate-500">
                       {done}/{total} tasks done ({pct}%)
                     </div>
                   </Link>

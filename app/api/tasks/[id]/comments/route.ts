@@ -2,10 +2,10 @@ import { NextRequest } from "next/server";
 import { query, DbRow, DbResult } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { json, errorResponse, ApiError } from "@/lib/http";
-import { assertProjectAccess } from "@/lib/rbac";
+import { assertProjectAccess, assertTaskWritable } from "@/lib/rbac";
 import { createCommentSchema } from "@/lib/validation";
 import { logActivity, notify } from "@/lib/activity";
-import { sendEmail, emailLayout, appBaseUrl } from "@/lib/mailer";
+import { sendEmail, emailLayout, appBaseUrl, escapeHtml } from "@/lib/mailer";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -52,6 +52,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     const task = await loadTaskProject(taskId);
     await assertProjectAccess(user, task.project_id);
+    await assertTaskWritable(taskId);
 
     const body = await req.json().catch(() => ({}));
     const { body: text, mentionIds } = createCommentSchema.parse(body);
@@ -94,9 +95,9 @@ export async function POST(req: NextRequest, { params }: Params) {
           subject: `${user.name} mentioned you: ${task.title}`,
           html: emailLayout(
             "You were mentioned",
-            `<p><strong>${user.name}</strong> mentioned you in a comment on
-             <strong>${task.title}</strong>:</p>
-             <blockquote style="border-left:3px solid #e2e8f0;padding-left:12px;color:#475569;">${text}</blockquote>
+            `<p><strong>${escapeHtml(user.name)}</strong> mentioned you in a comment on
+             <strong>${escapeHtml(task.title)}</strong>:</p>
+             <blockquote style="border-left:3px solid #e2e8f0;padding-left:12px;color:#475569;">${escapeHtml(text)}</blockquote>
              <p><a href="${appBaseUrl()}${link}">Open the task →</a></p>`
           ),
         });

@@ -68,14 +68,17 @@ export async function POST(req: NextRequest, { params }: Params) {
       for (const t of data.tasks ?? []) {
         const [tRes] = await conn.execute(
           `INSERT INTO tasks
-             (project_id, title, description, status, priority, estimated_hours, created_by)
-           VALUES (?, ?, ?, 'todo', ?, ?, ?)`,
+             (project_id, title, description, status, priority, estimated_hours, created_by,
+              requested_by, request_approved_by, request_approved_at)
+           VALUES (?, ?, ?, 'todo', ?, ?, ?, ?, ?, UTC_TIMESTAMP())`,
           [
             projectId,
             t.title,
             t.description ?? null,
             t.priority ?? "medium",
             t.estimated_hours ?? null,
+            admin.id,
+            admin.id,
             admin.id,
           ]
         );

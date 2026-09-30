@@ -11,9 +11,26 @@ interface PickUser {
   id: number;
   name: string;
   email: string;
+  /** Admin, or lead of an approved project — the only people who can approve. */
+  canLead?: boolean;
 }
 
-export default function NewProjectButton({ users }: { users: PickUser[] }) {
+const inputClass =
+  "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
+
+/**
+ * Admins create projects directly. Everyone else requests one: they nominate
+ * the lead who must approve it before any work can start.
+ */
+export default function NewProjectButton({
+  users,
+  isAdmin,
+  currentUserId,
+}: {
+  users: PickUser[];
+  isAdmin: boolean;
+  currentUserId: number;
+}) {
   const router = useRouter();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
@@ -21,24 +38,26 @@ export default function NewProjectButton({ users }: { users: PickUser[] }) {
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState("active");
   const [memberIds, setMemberIds] = useState<number[]>([]);
+  const [leadId, setLeadId] = useState("");
   const [templates, setTemplates] = useState<ProjectTemplate[]>([]);
   const [templateId, setTemplateId] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // Load available templates when the modal opens.
+  // Load available templates when the modal opens (admins only).
   useEffect(() => {
-    if (!open) return;
+    if (!open || !isAdmin) return;
     apiFetch<{ templates: ProjectTemplate[] }>("/api/templates")
       .then((r) => setTemplates(r.templates))
       .catch(() => setTemplates([]));
-  }, [open]);
+  }, [open, isAdmin]);
 
   function reset() {
     setName("");
     setDescription("");
     setStatus("active");
     setMemberIds([]);
+    setLeadId("");
     setTemplateId("");
     setError("");
   }
@@ -66,6 +85,17 @@ export default function NewProjectButton({ users }: { users: PickUser[] }) {
         router.push(`/projects/${res.project.id}`);
         return;
       }
+      if (!isAdmin) {
+        const res = await apiFetch<{ project: { id: number } }>("/api/projects", {
+          method: "POST",
+          body: JSON.stringify({ name, description, leadId: Number(leadId) }),
+        });
+        setOpen(false);
+        reset();
+        toast("Project created — your lead will review it");
+        router.push(`/projects/${res.project.id}`);
+        return;
+      }
       await apiFetch("/api/projects", {
         method: "POST",
         body: JSON.stringify({ name, description, status, memberIds }),
@@ -82,6 +112,7 @@ export default function NewProjectButton({ users }: { users: PickUser[] }) {
   }
 
   const usingTemplate = Boolean(templateId);
+  const leads = users.filter((u) => u.id !== currentUserId && u.canLead);
 
   return (
     <>
@@ -89,24 +120,35 @@ export default function NewProjectButton({ users }: { users: PickUser[] }) {
         onClick={() => setOpen(true)}
         className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
       >
-        + New project
+        {isAdmin ? "+ New project" : "+ Create project"}
       </button>
-      <Modal open={open} onClose={() => setOpen(false)} title="Create project">
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title={isAdmin ? "Create project" : "Create a project"}
+      >
         <form onSubmit={submit} className="space-y-4">
+          {!isAdmin && (
+            <p className="text-sm text-slate-600">
+              Your project is created straight away and starts once the lead you choose
+              approves it. Until then it is read-only.
+            </p>
+          )}
           {error && (
-            <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+            <div role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
               {error}
             </div>
           )}
-          {templates.length > 0 && (
+          {isAdmin && templates.length > 0 && (
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">
+              <label htmlFor="project-template" className="mb-1 block text-sm font-medium text-slate-700">
                 Start from
               </label>
               <select
+                id="project-template"
                 value={templateId}
                 onChange={(e) => setTemplateId(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                className={inputClass}
               >
                 <option value="">Blank project</option>
                 {templates.map((t) => (
@@ -117,7 +159,7 @@ export default function NewProjectButton({ users }: { users: PickUser[] }) {
                 ))}
               </select>
               {usingTemplate && (
-                <p className="mt-1 text-xs text-slate-400">
+                <p className="mt-1 text-xs text-slate-500">
                   Labels, tasks and milestones from the template are copied into
                   the new project.
                 </p>
@@ -125,71 +167,103 @@ export default function NewProjectButton({ users }: { users: PickUser[] }) {
             </div>
           )}
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">
-              Name
+            <label htmlFor="project-name" className="mb-1 block text-sm font-medium text-slate-700">
+              Name <span className="text-red-500">*</span>
             </label>
             <input
+              id="project-name"
               required
+              maxLength={150}
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className={inputClass}
             />
           </div>
           {!usingTemplate && (
             <>
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">
+                <label htmlFor="project-description" className="mb-1 block text-sm font-medium text-slate-700">
                   Description
                 </label>
                 <textarea
+                  id="project-description"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   rows={3}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  className={inputClass}
                 />
               </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">
-                  Status
-                </label>
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                >
-                  <option value="active">Active</option>
-                  <option value="completed">Completed</option>
-                  <option value="archived">Archived</option>
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">
-                  Members
-                </label>
-                <div className="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-slate-200 p-2">
-                  {users.length === 0 ? (
-                    <p className="px-1 text-sm text-slate-400">No users available</p>
-                  ) : (
-                    users.map((u) => (
-                      <label
-                        key={u.id}
-                        className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm hover:bg-slate-50"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={memberIds.includes(u.id)}
-                          onChange={() => toggleMember(u.id)}
-                        />
-                        <span className="text-slate-700">{u.name}</span>
-                        <span className="text-xs text-slate-400">{u.email}</span>
-                      </label>
-                    ))
-                  )}
+              {!isAdmin && (
+                <div>
+                  <label htmlFor="project-lead" className="mb-1 block text-sm font-medium text-slate-700">
+                    Lead (approver) <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    id="project-lead"
+                    required
+                    value={leadId}
+                    onChange={(e) => setLeadId(e.target.value)}
+                    className={inputClass}
+                  >
+                    <option value="">Choose a lead…</option>
+                    {leads.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Only admins and existing project leads can approve. They will lead
+                    the project; you are added as a member.
+                  </p>
                 </div>
-                <p className="mt-1 text-xs text-slate-400">
-                  You are automatically added as the project lead.
-                </p>
-              </div>
+              )}
+              {isAdmin && (
+                <>
+                  <div>
+                    <label htmlFor="project-status" className="mb-1 block text-sm font-medium text-slate-700">
+                      Status
+                    </label>
+                    <select
+                      id="project-status"
+                      value={status}
+                      onChange={(e) => setStatus(e.target.value)}
+                      className={inputClass}
+                    >
+                      <option value="active">Active</option>
+                      <option value="archived">Archived</option>
+                    </select>
+                  </div>
+                  <div>
+                    <span className="mb-1 block text-sm font-medium text-slate-700">
+                      Members
+                    </span>
+                    <div tabIndex={0} className="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-slate-200 p-2">
+                      {users.length === 0 ? (
+                        <p className="px-1 text-sm text-slate-500">No users available</p>
+                      ) : (
+                        users.map((u) => (
+                          <label
+                            key={u.id}
+                            className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm hover:bg-slate-50"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={memberIds.includes(u.id)}
+                              onChange={() => toggleMember(u.id)}
+                            />
+                            <span className="text-slate-700">{u.name}</span>
+                            <span className="text-xs text-slate-500">{u.email}</span>
+                          </label>
+                        ))
+                      )}
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">
+                      You are automatically added as the project lead.
+                    </p>
+                  </div>
+                </>
+              )}
             </>
           )}
           <div className="flex justify-end gap-2">
@@ -206,10 +280,14 @@ export default function NewProjectButton({ users }: { users: PickUser[] }) {
               className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
             >
               {busy
-                ? "Creating…"
+                ? isAdmin
+                  ? "Creating…"
+                  : "Creating…"
                 : usingTemplate
                   ? "Create from template"
-                  : "Create project"}
+                  : isAdmin
+                    ? "Create project"
+                    : "Create project"}
             </button>
           </div>
         </form>

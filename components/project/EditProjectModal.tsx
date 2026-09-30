@@ -75,8 +75,9 @@ export default function EditProjectModal({
           </div>
         )}
         <div>
-          <label className="mb-1 block text-sm font-medium text-slate-700">Name</label>
+          <label htmlFor="edit-project-name" className="mb-1 block text-sm font-medium text-slate-700">Name</label>
           <input
+            id="edit-project-name"
             required
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -84,10 +85,11 @@ export default function EditProjectModal({
           />
         </div>
         <div>
-          <label className="mb-1 block text-sm font-medium text-slate-700">
+          <label htmlFor="edit-project-description" className="mb-1 block text-sm font-medium text-slate-700">
             Description
           </label>
           <textarea
+            id="edit-project-description"
             rows={3}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
@@ -95,8 +97,9 @@ export default function EditProjectModal({
           />
         </div>
         <div>
-          <label className="mb-1 block text-sm font-medium text-slate-700">Status</label>
+          <label htmlFor="edit-project-status" className="mb-1 block text-sm font-medium text-slate-700">Status</label>
           <select
+            id="edit-project-status"
             value={status}
             onChange={(e) => setStatus(e.target.value as ProjectStatus)}
             className={inputClass}
