@@ -25,6 +25,7 @@ import * as comment from "@/app/api/comments/[id]/route";
 import * as timeLogs from "@/app/api/tasks/[id]/time-logs/route";
 import * as attachments from "@/app/api/tasks/[id]/attachments/route";
 import * as dependencies from "@/app/api/tasks/[id]/dependencies/route";
+import * as depDecision from "@/app/api/tasks/[id]/dependencies/decision/route";
 
 type Json = Record<string, unknown> & { error?: string };
 
@@ -825,5 +826,159 @@ describe("a task created before checklists can catch up with its spec", () => {
     actAs(outsider);
     const res = await call(fromSpec.POST, { method: "POST", id: taskId });
     expect(res.status).toBe(403);
+  });
+});
+
+describe("a blocker is raised by whoever is stuck, and confirmed by a lead", () => {
+  let pid: number;
+  let stuck: number;
+  let waitingOn: number;
+  let other: number;
+
+  const makeTask = async (title: string) => {
+    actAs(lead);
+    const res = await call<{ task: Task }>(projectTasks.POST, {
+      method: "POST",
+      id: pid,
+      body: { ...feature, title, assigneeId: sam.id },
+    });
+    return res.body.task.id;
+  };
+
+  beforeAll(async () => {
+    pid = await createLedProject(lead, "Blockers");
+    await query(`INSERT INTO project_members (project_id, user_id) VALUES (?, ?)`, [pid, sam.id]);
+    stuck = await makeTask("Export dealers as CSV");
+    waitingOn = await makeTask("Add the dealer date filter");
+    other = await makeTask("Tidy the dealer list");
+  });
+
+  it("lets the person doing the work say they are stuck", async () => {
+    actAs(sam);
+    const res = await call<{
+      dependencies: { id: number; approval: string; reason: string }[];
+    }>(dependencies.POST, {
+      method: "POST",
+      id: stuck,
+      body: { dependsOnTaskId: waitingOn, reason: "The export needs the filter first" },
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.dependencies[0].approval).toBe("pending");
+    expect(res.body.dependencies[0].reason).toBe("The export needs the filter first");
+  });
+
+  it("does not count as blocked until a lead agrees", async () => {
+    actAs(sam);
+    const res = await call<{ blocked: boolean }>(dependencies.GET, { id: stuck });
+    // Claimed, not established: a task could otherwise be marked blocked by
+    // the one person the delay reflects on.
+    expect(res.body.blocked).toBe(false);
+  });
+
+  it("tells the people who can decide it", async () => {
+    const rows = await query<DbRow[]>(
+      `SELECT type, message FROM notifications WHERE user_id = ? AND type = ?`,
+      [lead.id, "blocker_requested"]
+    );
+    expect(rows).toHaveLength(1);
+    expect(String(rows[0].message)).toContain("Export dealers as CSV");
+    expect(String(rows[0].message)).toContain("Add the dealer date filter");
+  });
+
+  it("is not for the person who raised it to confirm", async () => {
+    actAs(sam);
+    const res = await call(depDecision.POST, {
+      method: "POST",
+      id: stuck,
+      body: { dependsOnTaskId: waitingOn, decision: "approve" },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("blocks the task once the lead confirms it", async () => {
+    actAs(lead);
+    const decided = await call<{ dependencies: { approval: string }[] }>(depDecision.POST, {
+      method: "POST",
+      id: stuck,
+      body: { dependsOnTaskId: waitingOn, decision: "approve" },
+    });
+    expect(decided.status).toBe(200);
+    expect(decided.body.dependencies[0].approval).toBe("approved");
+
+    const res = await call<{ blocked: boolean }>(dependencies.GET, { id: stuck });
+    expect(res.body.blocked).toBe(true);
+
+    const [note] = await query<DbRow[]>(
+      `SELECT message FROM notifications WHERE user_id = ? AND type = ?`,
+      [sam.id, "blocker_approved"]
+    );
+    expect(String(note.message)).toContain("Add the dealer date filter");
+  });
+
+  it("cannot be decided twice", async () => {
+    actAs(lead);
+    const res = await call(depDecision.POST, {
+      method: "POST",
+      id: stuck,
+      body: { dependsOnTaskId: waitingOn, decision: "approve" },
+    });
+    expect(res.status).toBe(409);
+  });
+
+  it("will not reject without saying why", async () => {
+    actAs(sam);
+    await call(dependencies.POST, {
+      method: "POST",
+      id: stuck,
+      body: { dependsOnTaskId: other },
+    });
+    actAs(lead);
+    const bare = await call<Json>(depDecision.POST, {
+      method: "POST",
+      id: stuck,
+      body: { dependsOnTaskId: other, decision: "reject" },
+    });
+    expect(bare.status).toBe(400);
+    expect(bare.body.error).toContain("Say why");
+  });
+
+  it("removes a rejected blocker and says so", async () => {
+    actAs(lead);
+    const res = await call<{ dependencies: { id: number }[] }>(depDecision.POST, {
+      method: "POST",
+      id: stuck,
+      body: { dependsOnTaskId: other, decision: "reject", note: "That one is already done" },
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.dependencies.map((d) => d.id)).toEqual([waitingOn]);
+    const [note] = await query<DbRow[]>(
+      `SELECT message FROM notifications WHERE user_id = ? AND type = ?`,
+      [sam.id, "blocker_rejected"]
+    );
+    expect(String(note.message)).toContain("That one is already done");
+  });
+
+  it("can be withdrawn by whoever raised it, until it is agreed", async () => {
+    actAs(sam);
+    await call(dependencies.POST, {
+      method: "POST",
+      id: stuck,
+      body: { dependsOnTaskId: other },
+    });
+    const withdrawn = await call<{ dependencies: { id: number }[] }>(dependencies.DELETE, {
+      method: "DELETE",
+      id: stuck,
+      path: `/?dependsOnTaskId=${other}`,
+    });
+    expect(withdrawn.status).toBe(200);
+    expect(withdrawn.body.dependencies.map((d) => d.id)).toEqual([waitingOn]);
+
+    // The agreed one is not theirs to drop.
+    const refused = await call(dependencies.DELETE, {
+      method: "DELETE",
+      id: stuck,
+      path: `/?dependsOnTaskId=${waitingOn}`,
+    });
+    expect(refused.status).toBe(403);
   });
 });

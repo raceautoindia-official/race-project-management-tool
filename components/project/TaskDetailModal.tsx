@@ -50,6 +50,11 @@ interface Dependency {
   title: string;
   status: TaskStatus;
   done: boolean;
+  /** Raised by a member and waiting, or agreed by a lead. */
+  approval: "pending" | "approved";
+  reason: string | null;
+  requested_by: number | null;
+  requester_name: string | null;
 }
 
 function fmtBytes(n: number): string {
@@ -99,6 +104,10 @@ export default function TaskDetailModal({
   const commentInput = useRef<HTMLInputElement>(null);
   const [deps, setDeps] = useState<Dependency[]>([]);
   const [depToAdd, setDepToAdd] = useState("");
+  const [depReason, setDepReason] = useState("");
+  // The blocker a lead is rejecting, and why.
+  const [rejecting, setRejecting] = useState<number | null>(null);
+  const [rejectNote, setRejectNote] = useState("");
   const [body, setBody] = useState("");
   // @mention state
   const [picked, setPicked] = useState<{ id: number; name: string }[]>([]);
@@ -324,7 +333,7 @@ export default function TaskDetailModal({
     }
   }
 
-  const blocked = deps.some((d) => !d.done);
+  const blocked = deps.some((d) => d.approval === "approved" && !d.done);
   const depCandidates = projectTasks.filter(
     (t) => t.id !== currentTask.id && !deps.some((d) => d.id === t.id)
   );
@@ -341,29 +350,59 @@ export default function TaskDetailModal({
   async function addDependency() {
     if (!depToAdd) return;
     try {
-      await apiFetch(`/api/tasks/${currentTask.id}/dependencies`, {
-        method: "POST",
-        body: JSON.stringify({ dependsOnTaskId: Number(depToAdd) }),
-      });
-      const t = projectTasks.find((x) => x.id === Number(depToAdd));
-      if (t)
-        setDeps((prev) => [
-          ...prev,
-          { id: t.id, title: t.title, status: t.status, done: t.status === "done" },
-        ]);
+      const res = await apiFetch<{ dependencies: Dependency[] }>(
+        `/api/tasks/${currentTask.id}/dependencies`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            dependsOnTaskId: Number(depToAdd),
+            reason: depReason.trim() || null,
+          }),
+        }
+      );
+      setDeps(res.dependencies);
       setDepToAdd("");
+      setDepReason("");
+      toast(
+        canManageTask
+          ? "Blocker added"
+          : "Sent to a project lead — they will confirm it"
+      );
     } catch (e) {
       void reloadIfChanged(e);
       toast(e instanceof Error ? e.message : "Could not add blocker", "error");
     }
   }
+  async function decideDependency(depId: number, decision: "approve" | "reject") {
+    try {
+      const res = await apiFetch<{ dependencies: Dependency[] }>(
+        `/api/tasks/${currentTask.id}/dependencies/decision`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            dependsOnTaskId: depId,
+            decision,
+            note: rejectNote.trim() || null,
+          }),
+        }
+      );
+      setDeps(res.dependencies);
+      setRejecting(null);
+      setRejectNote("");
+      toast(decision === "approve" ? "Blocker confirmed" : "Blocker rejected");
+    } catch (e) {
+      void reloadIfChanged(e);
+      toast(e instanceof Error ? e.message : "Could not save the decision", "error");
+    }
+  }
+
   async function removeDependency(depId: number) {
     try {
-      await apiFetch(
+      const res = await apiFetch<{ dependencies: Dependency[] }>(
         `/api/tasks/${currentTask.id}/dependencies?dependsOnTaskId=${depId}`,
         { method: "DELETE" }
       );
-      setDeps((prev) => prev.filter((d) => d.id !== depId));
+      setDeps(res.dependencies);
     } catch (e) {
       void reloadIfChanged(e);
       toast(e instanceof Error ? e.message : "Could not remove blocker", "error");
@@ -979,62 +1018,156 @@ export default function TaskDetailModal({
         );
       })()}
 
-      {/* Blocked by (dependencies) */}
-      {(deps.length > 0 || canManageTask) && (
+      {/* Blocked by (dependencies). Anyone on the project can report one —
+          the person who finds out the work is stuck is the person doing it —
+          and a lead confirms it before it counts. */}
+      {(deps.length > 0 || canEditExecution) && (
         <div className="mt-4">
           <h3 className="mb-1 text-sm font-semibold text-slate-700">Blocked by</h3>
           {deps.length === 0 ? (
-            <p className="text-xs text-slate-500">No dependencies.</p>
+            <p className="text-xs text-slate-500">Nothing is holding this up.</p>
           ) : (
-            <ul className="space-y-1">
-              {deps.map((d) => (
-                <li key={d.id} className="flex items-center gap-2 text-sm">
-                  <span
-                    className={`h-2 w-2 shrink-0 rounded-full ${
-                      d.done ? "bg-green-500" : "bg-red-500"
-                    }`}
-                  />
-                  <span className={d.done ? "text-slate-500 line-through" : "text-slate-700"}>
-                    {d.title}
-                  </span>
-                  <span className="text-xs text-slate-500">
-                    {TASK_STATUS_LABELS[d.status]}
-                  </span>
-                  {canManageTask && (
-                    <button
-                      onClick={() => removeDependency(d.id)}
-                      className="ml-auto text-xs text-slate-300 hover:text-red-500"
-                      aria-label="Remove blocker"
-                    >
-                      ✕
-                    </button>
-                  )}
-                </li>
-              ))}
+            <ul className="space-y-2">
+              {deps.map((d) => {
+                const pending = d.approval === "pending";
+                const mine = d.requested_by === currentUser.id;
+                return (
+                  <li
+                    key={d.id}
+                    className={
+                      pending
+                        ? "rounded-lg border border-amber-200 bg-amber-50 p-2"
+                        : "rounded-lg border border-transparent p-2"
+                    }
+                  >
+                    <div className="flex items-center gap-2 text-sm">
+                      <span
+                        className={`h-2 w-2 shrink-0 rounded-full ${
+                          pending ? "bg-amber-400" : d.done ? "bg-green-500" : "bg-red-500"
+                        }`}
+                      />
+                      <span
+                        className={d.done ? "text-slate-500 line-through" : "text-slate-700"}
+                      >
+                        {d.title}
+                      </span>
+                      <span className="text-xs text-slate-500">
+                        {TASK_STATUS_LABELS[d.status]}
+                      </span>
+                      {pending && (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                          Awaiting a lead
+                        </span>
+                      )}
+                      {/* A lead removes any blocker; whoever raised one can
+                          take it back while it is still waiting. */}
+                      {(canManageTask || (pending && mine)) && (
+                        <button
+                          onClick={() => removeDependency(d.id)}
+                          className="ml-auto text-xs text-slate-400 hover:text-red-500"
+                          aria-label={pending && mine && !canManageTask ? "Withdraw blocker" : "Remove blocker"}
+                        >
+                          {pending && mine && !canManageTask ? "Withdraw" : "✕"}
+                        </button>
+                      )}
+                    </div>
+                    {(d.reason || (pending && d.requester_name)) && (
+                      <p className="mt-1 pl-4 text-xs text-slate-600">
+                        {d.requester_name ? `${d.requester_name}: ` : ""}
+                        {d.reason ? `“${d.reason}”` : "no reason given"}
+                      </p>
+                    )}
+                    {pending && canManageTask && (
+                      <div className="mt-2 pl-4">
+                        {rejecting === d.id ? (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <input
+                              autoFocus
+                              value={rejectNote}
+                              onChange={(e) => setRejectNote(e.target.value)}
+                              placeholder="Why it isn't blocked — they're waiting to hear"
+                              aria-label="Reason for rejecting the blocker"
+                              className="flex-1 rounded-lg border border-slate-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none"
+                            />
+                            <button
+                              onClick={() => decideDependency(d.id, "reject")}
+                              disabled={!rejectNote.trim()}
+                              className="rounded-lg bg-red-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-700 disabled:bg-slate-300"
+                            >
+                              Reject
+                            </button>
+                            <button
+                              onClick={() => {
+                                setRejecting(null);
+                                setRejectNote("");
+                              }}
+                              className="text-xs text-slate-500 hover:text-slate-700"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => decideDependency(d.id, "approve")}
+                              className="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
+                            >
+                              Confirm blocker
+                            </button>
+                            <button
+                              onClick={() => setRejecting(d.id)}
+                              className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                            >
+                              Not blocked
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
-          {canManageTask && depCandidates.length > 0 && (
-            <div className="mt-2 flex gap-2">
-              <select
-                aria-label="Add a blocking task"
-                value={depToAdd}
-                onChange={(e) => setDepToAdd(e.target.value)}
-                className="flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
-              >
-                <option value="">Add a blocking task…</option>
-                {depCandidates.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.title}
-                  </option>
-                ))}
-              </select>
-              <button
-                onClick={addDependency}
-                disabled={!depToAdd}
-                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-              >
-                Add
-              </button>
+          {canEditExecution && depCandidates.length > 0 && (
+            <div className="mt-2 space-y-2">
+              <div className="flex gap-2">
+                <select
+                  aria-label="Add a blocking task"
+                  value={depToAdd}
+                  onChange={(e) => setDepToAdd(e.target.value)}
+                  className="flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+                >
+                  <option value="">Add a blocking task…</option>
+                  {depCandidates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.title}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={addDependency}
+                  disabled={!depToAdd}
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                >
+                  {canManageTask ? "Add" : "Report"}
+                </button>
+              </div>
+              {depToAdd && (
+                <input
+                  value={depReason}
+                  onChange={(e) => setDepReason(e.target.value)}
+                  maxLength={500}
+                  placeholder="Why does it have to wait? (optional)"
+                  aria-label="Why this task is blocked"
+                  className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+                />
+              )}
+              {!canManageTask && (
+                <p className="text-xs text-slate-500">
+                  A project lead confirms it before the task counts as blocked.
+                </p>
+              )}
             </div>
           )}
         </div>

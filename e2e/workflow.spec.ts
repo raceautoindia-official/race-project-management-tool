@@ -272,6 +272,31 @@ test("or sends it for review on the spot", async () => {
   await closeDialog(task);
 });
 
+test("a member reports a blocker; it counts once a lead agrees", async () => {
+  await sam.goto(projectPath);
+  const task = await openTask(sam, CORRECTION);
+  // The person doing the work is the one who finds out it is stuck.
+  await task.getByLabel("Add a blocking task").selectOption({ label: FEATURE_TASK });
+  await task.getByLabel("Why this task is blocked").fill("Waiting for the CSV export");
+  await task.getByRole("button", { name: "Report" }).click();
+  await expect(task.getByText("Awaiting a lead")).toBeVisible();
+  // Claimed, not established — the task is not marked blocked yet.
+  await expect(task.getByText("⛔ Blocked")).toHaveCount(0);
+  await closeDialog(task);
+
+  await lead.goto(projectPath);
+  const asLead = await openTask(lead, CORRECTION);
+  await expect(asLead.getByText("Waiting for the CSV export")).toBeVisible();
+  await asLead.getByRole("button", { name: "Confirm blocker" }).click();
+  await expect(asLead.getByText("Awaiting a lead")).toHaveCount(0);
+  await expect(asLead.getByText("⛔ Blocked")).toBeVisible();
+
+  // Cleared again, so the rest of the run is not warned about it.
+  await asLead.getByRole("button", { name: "Remove blocker" }).click();
+  await expect(asLead.getByText("⛔ Blocked")).toHaveCount(0);
+  await closeDialog(asLead);
+});
+
 test("the owner submits for review but can't mark the task Done", async () => {
   await sam.goto(projectPath);
   const task = await openTask(sam, CORRECTION);

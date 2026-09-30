@@ -265,11 +265,20 @@ CREATE TABLE IF NOT EXISTS meeting_attendees (
 CREATE TABLE IF NOT EXISTS task_dependencies (
   task_id            INT NOT NULL,
   depends_on_task_id INT NOT NULL,
+  -- Raised by whoever is stuck; it counts only once a lead approves it.
+  status             ENUM('pending','approved') NOT NULL DEFAULT 'approved',
+  reason             VARCHAR(500) NULL,
+  requested_by       INT NULL,
+  decided_by         INT NULL,
+  decided_at         DATETIME NULL,
   created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (task_id, depends_on_task_id),
   CONSTRAINT fk_dep_task FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
   CONSTRAINT fk_dep_on   FOREIGN KEY (depends_on_task_id) REFERENCES tasks(id) ON DELETE CASCADE,
-  INDEX idx_dep_on (depends_on_task_id)
+  CONSTRAINT fk_dep_requester FOREIGN KEY (requested_by) REFERENCES users(id) ON DELETE SET NULL,
+  CONSTRAINT fk_dep_decider   FOREIGN KEY (decided_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_dep_on (depends_on_task_id),
+  INDEX idx_dep_status (status)
 );
 
 -- Recurring task definitions + project templates  (Phase 3 · Wave 12)
