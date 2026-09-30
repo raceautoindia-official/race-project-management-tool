@@ -287,6 +287,10 @@ test("a member reports a blocker; it counts once a lead agrees", async () => {
   await lead.goto(projectPath);
   const asLead = await openTask(lead, CORRECTION);
   await expect(asLead.getByText("Waiting for the CSV export")).toBeVisible();
+  // A lead has nothing to add here: approving their own claim is the one
+  // thing this is meant to prevent.
+  await expect(asLead.getByLabel("Add a blocking task")).toHaveCount(0);
+  await expect(asLead.getByRole("button", { name: "Report" })).toHaveCount(0);
   await asLead.getByRole("button", { name: "Confirm blocker" }).click();
   await expect(asLead.getByText("Awaiting a lead")).toHaveCount(0);
   await expect(asLead.getByText("⛔ Blocked")).toBeVisible();

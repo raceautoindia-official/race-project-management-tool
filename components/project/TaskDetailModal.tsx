@@ -197,6 +197,8 @@ export default function TaskDetailModal({
   // (status, checklist, logged hours) on their own task.
   const canEditExecution = !readOnly && (canManage || isAssignee);
   const canManageTask = !readOnly && canManage;
+  // The owner reports blockers; a lead decides them. Not both.
+  const mayReportBlocker = canEditExecution && !canManage;
   const canDelete = canManageTask;
   const isTyped = specFieldsFor(currentTask.task_type).length > 0;
   const signOffMissing = signOffBlockers(currentTask, { signerIsManager: canManage });
@@ -363,11 +365,7 @@ export default function TaskDetailModal({
       setDeps(res.dependencies);
       setDepToAdd("");
       setDepReason("");
-      toast(
-        canManageTask
-          ? "Blocker added"
-          : "Sent to a project lead — they will confirm it"
-      );
+      toast("Sent to a project lead — they will confirm it");
     } catch (e) {
       void reloadIfChanged(e);
       toast(e instanceof Error ? e.message : "Could not add blocker", "error");
@@ -1018,10 +1016,11 @@ export default function TaskDetailModal({
         );
       })()}
 
-      {/* Blocked by (dependencies). Anyone on the project can report one —
-          the person who finds out the work is stuck is the person doing it —
-          and a lead confirms it before it counts. */}
-      {(deps.length > 0 || canEditExecution) && (
+      {/* Blocked by (dependencies). The owner reports one — they are the
+          one who finds out the work is stuck — and a lead confirms it
+          before it counts. A lead has nothing to add here: approving
+          their own claim is the one thing this is meant to prevent. */}
+      {(deps.length > 0 || mayReportBlocker) && (
         <div className="mt-4">
           <h3 className="mb-1 text-sm font-semibold text-slate-700">Blocked by</h3>
           {deps.length === 0 ? (
@@ -1129,7 +1128,7 @@ export default function TaskDetailModal({
               })}
             </ul>
           )}
-          {canEditExecution && depCandidates.length > 0 && (
+          {mayReportBlocker && depCandidates.length > 0 && (
             <div className="mt-2 space-y-2">
               <div className="flex gap-2">
                 <select
@@ -1150,7 +1149,7 @@ export default function TaskDetailModal({
                   disabled={!depToAdd}
                   className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
                 >
-                  {canManageTask ? "Add" : "Report"}
+                  Report
                 </button>
               </div>
               {depToAdd && (
@@ -1163,11 +1162,9 @@ export default function TaskDetailModal({
                   className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
                 />
               )}
-              {!canManageTask && (
-                <p className="text-xs text-slate-500">
-                  A project lead confirms it before the task counts as blocked.
-                </p>
-              )}
+              <p className="text-xs text-slate-500">
+                A project lead confirms it before the task counts as blocked.
+              </p>
             </div>
           )}
         </div>

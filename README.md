@@ -56,8 +56,9 @@ there is **no public sign-up** — an admin provisions every account.
   **Send for review** button on the task as well, so handing work on is never something
   you have to find in a menu. **Done** stays out of the owner's reach either way —
   marking work complete is the lead's call.
-- **Blockers, raised by whoever is stuck**: anyone on the project can say a task is
-  waiting on another one, with a reason. It shows as **Awaiting a lead** and does *not*
+- **Blockers, raised by whoever is stuck**: the person doing the work says a task is
+  waiting on another one, with a reason. A lead has no way to add one themselves —
+  approving your own claim is what this is meant to prevent. It shows as **Awaiting a lead** and does *not*
   count until a lead confirms it — a task could otherwise be marked blocked by the one
   person the delay reflects on. Confirming marks the task ⛔ **Blocked** until the other
   task is done; rejecting needs a reason, which goes back to whoever raised it. The

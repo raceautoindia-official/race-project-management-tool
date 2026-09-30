@@ -263,12 +263,30 @@ try {
     await task.getByText(/1h 30m/).first().waitFor({ timeout: 20000 });
   });
 
-  await step("3e a blocking task can be recorded", async () => {
-    const task = admin.getByRole("dialog", { name: CORRECTION });
-    const blockers = task.locator("select").filter({ hasText: "Add a blocking task" }).first();
+  await step("3e the owner reports a blocker and a lead confirms it", async () => {
+    // Raised by whoever is stuck, which is never the person who approves it.
+    await owner.goto(`${BASE}/projects/${p2Id}`);
+    const asOwner = await openTask(owner, CORRECTION);
+    const blockers = asOwner.locator("select").filter({ hasText: "Add a blocking task" }).first();
     await pick(blockers, FEATURE.slice(0, 20));
-    await blockers.locator("xpath=..").getByRole("button", { name: "Add", exact: true }).first().click();
-    await task.getByText(new RegExp(FEATURE.slice(0, 20))).first().waitFor({ timeout: 20000 });
+    await asOwner.getByLabel("Why this task is blocked").fill("Waiting on the export");
+    await asOwner.getByRole("button", { name: "Report", exact: true }).click();
+    await asOwner.getByText("Awaiting a lead").waitFor({ timeout: 20000 });
+    await asOwner.getByRole("button", { name: "Close" }).click();
+
+    // The lead sees it waiting. Reopened here so the steps after this one
+    // still find the task dialog open on the admin's page.
+    await admin.reload();
+    const task = await openTask(admin, CORRECTION);
+    // A lead has no way to add one — only to decide what was reported.
+    must(
+      !(await task.getByRole("button", { name: "Report", exact: true }).count()),
+      "a lead can still add a blocker themselves"
+    );
+    await task.getByRole("button", { name: "Confirm blocker" }).click();
+    await task.getByText("⛔ Blocked").waitFor({ timeout: 20000 });
+    // Cleared again so the steps after this are not warned about it.
+    await task.getByRole("button", { name: "Remove blocker" }).click();
   });
 
   await step("3f the PDF and the calendar file both download", async () => {
