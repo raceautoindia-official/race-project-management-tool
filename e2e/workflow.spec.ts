@@ -284,8 +284,13 @@ test("a member reports a blocker; it counts once a lead agrees", async () => {
   await expect(task.getByText("⛔ Blocked")).toHaveCount(0);
   await closeDialog(task);
 
+  // The lead is told, and the notification opens the task it is about —
+  // not the board with the task somewhere on it.
   await lead.goto(projectPath);
-  const asLead = await openTask(lead, CORRECTION);
+  await lead.getByRole("button", { name: "Notifications" }).click();
+  await lead.getByText(/is blocked by/).first().click();
+  const asLead = lead.getByRole("dialog", { name: CORRECTION });
+  await expect(asLead).toBeVisible();
   await expect(asLead.getByText("Waiting for the CSV export")).toBeVisible();
   // A lead has nothing to add here: approving their own claim is the one
   // thing this is meant to prevent.

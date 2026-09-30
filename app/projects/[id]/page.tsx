@@ -16,11 +16,15 @@ export const dynamic = "force-dynamic";
 
 export default async function ProjectDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  /** ?task=12 opens that task straight away — what notifications link to. */
+  searchParams: Promise<{ task?: string }>;
 }) {
   const user = await requirePageUser();
   const { id } = await params;
+  const openTaskId = Number((await searchParams).task);
   const projectId = Number(id);
   if (!Number.isInteger(projectId)) notFound();
 
@@ -95,7 +99,11 @@ export default async function ProjectDetailPage({
 
   return (
     <AppShell user={user}>
+      {/* Keyed by the linked task so arriving from a notification remounts
+          the board: a client-side navigation to the same page would
+          otherwise keep the old state and open nothing. */}
       <ProjectBoard
+        key={Number.isInteger(openTaskId) ? `task-${openTaskId}` : "board"}
         project={{
           id: project.id,
           name: project.name,
@@ -116,6 +124,7 @@ export default async function ProjectDetailPage({
         initialLabels={labels}
         initialMilestones={milestones}
         initialRequests={requests}
+        openTaskId={Number.isInteger(openTaskId) ? openTaskId : null}
         allUsers={allUsers.map((u) => ({ id: u.id, name: u.name, email: u.email }))}
         currentUser={{ id: user.id, role: user.role, name: user.name }}
         canManage={canManage}

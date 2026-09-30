@@ -305,7 +305,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
         data.assigneeId,
         "task_assigned",
         `You were assigned: "${task.title}"`,
-        `/projects/${task.project_id}`
+        `/projects/${task.project_id}?task=${taskId}`
       );
     }
 

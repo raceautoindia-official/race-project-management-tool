@@ -96,10 +96,9 @@ export async function POST(req: NextRequest) {
           rt.assignee_id,
           "task_assigned",
           `Recurring task created: "${rt.title}"`,
-          `/projects/${rt.project_id}`
+          `/projects/${rt.project_id}?task=${result.insertId}`
         );
       }
-      void result;
       tasksCreated++;
     }
 

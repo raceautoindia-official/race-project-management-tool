@@ -875,14 +875,16 @@ describe("a blocker is raised by whoever is stuck, and confirmed by a lead", () 
     expect(res.body.blocked).toBe(false);
   });
 
-  it("tells the people who can decide it", async () => {
+  it("tells the people who can decide it, and links to the task itself", async () => {
     const rows = await query<DbRow[]>(
-      `SELECT type, message FROM notifications WHERE user_id = ? AND type = ?`,
+      `SELECT type, message, link FROM notifications WHERE user_id = ? AND type = ?`,
       [lead.id, "blocker_requested"]
     );
     expect(rows).toHaveLength(1);
     expect(String(rows[0].message)).toContain("Export dealers as CSV");
     expect(String(rows[0].message)).toContain("Add the dealer date filter");
+    // Landing on the board and having to find the task is landing nowhere.
+    expect(String(rows[0].link)).toBe(`/projects/${pid}?task=${stuck}`);
   });
 
   it("is not for the person who raised it to confirm", async () => {
@@ -909,10 +911,11 @@ describe("a blocker is raised by whoever is stuck, and confirmed by a lead", () 
     expect(res.body.blocked).toBe(true);
 
     const [note] = await query<DbRow[]>(
-      `SELECT message FROM notifications WHERE user_id = ? AND type = ?`,
+      `SELECT message, link FROM notifications WHERE user_id = ? AND type = ?`,
       [sam.id, "blocker_approved"]
     );
     expect(String(note.message)).toContain("Add the dealer date filter");
+    expect(String(note.link)).toBe(`/projects/${pid}?task=${stuck}`);
   });
 
   it("cannot be decided twice", async () => {

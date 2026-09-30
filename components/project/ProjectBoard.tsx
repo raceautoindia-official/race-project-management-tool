@@ -76,6 +76,7 @@ export default function ProjectBoard({
   initialLabels,
   initialMilestones,
   initialRequests,
+  openTaskId = null,
   allUsers,
   currentUser,
   canManage,
@@ -86,6 +87,8 @@ export default function ProjectBoard({
   initialLabels: Label[];
   initialMilestones: Milestone[];
   initialRequests: TaskRequest[];
+  /** Opened as soon as the page loads (a notification linked straight to it). */
+  openTaskId?: number | null;
   allUsers: PickUser[];
   currentUser: { id: number; role: Role; name: string };
   canManage: boolean;
@@ -105,8 +108,13 @@ export default function ProjectBoard({
   const [formOpen, setFormOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [followUpParent, setFollowUpParent] = useState<Task | null>(null);
-  const [detailTask, setDetailTask] = useState<Task | null>(null);
-  const [detailOpen, setDetailOpen] = useState(false);
+  // A notification links to the task, not just the board it sits on, so the
+  // thing someone was told about is what they see.
+  const linkedTask = openTaskId
+    ? (initialTasks.find((t) => t.id === openTaskId) ?? null)
+    : null;
+  const [detailTask, setDetailTask] = useState<Task | null>(linkedTask);
+  const [detailOpen, setDetailOpen] = useState(Boolean(linkedTask));
   const [membersOpen, setMembersOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);

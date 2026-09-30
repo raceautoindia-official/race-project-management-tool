@@ -161,7 +161,12 @@ export async function POST(req: NextRequest, { params }: Params) {
       );
     }
     if (data.decision === "approve" && data.assigneeId && data.assigneeId !== user.id) {
-      await notify(data.assigneeId, "task_assigned", `You were assigned: "${request.title}"`, link);
+      await notify(
+        data.assigneeId,
+        "task_assigned",
+        `You were assigned: "${request.title}"`,
+        taskId ? `${link}?task=${taskId}` : link
+      );
     }
 
     const [updated] = await fetchTaskRequests("r.id = ?", [requestId]);
