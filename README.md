@@ -42,7 +42,9 @@ there is **no public sign-up** — an admin provisions every account.
   npm run backfill:checklists                # add it
   ```
 
-  Each item remembers the field that asked for it, so the checklist is grouped under
+  The checklist is the specification: there is no free-text box for typing items onto a
+  task, because a box nobody asked for is a box nobody signs off. Each item remembers the
+  field that asked for it, so the checklist is grouped under
   **Expected behavior**, **Acceptance criteria**, **Features** or **Rules** rather than
   reading as one flat list. Items typed on the task sit under **Added on this task**.
 - **Points, not paragraphs**: the fields that become the checklist are written one point

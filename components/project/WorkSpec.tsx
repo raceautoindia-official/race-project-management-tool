@@ -149,11 +149,15 @@ export function WorkSpecFields({
 export function SpecView({
   item,
   compact = false,
+  hideEmpty = false,
 }: {
   item: SpecColumns & { task_type?: WorkType };
   compact?: boolean;
+  /** Leave out optional fields nobody filled in, rather than showing a dash. */
+  hideEmpty?: boolean;
 }) {
-  const fields = specFieldsFor(item.task_type);
+  const all = specFieldsFor(item.task_type);
+  const fields = hideEmpty ? all.filter((f) => (item[f.key] ?? "").trim()) : all;
   if (fields.length === 0) return null;
   return (
     <dl className={compact ? "space-y-2" : "space-y-3"}>

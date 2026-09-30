@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Modal from "@/components/Modal";
 import { RequestStatusBadge, TaskPriorityBadge, WorkTypeBadge } from "@/components/Badge";
+import Avatar from "@/components/Avatar";
 import { apiFetch, isConflict } from "@/lib/api-client";
 import { useToast } from "@/components/ToastProvider";
 import { formatIst } from "@/lib/tz";
@@ -14,7 +15,7 @@ import type {
   TaskPriority,
   TaskRequest,
 } from "@/lib/types";
-import type { SpecType } from "@/lib/workflow";
+import { checklistFromSpec, type SpecType } from "@/lib/workflow";
 import { pickSpec, SpecView, specPayload, WorkSpecFields } from "./WorkSpec";
 
 const PRIORITY_WORD: Record<TaskPriority, string> = {
@@ -117,7 +118,8 @@ export default function TaskRequestsPanel({
           {/* What the requester asked for, so a lead sees it before deciding. */}
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-600">
             <TaskPriorityBadge priority={r.priority ?? "medium"} />
-            {r.estimated_hours != null && <span>Est. {r.estimated_hours}h</span>}
+            {/* DECIMAL out of MySQL reads "6.00"; nobody writes six hours that way. */}
+            {r.estimated_hours != null && <span>Est. {Number(r.estimated_hours)}h</span>}
             {(r.start_date || r.due_date) && (
               <span>
                 {r.start_date ? formatDate(r.start_date) : "Any time"} →{" "}
@@ -463,6 +465,8 @@ function DecisionModal({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const approving = mode === "approve";
+  // What the task will start with, counted from the request itself.
+  const checklistItemCount = checklistFromSpec(request.task_type, request).length;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -509,64 +513,131 @@ function DecisionModal({
             {error}
           </div>
         )}
-        <div className="rounded-lg border border-slate-200 p-3">
-          <div className="mb-2 flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-slate-800">{request.title}</span>
-            <WorkTypeBadge type={request.task_type} />
+        {/* What is being decided, laid out to be read: who asked, when it
+            is wanted, and exactly what they asked for. */}
+        <div className="overflow-hidden rounded-xl border border-slate-200">
+          <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+            <div className="mb-1.5 flex flex-wrap items-center gap-2">
+              <WorkTypeBadge type={request.task_type} />
+              <TaskPriorityBadge priority={request.priority ?? "medium"} />
+            </div>
+            <h3 className="text-base font-semibold text-slate-900">{request.title}</h3>
+            <div className="mt-2 flex items-center gap-2 text-xs text-slate-600">
+              <Avatar name={request.requester_name ?? "?"} size="sm" />
+              <span>
+                <span className="font-medium text-slate-700">
+                  {request.requester_name ?? "—"}
+                </span>{" "}
+                asked for this on {formatIst(request.requested_at)}
+              </span>
+            </div>
           </div>
-          <p className="mb-2 text-xs text-slate-600">
-            Raised by {request.requester_name ?? "—"} on {formatIst(request.requested_at)}
-          </p>
-          <SpecView item={request} compact />
+
+          {/* Set by the requester. Shown, never editable here: changing
+              someone's deadline is a conversation, not a silent edit at
+              the moment of approval. */}
+          <dl className="grid grid-cols-3 divide-x divide-slate-200 border-b border-slate-200 text-center">
+            {[
+              {
+                label: "Priority",
+                value: PRIORITY_WORD[request.priority ?? "medium"],
+              },
+              {
+                label: "Effort",
+                value:
+                  request.estimated_hours != null
+                    ? `${Number(request.estimated_hours)}h`
+                    : "Not estimated",
+              },
+              {
+                label: "Wanted",
+                value:
+                  request.start_date || request.due_date
+                    ? `${
+                        request.start_date ? formatDate(request.start_date) : "any time"
+                      } → ${
+                        request.due_date ? formatDate(request.due_date) : "no deadline"
+                      }`
+                    : "No dates given",
+              },
+            ].map((cell) => (
+              <div key={cell.label} className="px-2 py-2">
+                <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  {cell.label}
+                </dt>
+                <dd className="mt-0.5 text-sm font-medium text-slate-800">{cell.value}</dd>
+              </div>
+            ))}
+          </dl>
+
+          <div className="px-4 py-3">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              What was asked for
+            </p>
+            <SpecView item={request} compact hideEmpty />
+          </div>
+
+          {/* What approving actually does, before it is done. */}
+          {approving && (
+            <p className="border-t border-emerald-100 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-900">
+              ✅ Approving creates the task{" "}
+              {checklistItemCount > 0 ? (
+                <>
+                  with a <strong>{checklistItemCount}-item checklist</strong> built from
+                  the points above
+                </>
+              ) : (
+                <>with no checklist — this request lists no points to tick off</>
+              )}
+              , owned by whoever you pick below. {request.requester_name ?? "The requester"}{" "}
+              signs it off at the end.
+            </p>
+          )}
         </div>
 
         {approving ? (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
-              <label htmlFor="decide-owner" className="mb-1 block text-sm font-medium text-slate-700">
-                Assigned owner <span className="text-red-500">*</span>
-              </label>
-              <select
-                id="decide-owner"
-                required
-                value={assigneeId}
-                onChange={(e) => setAssigneeId(e.target.value)}
-                className={inputClass}
-              >
-                <option value="">Choose an owner…</option>
-                {members.map((m) => (
-                  <option key={m.user_id} value={m.user_id}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            {/* Priority, dates and effort belong to the person who asked for
-                the work. Shown here so nobody approves something without
-                seeing what they are agreeing to, but not editable: changing
-                them is a conversation with the requester, not a silent edit
-                at the moment of approval. */}
-            <div className="sm:col-span-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-              <span className="font-medium">As requested:</span>{" "}
-              {PRIORITY_WORD[request.priority ?? "medium"]} priority
-              {request.estimated_hours != null && ` · ${request.estimated_hours}h estimated`}
-              {(request.start_date || request.due_date) &&
-                ` · ${request.start_date ? formatDate(request.start_date) : "any time"} → ${
-                  request.due_date ? formatDate(request.due_date) : "no deadline"
-                }`}
-            </div>
-            <div>
-              <label htmlFor="decide-note" className="mb-1 block text-sm font-medium text-slate-700">
-                Note <span className="font-normal text-slate-500">(optional)</span>
-              </label>
-              <input
-                id="decide-note"
-                maxLength={1000}
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                className={inputClass}
-              />
-            </div>
+          // The one decision this dialog is for, given its own panel: who is
+          // going to do it. Everything above is context for that choice.
+          <div className="rounded-xl border-2 border-indigo-200 bg-indigo-50/50 p-4">
+            <label
+              htmlFor="decide-owner"
+              className="mb-1 block text-sm font-semibold text-slate-800"
+            >
+              Who should do this? <span className="text-red-500">*</span>
+            </label>
+            <p className="mb-2 text-xs text-slate-600">
+              The one thing you decide here. Priority, effort and dates came with the
+              request and are accepted as they stand.
+            </p>
+            <select
+              id="decide-owner"
+              required
+              value={assigneeId}
+              onChange={(e) => setAssigneeId(e.target.value)}
+              className={inputClass}
+            >
+              <option value="">Choose an owner…</option>
+              {members.map((m) => (
+                <option key={m.user_id} value={m.user_id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+
+            <label
+              htmlFor="decide-note"
+              className="mb-1 mt-3 block text-sm font-medium text-slate-700"
+            >
+              Note <span className="font-normal text-slate-500">(optional)</span>
+            </label>
+            <input
+              id="decide-note"
+              maxLength={1000}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Anything the owner should know before starting"
+              className={inputClass}
+            />
           </div>
         ) : (
           <div>

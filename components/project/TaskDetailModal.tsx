@@ -99,7 +99,6 @@ export default function TaskDetailModal({
   const commentInput = useRef<HTMLInputElement>(null);
   const [deps, setDeps] = useState<Dependency[]>([]);
   const [depToAdd, setDepToAdd] = useState("");
-  const [newSub, setNewSub] = useState("");
   const [body, setBody] = useState("");
   // @mention state
   const [picked, setPicked] = useState<{ id: number; name: string }[]>([]);
@@ -551,23 +550,6 @@ export default function TaskDetailModal({
     }
   }
 
-  async function addSubtask(e: React.FormEvent) {
-    e.preventDefault();
-    if (!newSub.trim()) return;
-    try {
-      const res = await apiFetch<{ subtask: Subtask }>(
-        `/api/tasks/${currentTask.id}/subtasks`,
-        { method: "POST", body: JSON.stringify({ title: newSub.trim() }) }
-      );
-      const list = [...subtasks, res.subtask];
-      setSubtasks(list);
-      setNewSub("");
-      syncCounts(list);
-    } catch (e) {
-      void reloadIfChanged(e);
-      toast(e instanceof Error ? e.message : "Could not add subtask", "error");
-    }
-  }
 
   /**
    * Every box ticked means the work is done, so the task offers to hand
@@ -1181,23 +1163,18 @@ export default function TaskDetailModal({
             </ul>
           </div>
         ))}
+        {/* The checklist is the specification, not a scratch list: items
+            come from what the work was asked to do. To change it, change
+            the specification and press “From specification”. */}
         {canEditExecution && (
-          <form onSubmit={addSubtask} className="mt-2 flex gap-2">
-            <input
-              value={newSub}
-              onChange={(e) => setNewSub(e.target.value)}
-              placeholder="Add a checklist item…"
-              className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
-            />
-            <button
-              type="submit"
-              disabled={!newSub.trim()}
-              title={!newSub.trim() ? "Type an item first" : undefined}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
-            >
-              Add item
-            </button>
-          </form>
+          <p className="mt-2 text-xs text-slate-500">
+            {subtasks.length === 0
+              ? "No checklist yet — it is built from this task's specification."
+              : "These come from the specification."}{" "}
+            {canManageTask
+              ? "Edit the task to add or reword a point."
+              : "Ask a lead to edit the task if a point is missing."}
+          </p>
         )}
       </div>
 

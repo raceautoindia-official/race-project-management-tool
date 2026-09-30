@@ -120,7 +120,7 @@ try {
     await admin.goto(`${BASE}/projects/${projectId}`);
     await admin.locator("section li", { hasText: TASK }).getByRole("button", { name: "Approve" }).click();
     const dialog = admin.getByRole("dialog", { name: "Approve request" });
-    await dialog.getByLabel(/Assigned owner/).selectOption({ index: 1 });
+    await dialog.getByLabel(/Who should do this/).selectOption({ index: 1 });
     await dialog.getByRole("button", { name: "Approve & create task" }).click();
     await dialog.waitFor({ state: "hidden", timeout: 20000 });
     await admin.locator("[draggable]", { hasText: TASK }).first().waitFor({ timeout: 20000 });

@@ -197,7 +197,7 @@ try {
     await admin.goto(`${BASE}/projects/${p2Id}`);
     await admin.locator("section li", { hasText: CORRECTION }).getByRole("button", { name: "Approve" }).click();
     const d = admin.getByRole("dialog", { name: "Approve request" });
-    await pick(d.getByLabel(/Assigned owner/), "Test Employee One");
+    await pick(d.getByLabel(/Who should do this/), "Test Employee One");
     // The approver picks who does the work; how urgent it is came with the
     // request, so there is nothing here to set it with.
     must(!(await d.getByLabel("Priority").count()), "the approver can still set priority");
@@ -236,11 +236,11 @@ try {
     await task.getByText("Checked on staging — looks right.").waitFor({ timeout: 20000 });
   });
 
-  await step("3b checklist items and progress", async () => {
+  await step("3b the checklist comes from the spec and ticks off", async () => {
     const task = admin.getByRole("dialog", { name: CORRECTION });
-    await task.getByPlaceholder(/Add a checklist item/).fill("Reproduce the bug");
-    await task.getByPlaceholder(/Add a checklist item/).press("Enter");
-    await task.getByText("Reproduce the bug").waitFor({ timeout: 20000 });
+    // Built from the request, grouped under the field that asked for it.
+    await task.getByText("Expected behavior (0/1)").waitFor({ timeout: 20000 });
+    await task.getByText("Acceptance criteria (0/1)").waitFor({ timeout: 20000 });
     const box = task.getByRole("checkbox").first();
     await box.click();
     for (let i = 0; i < 20 && !(await box.isChecked()); i++) await admin.waitForTimeout(150);

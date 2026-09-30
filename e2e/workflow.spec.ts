@@ -142,12 +142,15 @@ test("the lead approves a request with an owner and the task records its trail",
   await lead.goto(projectPath);
   await requestRow(lead, CORRECTION).getByRole("button", { name: "Approve" }).click();
   const dialog = lead.getByRole("dialog", { name: "Approve request" });
-  await dialog.getByLabel(/Assigned owner/).selectOption({ label: USERS.sam.name });
+  await dialog.getByLabel(/Who should do this/).selectOption({ label: USERS.sam.name });
   // Priority, effort and dates are the requester's — the approver only sees
   // them, and picks who does the work.
-  await expect(dialog).toContainText("As requested:");
-  await expect(dialog).toContainText("Medium priority");
+  await expect(dialog).toContainText("Priority");
+  await expect(dialog).toContainText("Medium");
+  await expect(dialog).toContainText("accepted as they stand");
   await expect(dialog.getByLabel("Priority")).toHaveCount(0);
+  // And it says what approving will do before it is done.
+  await expect(dialog).toContainText("2-item checklist");
   await dialog.getByRole("button", { name: "Approve & create task" }).click();
   await expect(dialog).toBeHidden();
 
@@ -316,7 +319,9 @@ test("everyone sees the signed-off task as read-only", async () => {
     }
     await expect(task.getByLabel("Task status")).toHaveCount(0);
     await expect(task.getByPlaceholder(/Write a comment/)).toHaveCount(0);
-    await expect(task.getByPlaceholder(/Add a checklist item/)).toHaveCount(0);
+    // Checklist boxes are shown but frozen, and nothing can be removed.
+    await expect(task.getByRole("button", { name: "Delete subtask" })).toHaveCount(0);
+    await expect(task.locator('input[type="checkbox"]').first()).toBeDisabled();
     await closeDialog(task);
   }
 });
