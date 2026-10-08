@@ -114,7 +114,7 @@ export default function MyDocuments({ initial }: { initial: PersonalDocument[] }
         </div>
         <div className="min-w-[12rem] flex-1">
           <label htmlFor="doc-note" className="mb-1 block text-xs font-medium text-slate-600">
-            Note <span className="font-normal text-slate-400">(optional)</span>
+            Note <span className="font-normal text-slate-500">(optional)</span>
           </label>
           <input
             id="doc-note"

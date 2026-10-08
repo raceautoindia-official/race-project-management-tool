@@ -268,7 +268,7 @@ export default function PlannerView({
                           Plan
                         </dt>
                         <dd className="mt-0.5 whitespace-pre-wrap text-sm text-slate-700">
-                          {t.plan || <span className="text-slate-400">—</span>}
+                          {t.plan || <span className="text-slate-500">—</span>}
                         </dd>
                       </div>
                       <div>
@@ -276,7 +276,7 @@ export default function PlannerView({
                           How it went
                         </dt>
                         <dd className="mt-0.5 whitespace-pre-wrap text-sm text-slate-700">
-                          {t.progress || <span className="text-slate-400">—</span>}
+                          {t.progress || <span className="text-slate-500">—</span>}
                         </dd>
                       </div>
                     </dl>

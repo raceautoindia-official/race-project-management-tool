@@ -183,7 +183,7 @@ export default function CredentialsVault({
                           {e.url}
                         </a>
                       ) : (
-                        <span className="text-slate-400">no address</span>
+                        <span className="text-slate-500">no address</span>
                       )}
                       {e.username ? ` · ${e.username}` : ""}
                       {e.project_name ? ` · ${e.project_name}` : ""}
