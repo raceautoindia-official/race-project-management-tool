@@ -75,6 +75,8 @@ export default async function globalSetup(config: FullConfig) {
     ATTENDANCE_DB_PASSWORD: "",
     ATTENDANCE_DB_NAME: "attendance",
     AUTH_SECRET: "e2e-only-secret-not-for-production-0123456789",
+    // The credentials vault needs a key to store anything at all.
+    CREDENTIALS_KEY: "c".repeat(64),
     SESSION_COOKIE_NAME: "pm_session",
     APP_BASE_URL: baseURL,
     MEETINGS_APP_URL: "https://meetings.example.test",

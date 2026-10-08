@@ -299,6 +299,29 @@ pm-app/
   per 15 minutes (per server process).
 - User-supplied text is HTML-escaped in emails and CSV cells can't run as spreadsheet formulas.
 
+### Credentials vault (Admin → Credentials)
+
+Website logins the team shares — client portals, hosting, FTP. Unlike a sign-in
+password, a shared login has to be readable, so these are **encrypted** (AES-256-GCM)
+rather than hashed.
+
+```bash
+# Generate the key once, and keep it with your other production secrets.
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+# .env.local
+CREDENTIALS_KEY=<the 64 hex characters>
+```
+
+- **Admin only** — the page, the API routes and the reveal. Enforced on the server, not
+  just hidden in the interface.
+- **The list never carries a secret.** Reading a password is a separate POST, and it is
+  recorded: who read what, when, shown under *Recently read* on the same page.
+- **No plaintext fallback.** With no `CREDENTIALS_KEY`, the vault refuses to store
+  anything and says what to do about it.
+- **Changing the key makes everything already saved unreadable** — the reveal says so
+  plainly rather than returning something that isn't the password.
+- Deleting a login keeps the record of who read it.
+
 ## Calendar, video calls and WhatsApp
 
 ### Setting up email

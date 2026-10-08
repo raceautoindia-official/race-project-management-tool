@@ -391,3 +391,29 @@ export const saveTemplateSchema = z.object({
 export const instantiateTemplateSchema = z.object({
   name: z.string().min(1).max(150),
 });
+
+// ---- Admin credentials vault (website logins) ----
+const credentialFields = {
+  name: z.string().min(1).max(200),
+  url: z.string().max(500).optional().nullable(),
+  username: z.string().max(255).optional().nullable(),
+  /** Stored encrypted. Long enough for a generated passphrase. */
+  password: z.string().min(1).max(500),
+  notes: z.string().max(2000).optional().nullable(),
+  projectId: optionalId.optional(),
+};
+
+export const credentialSchema = z.object(credentialFields);
+
+/**
+ * An edit sends only what changed. A blank password means "leave it as it
+ * is": the form cannot show the stored one, so it cannot send it back.
+ */
+export const credentialUpdateSchema = z.object({
+  name: credentialFields.name.optional(),
+  url: credentialFields.url,
+  username: credentialFields.username,
+  password: z.string().max(500).optional(),
+  notes: credentialFields.notes,
+  projectId: optionalId.optional(),
+});

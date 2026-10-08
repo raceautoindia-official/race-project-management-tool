@@ -40,7 +40,7 @@ const PUBLIC_PAGES = new Set(["/login"]);
 const PUBLIC_APIS = new Set(["/api/auth/login", "/api/auth/session-ended"]);
 
 // API path prefixes restricted to admins.
-const ADMIN_API_PREFIXES = ["/api/activity", "/api/presence"];
+const ADMIN_API_PREFIXES = ["/api/activity", "/api/presence", "/api/credentials"];
 
 function isPublic(pathname: string): boolean {
   if (PUBLIC_PAGES.has(pathname)) return true;
