@@ -299,6 +299,23 @@ pm-app/
   per 15 minutes (per server process).
 - User-supplied text is HTML-escaped in emails and CSV cells can't run as spreadsheet formulas.
 
+### Planner (Planner in the sidebar)
+
+A daily and weekly planner each person writes for themselves: **what I mean to do**
+and **how it went**. Nothing is worked out from the tasks — the point is what the app
+cannot know until somebody says it.
+
+- **Day and week are separate entries.** A weekly one is filed under that week's
+  Monday, so writing it on Thursday and again on Saturday updates one entry rather
+  than making two.
+- **Yours to write, and nobody else's.** There is no way to type into someone else's
+  planner, whatever your role.
+- **A project lead reads the people on the projects they lead**; an admin reads
+  everyone; a member reads their own.
+- **Download** as a spreadsheet: your own last month of days (or quarter of weeks),
+  or the whole team for one period. What you can download is what you can see.
+- Clearing both boxes and saving removes the entry.
+
 ### Personal documents (Profile → My documents)
 
 What someone uploads about themselves: ID proof, certificates, a signed contract.

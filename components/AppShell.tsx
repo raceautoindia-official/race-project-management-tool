@@ -21,6 +21,7 @@ const MEMBER_LINKS = [
   { href: "/dashboard", label: "Dashboard", icon: "▦" },
   { href: "/projects", label: "Projects", icon: "▢" },
   { href: "/my-tasks", label: "My Tasks", icon: "✓" },
+  { href: "/planner", label: "Planner", icon: "🗓" },
   { href: "/team", label: "Team", icon: "◉" },
   { href: "/calendar", label: "Calendar", icon: "▤" },
   { href: "/outstanding", label: "Outstanding", icon: "⚠" },

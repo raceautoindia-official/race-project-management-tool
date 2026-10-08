@@ -19,6 +19,7 @@ const LATER_MIGRATIONS = [
   "2026-10-08_credentials.sql",
   "2026-10-08_credential_sharing.sql",
   "2026-10-08_personal_documents.sql",
+  "2026-10-08_planner.sql",
 ].map((f) =>
   readFileSync(new URL(`../../db/migrations/${f}`, import.meta.url), "utf8")
 );
@@ -77,6 +78,7 @@ beforeAll(async () => {
     ALTER TABLE task_dependencies
       DROP COLUMN status, DROP COLUMN reason, DROP COLUMN requested_by,
       DROP COLUMN decided_by, DROP COLUMN decided_at;
+    DROP TABLE planner_entries;
     DROP TABLE user_documents;
     DROP TABLE credential_views;
     DROP TABLE credential_access;
@@ -144,6 +146,7 @@ describe("2026-09-17 phase 4 migration", () => {
       "credential_views",
       "credential_access",
       "user_documents",
+      "planner_entries",
     ]) {
       expect({ table, columns: await columns("pm_migrate", table) }).toEqual({
         table,

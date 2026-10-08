@@ -451,3 +451,18 @@ CREATE TABLE IF NOT EXISTS user_documents (
   CONSTRAINT fk_userdoc_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   INDEX idx_userdoc_user (user_id, created_at)
 );
+
+-- Daily / weekly planner, written by each person  (Phase 5)
+CREATE TABLE IF NOT EXISTS planner_entries (
+  id         INT AUTO_INCREMENT PRIMARY KEY,
+  user_id    INT NOT NULL,
+  period     ENUM('day','week') NOT NULL,
+  entry_date DATE NOT NULL,              -- the day, or that week's Monday
+  plan       TEXT NULL,                  -- what they mean to do
+  progress   TEXT NULL,                  -- how it went
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_planner_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE KEY uq_planner_entry (user_id, period, entry_date),
+  INDEX idx_planner_date (entry_date, period)
+);
