@@ -54,6 +54,16 @@ export default async function AdminHomePage() {
           </p>
         </Link>
         <Link
+          href="/admin/documents"
+          className="rounded-xl border border-slate-200 bg-white p-6 hover:border-indigo-300 hover:shadow-sm"
+        >
+          <div className="text-lg font-semibold text-slate-800">Personal documents →</div>
+          <p className="mt-1 text-sm text-slate-600">
+            ID proof, certificates and contracts people have uploaded about themselves.
+            Opening one is recorded.
+          </p>
+        </Link>
+        <Link
           href="/credentials"
           className="rounded-xl border border-slate-200 bg-white p-6 hover:border-indigo-300 hover:shadow-sm"
         >

@@ -19,9 +19,13 @@ export async function apiFetch<T = unknown>(
   url: string,
   options: RequestInit = {}
 ): Promise<T> {
+  // A file upload must set its own content type: only the browser knows the
+  // multipart boundary, and saying "application/json" over the top of it
+  // leaves the server with a body it cannot read.
+  const isForm = typeof FormData !== "undefined" && options.body instanceof FormData;
   const res = await fetch(url, {
     headers: {
-      "Content-Type": "application/json",
+      ...(isForm ? {} : { "Content-Type": "application/json" }),
       ...(options.headers ?? {}),
     },
     ...options,

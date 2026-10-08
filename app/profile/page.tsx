@@ -7,6 +7,7 @@ import Avatar from "@/components/Avatar";
 import ProfileForm from "@/components/ProfileForm";
 import PushToggle from "@/components/PushToggle";
 import CalendarSubscribe from "@/components/CalendarSubscribe";
+import MyDocuments, { type PersonalDocument } from "@/components/MyDocuments";
 import { appBaseUrl, mailerConfigured } from "@/lib/mailer";
 import { calendarFeedUrl } from "@/lib/calendar-links";
 import { whatsappConfigured } from "@/lib/whatsapp";
@@ -30,6 +31,12 @@ export default async function ProfilePage() {
   const lastFetchedLabel = row?.calendar_feed_fetched_at
     ? formatRelative(parseUtc(String(row.calendar_feed_fetched_at)))
     : null;
+
+  const documents = await query<DbRow[]>(
+    `SELECT id, user_id, category, note, filename, mime_type, size_bytes, created_at
+       FROM user_documents WHERE user_id = ? ORDER BY created_at DESC`,
+    [user.id]
+  );
 
   return (
     <AppShell user={user}>
@@ -68,6 +75,10 @@ export default async function ProfilePage() {
               </dd>
             </div>
           </dl>
+        </SectionCard>
+
+        <SectionCard title="My documents">
+          <MyDocuments initial={documents as unknown as PersonalDocument[]} />
         </SectionCard>
 
         <SectionCard title="Browser notifications">

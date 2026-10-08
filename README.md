@@ -299,6 +299,19 @@ pm-app/
   per 15 minutes (per server process).
 - User-supplied text is HTML-escaped in emails and CSV cells can't run as spreadsheet formulas.
 
+### Personal documents (Profile → My documents)
+
+What someone uploads about themselves: ID proof, certificates, a signed contract.
+
+- **Theirs to add and remove.** An admin cannot delete one — a record somebody else can
+  quietly remove is not much of a record.
+- **An admin can open them**, from Admin → Personal documents, filed by person. The page
+  the owner uses says so in as many words rather than leaving them to assume.
+- **Every admin read is recorded** in the activity log, against the admin who opened it
+  and the person it belongs to. The owner reading their own is not.
+- Files are served  — someone's ID proof has no business in a
+  shared cache. 10 MB each, stored in MySQL like task attachments.
+
 ### Credentials vault (Credentials in the sidebar)
 
 Website logins the team shares — client portals, hosting, FTP. Unlike a sign-in

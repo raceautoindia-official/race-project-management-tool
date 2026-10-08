@@ -34,6 +34,7 @@ const MEMBER_LINKS = [
 const ADMIN_LINKS = [
   { href: "/admin", label: "Admin Home", icon: "★" },
   { href: "/admin/activity", label: "Activity Log", icon: "≡" },
+  { href: "/admin/documents", label: "Documents", icon: "🗎" },
 ];
 
 export default function AppShell({
