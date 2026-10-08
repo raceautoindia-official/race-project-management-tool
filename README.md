@@ -309,7 +309,7 @@ What someone uploads about themselves: ID proof, certificates, a signed contract
   the owner uses says so in as many words rather than leaving them to assume.
 - **Every admin read is recorded** in the activity log, against the admin who opened it
   and the person it belongs to. The owner reading their own is not.
-- Files are served  — someone's ID proof has no business in a
+- Files are served `private, no-store` — someone's ID proof has no business in a
   shared cache. 10 MB each, stored in MySQL like task attachments.
 
 ### Credentials vault (Credentials in the sidebar)
