@@ -17,6 +17,7 @@ const LATER_MIGRATIONS = [
   "2026-09-30_subtask_source.sql",
   "2026-09-30_blocker_requests.sql",
   "2026-10-08_credentials.sql",
+  "2026-10-08_credential_sharing.sql",
 ].map((f) =>
   readFileSync(new URL(`../../db/migrations/${f}`, import.meta.url), "utf8")
 );
@@ -76,6 +77,7 @@ beforeAll(async () => {
       DROP COLUMN status, DROP COLUMN reason, DROP COLUMN requested_by,
       DROP COLUMN decided_by, DROP COLUMN decided_at;
     DROP TABLE credential_views;
+    DROP TABLE credential_access;
     DROP TABLE credentials;
 
     INSERT INTO users (id, employee_id, emp_id, name, role) VALUES
@@ -138,6 +140,7 @@ describe("2026-09-17 phase 4 migration", () => {
       "task_dependencies",
       "credentials",
       "credential_views",
+      "credential_access",
     ]) {
       expect({ table, columns: await columns("pm_migrate", table) }).toEqual({
         table,

@@ -1,9 +1,10 @@
 import { NextRequest } from "next/server";
-import { query, DbRow } from "@/lib/db";
-import { requireAdmin } from "@/lib/auth";
+import { query } from "@/lib/db";
+import { requireUser } from "@/lib/auth";
 import { json, errorResponse, ApiError } from "@/lib/http";
 import { checkRateLimit } from "@/lib/ratelimit";
 import { decryptSecret, secretsConfigured, secretsProblem } from "@/lib/secrets";
+import { findVisibleCredential } from "@/lib/credentials";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -15,10 +16,14 @@ export const dynamic = "force-dynamic";
  * Deliberately not part of the listing: reading a password is an act, and
  * this is where it is recorded. POST rather than GET so it cannot be reached
  * by a link, a prefetch, or anything that follows URLs on a page.
+ *
+ * Open to whoever the login was shared with — and to nobody else: a login
+ * that does not appear in your list cannot be revealed to you, because both
+ * ask the same question of the database.
  */
 export async function POST(_req: NextRequest, { params }: Params) {
   try {
-    const user = await requireAdmin();
+    const user = await requireUser();
     const { id } = await params;
     const credentialId = Number(id);
     if (!Number.isInteger(credentialId)) throw new ApiError(400, "Invalid id");
@@ -34,11 +39,9 @@ export async function POST(_req: NextRequest, { params }: Params) {
       throw new ApiError(503, secretsProblem() ?? "Credentials storage is not configured");
     }
 
-    const [row] = await query<DbRow[]>(
-      `SELECT id, name, username, password_cipher, notes_cipher
-         FROM credentials WHERE id = ? LIMIT 1`,
-      [credentialId]
-    );
+    const row = await findVisibleCredential(user, credentialId);
+    // Not shared with you reads the same as not there: a 403 would confirm
+    // that a login by that id exists.
     if (!row) throw new ApiError(404, "Credential not found");
 
     let password: string;

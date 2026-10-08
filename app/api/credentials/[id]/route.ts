@@ -5,6 +5,7 @@ import { json, errorResponse, ApiError } from "@/lib/http";
 import { logActivity } from "@/lib/activity";
 import { encryptSecret, secretsConfigured, secretsProblem } from "@/lib/secrets";
 import { credentialUpdateSchema } from "@/lib/validation";
+import { setCredentialPeople } from "@/lib/credentials";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -19,7 +20,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     if (!Number.isInteger(credentialId)) throw new ApiError(400, "Invalid id");
 
     const [existing] = await query<DbRow[]>(
-      `SELECT id, name FROM credentials WHERE id = ? LIMIT 1`,
+      `SELECT id, name, project_id FROM credentials WHERE id = ? LIMIT 1`,
       [credentialId]
     );
     if (!existing) throw new ApiError(404, "Credential not found");
@@ -44,6 +45,16 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       sets.push("project_id = ?");
       values.push(data.projectId ?? null);
     }
+    if (data.visibility !== undefined) {
+      if (data.visibility === "project") {
+        // "Everyone on the project" needs a project to mean anything.
+        const projectId =
+          data.projectId !== undefined ? data.projectId : existing.project_id;
+        if (projectId == null) throw new ApiError(400, "Pick the project this login belongs to");
+      }
+      sets.push("visibility = ?");
+      values.push(data.visibility);
+    }
     // A blank password means "leave it alone", not "set it to nothing":
     // the form cannot show the current one, so it cannot send it back.
     if (data.password) {
@@ -60,19 +71,30 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       sets.push("notes_cipher = ?");
       values.push(data.notes ? encryptSecret(data.notes) : null);
     }
-    if (!sets.length) throw new ApiError(400, "Nothing to change");
+    // Changing only who it is shared with changes nothing on the row itself.
+    const changingPeople = data.visibility === "people" || data.userIds !== undefined;
+    if (!sets.length && !changingPeople) throw new ApiError(400, "Nothing to change");
 
-    sets.push("updated_by = ?");
-    values.push(user.id);
-    values.push(credentialId);
-    await query(`UPDATE credentials SET ${sets.join(", ")} WHERE id = ?`, values);
+    if (sets.length) {
+      sets.push("updated_by = ?");
+      values.push(user.id);
+      values.push(credentialId);
+      await query(`UPDATE credentials SET ${sets.join(", ")} WHERE id = ?`, values);
+    }
+    if (changingPeople) {
+      await setCredentialPeople(credentialId, data.userIds ?? []);
+    }
 
     await logActivity({
       userId: user.id,
       action: "credential.updated",
       entityType: "credential",
       entityId: credentialId,
-      metadata: { name: data.name ?? existing.name, passwordChanged: Boolean(data.password) },
+      metadata: {
+        name: data.name ?? existing.name,
+        passwordChanged: Boolean(data.password),
+        visibility: data.visibility,
+      },
     });
     return json({ ok: true });
   } catch (err) {

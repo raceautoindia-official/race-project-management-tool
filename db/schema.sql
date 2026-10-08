@@ -400,6 +400,8 @@ CREATE TABLE IF NOT EXISTS credentials (
   username         VARCHAR(255) NULL,
   password_cipher  TEXT NOT NULL,                    -- v1:iv:tag:ciphertext
   notes_cipher     TEXT NULL,                        -- notes hold secrets too
+  -- Who can see it: admins only, everyone on its project, or named people.
+  visibility       ENUM('admins','project','people') NOT NULL DEFAULT 'admins',
   project_id       INT NULL,                         -- for grouping only
   created_by       INT NULL,
   updated_by       INT NULL,
@@ -409,10 +411,20 @@ CREATE TABLE IF NOT EXISTS credentials (
   CONSTRAINT fk_cred_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
   CONSTRAINT fk_cred_updater FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL,
   INDEX idx_cred_name (name),
+  INDEX idx_cred_visibility (visibility),
   INDEX idx_cred_project (project_id)
 );
 
 -- Who read what, and when. Kept even if the credential is deleted.
+CREATE TABLE IF NOT EXISTS credential_access (
+  credential_id INT NOT NULL,
+  user_id       INT NOT NULL,
+  PRIMARY KEY (credential_id, user_id),
+  CONSTRAINT fk_credaccess_cred FOREIGN KEY (credential_id) REFERENCES credentials(id) ON DELETE CASCADE,
+  CONSTRAINT fk_credaccess_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_credaccess_user (user_id)
+);
+
 CREATE TABLE IF NOT EXISTS credential_views (
   id            INT AUTO_INCREMENT PRIMARY KEY,
   credential_id INT NULL,

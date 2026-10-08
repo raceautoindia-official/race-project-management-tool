@@ -401,6 +401,9 @@ const credentialFields = {
   password: z.string().min(1).max(500),
   notes: z.string().max(2000).optional().nullable(),
   projectId: optionalId.optional(),
+  /** Who can see it: admins only, everyone on its project, or named people. */
+  visibility: z.enum(["admins", "project", "people"]).optional(),
+  userIds: z.array(z.coerce.number().int().positive()).max(200).optional(),
 };
 
 export const credentialSchema = z.object(credentialFields);
@@ -416,4 +419,6 @@ export const credentialUpdateSchema = z.object({
   password: z.string().max(500).optional(),
   notes: credentialFields.notes,
   projectId: optionalId.optional(),
+  visibility: credentialFields.visibility,
+  userIds: credentialFields.userIds,
 });

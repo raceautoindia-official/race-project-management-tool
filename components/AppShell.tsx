@@ -27,6 +27,7 @@ const MEMBER_LINKS = [
   { href: "/work-hours", label: "Work hours", icon: "◵" },
   { href: "/meetings", label: "Meetings", icon: "◷" },
   { href: "/reminders", label: "Reminders", icon: "🔔" },
+  { href: "/credentials", label: "Credentials", icon: "🔑" },
   { href: "/profile", label: "Profile", icon: "◔" },
 ];
 

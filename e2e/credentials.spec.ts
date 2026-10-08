@@ -15,18 +15,19 @@ test.beforeAll(async ({ browser }) => {
   member = await signIn(browser, USERS.sam);
 });
 
-test("a member cannot reach it at all", async () => {
-  await member.goto("/admin/credentials");
-  // Not a hidden link: the page itself turns them away.
-  await expect(member).not.toHaveURL(/\/admin\/credentials$/);
+test("a member opens it and finds nothing shared with them yet", async () => {
+  await member.goto("/credentials");
+  await expect(member.getByText("Nothing has been shared with you yet.")).toBeVisible();
+  // Theirs to read, never to change.
+  await expect(member.getByRole("button", { name: "+ Add login" })).toHaveCount(0);
 });
 
 test("an admin saves a login and reads it back", async () => {
-  await admin.goto("/admin/credentials");
+  await admin.goto("/credentials");
   await admin.getByRole("button", { name: "+ Add login" }).click();
 
   const form = admin.getByRole("dialog", { name: "Add a login" });
-  await form.getByLabel(/^Name/).fill(NAME);
+  await form.getByRole("textbox", { name: /^Name/ }).fill(NAME);
   await form.getByLabel(/^Website/).fill("https://portal.example.com/login");
   await form.getByLabel(/^Username/).fill("race-admin");
   await form.getByLabel(/^Password/).fill(PASSWORD);
@@ -48,14 +49,14 @@ test("an admin saves a login and reads it back", async () => {
 });
 
 test("reading it is recorded against the person who read it", async () => {
-  await admin.goto("/admin/credentials");
+  await admin.goto("/credentials");
   // Read more than once by the time this runs; one entry per read.
   await expect(admin.getByText(`${USERS.admin.name} read ${NAME}`).first()).toBeVisible();
   await expect(admin.getByText(/Read 1 time/)).toBeVisible();
 });
 
 test("an edit with a blank password keeps the saved one", async () => {
-  await admin.goto("/admin/credentials");
+  await admin.goto("/credentials");
   await admin.getByRole("button", { name: "Edit" }).click();
   const form = admin.getByRole("dialog", { name: "Edit login" });
   // The form cannot show the stored password, so it cannot send it back.
@@ -69,8 +70,35 @@ test("an edit with a blank password keeps the saved one", async () => {
   await expect(admin.getByText("race-admin-2", { exact: true })).toBeVisible();
 });
 
+test("sharing it with someone lets them open it themselves", async () => {
+  // Saved admins-only, so it is not theirs to see yet.
+  await member.goto("/credentials");
+  await expect(member.getByText(NAME)).toHaveCount(0);
+
+  await admin.goto("/credentials");
+  await expect(admin.getByText("Admins only")).toBeVisible();
+  await admin.getByRole("button", { name: "Edit" }).click();
+  const form = admin.getByRole("dialog", { name: "Edit login" });
+  await form.getByRole("radio", { name: /Named people/ }).check();
+  await form.getByLabel(USERS.sam.name).check();
+  await form.getByRole("button", { name: "Save" }).click();
+  await expect(form).toBeHidden();
+  await expect(admin.getByText(`Shared with ${USERS.sam.name}`)).toBeVisible();
+
+  // And now it is: theirs to read, with no way to change it.
+  await member.goto("/credentials");
+  await expect(member.getByText(NAME)).toBeVisible();
+  await expect(member.getByRole("button", { name: "Edit" })).toHaveCount(0);
+  await member.getByRole("button", { name: "Show password" }).click();
+  await expect(member.getByText(PASSWORD)).toBeVisible();
+
+  // Their read is recorded like anyone else's.
+  await admin.goto("/credentials");
+  await expect(admin.getByText(`${USERS.sam.name} read ${NAME}`)).toBeVisible();
+});
+
 test("deleting it keeps the record of who read it", async () => {
-  await admin.goto("/admin/credentials");
+  await admin.goto("/credentials");
   await admin.getByRole("button", { name: "Delete" }).click();
   await expect(admin.getByText("Nothing saved yet.")).toBeVisible();
   // The login is gone; the fact that someone read it is not.

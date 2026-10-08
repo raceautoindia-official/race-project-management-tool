@@ -84,10 +84,9 @@ describe("the admin credentials vault", () => {
     expect(views[0].credential_name).toBe("Dealer portal");
   });
 
-  it("is closed to everyone who is not an admin", async () => {
+  it("is nobody else's to add to, change or delete", async () => {
     for (const who of [lead, member]) {
       actAs(who);
-      expect((await call(credentials.GET, {})).status).toBe(403);
       expect(
         (
           await call(credentials.POST, {
@@ -96,9 +95,18 @@ describe("the admin credentials vault", () => {
           })
         ).status
       ).toBe(403);
-      expect((await call(reveal.POST, { method: "POST", id })).status).toBe(403);
       expect((await call(credential.DELETE, { method: "DELETE", id })).status).toBe(403);
     }
+  });
+
+  it("is invisible to someone it was not shared with", async () => {
+    actAs(member);
+    const res = await call<{ credentials: { id: number }[] }>(credentials.GET, {});
+    expect(res.status).toBe(200);
+    expect(res.body.credentials.map((c) => c.id)).not.toContain(id);
+    // Not shared with you reads the same as not there: a 403 would confirm
+    // that a login by that id exists.
+    expect((await call(reveal.POST, { method: "POST", id })).status).toBe(404);
   });
 
   it("keeps the stored password when an edit leaves the field blank", async () => {
@@ -173,5 +181,104 @@ describe("the admin credentials vault", () => {
     expect(res.status).toBe(500);
     expect(res.body.error).toContain("CREDENTIALS_KEY has changed");
     process.env.CREDENTIALS_KEY = "a".repeat(64);
+  });
+});
+
+describe("sharing a login with the people who need it", () => {
+  let projectOnly: number;
+  let named: number;
+
+  it("gives it to everyone on its project", async () => {
+    actAs(admin);
+    const made = await call<{ id: number }>(credentials.POST, {
+      method: "POST",
+      body: {
+        name: "Project hosting",
+        password: "shared-with-the-project",
+        projectId,
+        visibility: "project",
+      },
+    });
+    expect(made.status).toBe(201);
+    projectOnly = made.body.id;
+
+    // The lead is on that project; the member is not.
+    actAs(lead);
+    const asLead = await call<{ credentials: { id: number }[] }>(credentials.GET, {});
+    expect(asLead.body.credentials.map((c) => c.id)).toContain(projectOnly);
+    const shown = await call<{ password: string }>(reveal.POST, {
+      method: "POST",
+      id: projectOnly,
+    });
+    expect(shown.body.password).toBe("shared-with-the-project");
+
+    actAs(member);
+    const asMember = await call<{ credentials: { id: number }[] }>(credentials.GET, {});
+    expect(asMember.body.credentials.map((c) => c.id)).not.toContain(projectOnly);
+    expect((await call(reveal.POST, { method: "POST", id: projectOnly })).status).toBe(404);
+  });
+
+  it("will not share with a project that was never named", async () => {
+    actAs(admin);
+    const res = await call<Json>(credentials.POST, {
+      method: "POST",
+      body: { name: "Nobody", password: "x", visibility: "project" },
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("project");
+  });
+
+  it("gives it to the people named on it, and to nobody else", async () => {
+    actAs(admin);
+    const made = await call<{ id: number }>(credentials.POST, {
+      method: "POST",
+      body: {
+        name: "Client webmail",
+        password: "for-two-people",
+        visibility: "people",
+        userIds: [member.id],
+      },
+    });
+    named = made.body.id;
+
+    actAs(member);
+    const shown = await call<{ password: string }>(reveal.POST, { method: "POST", id: named });
+    expect(shown.body.password).toBe("for-two-people");
+
+    // The lead is on the project but not on this one's list.
+    actAs(lead);
+    expect((await call(reveal.POST, { method: "POST", id: named })).status).toBe(404);
+  });
+
+  it("takes it away again when the name is removed", async () => {
+    actAs(admin);
+    await call(credential.PATCH, {
+      method: "PATCH",
+      id: named,
+      body: { userIds: [] },
+    });
+    actAs(member);
+    const res = await call<{ credentials: { id: number }[] }>(credentials.GET, {});
+    expect(res.body.credentials.map((c) => c.id)).not.toContain(named);
+    expect((await call(reveal.POST, { method: "POST", id: named })).status).toBe(404);
+  });
+
+  it("records a member's read the same as an admin's", async () => {
+    actAs(member);
+    await call(reveal.POST, { method: "POST", id: projectOnly }).catch(() => undefined);
+    actAs(admin);
+    await call(credential.PATCH, {
+      method: "PATCH",
+      id: projectOnly,
+      body: { visibility: "people", userIds: [member.id] },
+    });
+    actAs(member);
+    await call(reveal.POST, { method: "POST", id: projectOnly });
+
+    const views = await query<DbRow[]>(
+      `SELECT user_id FROM credential_views WHERE credential_id = ? AND user_id = ?`,
+      [projectOnly, member.id]
+    );
+    expect(views.length).toBeGreaterThan(0);
   });
 });

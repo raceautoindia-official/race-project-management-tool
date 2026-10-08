@@ -6,6 +6,8 @@ import { apiFetch } from "@/lib/api-client";
 import { useToast } from "@/components/ToastProvider";
 import { formatRelative } from "@/lib/format";
 
+export type Visibility = "admins" | "project" | "people";
+
 export interface VaultEntry {
   id: number;
   name: string;
@@ -13,10 +15,29 @@ export interface VaultEntry {
   username: string | null;
   project_id: number | null;
   project_name: string | null;
+  visibility: Visibility;
+  /** Names of the people it is shared with, when visibility is "people". */
+  shared_with: string | null;
   updated_at: string;
   updated_by_name: string | null;
   views: number;
   last_viewed: string | null;
+}
+
+interface Person {
+  id: number;
+  name: string;
+}
+
+/** Said on each entry, so "who can see this" never has to be guessed. */
+function whoCanSee(e: VaultEntry): string {
+  if (e.visibility === "project") {
+    return e.project_name ? `Everyone on ${e.project_name}` : "Everyone on its project";
+  }
+  if (e.visibility === "people") {
+    return e.shared_with ? `Shared with ${e.shared_with}` : "Shared with nobody yet";
+  }
+  return "Admins only";
 }
 
 interface Revealed {
@@ -31,11 +52,18 @@ const inputClass =
 export default function CredentialsVault({
   initial,
   projects,
+  people,
+  sharedWith,
+  canManage,
   configured,
   problem,
 }: {
   initial: VaultEntry[];
-  projects: { id: number; name: string }[];
+  projects: Person[];
+  people: Person[];
+  /** Credential id → the people it is shared with (admins only). */
+  sharedWith: Record<number, number[]>;
+  canManage: boolean;
   configured: boolean;
   problem: string | null;
 }) {
@@ -98,7 +126,7 @@ export default function CredentialsVault({
 
   return (
     <div>
-      {!configured && (
+      {!configured && canManage && (
         <div
           role="alert"
           className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
@@ -107,27 +135,30 @@ export default function CredentialsVault({
         </div>
       )}
 
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex items-center justify-between gap-4">
         <p className="text-sm text-slate-600">
-          Logins for websites the team shares. Stored encrypted, admin only, and
-          every reveal is recorded below.
+          {canManage
+            ? "Logins for websites the team shares. Stored encrypted, and every read is recorded."
+            : "Logins shared with you. Open one when you need it — each read is recorded."}
         </p>
-        <button
-          onClick={() => {
-            setEditing(null);
-            setFormOpen(true);
-          }}
-          disabled={!configured}
-          title={configured ? undefined : "Set CREDENTIALS_KEY first"}
-          className="shrink-0 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-        >
-          + Add login
-        </button>
+        {canManage && (
+          <button
+            onClick={() => {
+              setEditing(null);
+              setFormOpen(true);
+            }}
+            disabled={!configured}
+            title={configured ? undefined : "Set CREDENTIALS_KEY first"}
+            className="shrink-0 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            + Add login
+          </button>
+        )}
       </div>
 
       {entries.length === 0 ? (
         <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-slate-500">
-          Nothing saved yet.
+          {canManage ? "Nothing saved yet." : "Nothing has been shared with you yet."}
         </div>
       ) : (
         <ul className="space-y-3">
@@ -158,6 +189,10 @@ export default function CredentialsVault({
                       {e.project_name ? ` · ${e.project_name}` : ""}
                     </p>
                     <p className="mt-0.5 text-xs text-slate-500">
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-600">
+                        {whoCanSee(e)}
+                      </span>{" "}
+                      ·{" "}
                       {e.views > 0
                         ? `Read ${e.views} time${e.views === 1 ? "" : "s"}${
                             e.last_viewed ? `, last ${formatRelative(e.last_viewed)}` : ""
@@ -183,21 +218,25 @@ export default function CredentialsVault({
                         {busyId === e.id ? "Reading…" : "Show password"}
                       </button>
                     )}
-                    <button
-                      onClick={() => {
-                        setEditing(e);
-                        setFormOpen(true);
-                      }}
-                      className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => remove(e)}
-                      className="rounded-lg border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50"
-                    >
-                      Delete
-                    </button>
+                    {canManage && (
+                      <>
+                        <button
+                          onClick={() => {
+                            setEditing(e);
+                            setFormOpen(true);
+                          }}
+                          className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => remove(e)}
+                          className="rounded-lg border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50"
+                        >
+                          Delete
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -255,6 +294,8 @@ export default function CredentialsVault({
         <CredentialForm
           entry={editing}
           projects={projects}
+          people={people}
+          initialPeople={editing ? (sharedWith[editing.id] ?? []) : []}
           onClose={() => setFormOpen(false)}
           onSaved={() => {
             setFormOpen(false);
@@ -269,11 +310,15 @@ export default function CredentialsVault({
 function CredentialForm({
   entry,
   projects,
+  people,
+  initialPeople,
   onClose,
   onSaved,
 }: {
   entry: VaultEntry | null;
-  projects: { id: number; name: string }[];
+  projects: Person[];
+  people: Person[];
+  initialPeople: number[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -286,6 +331,8 @@ function CredentialForm({
   const [projectId, setProjectId] = useState<string>(
     entry?.project_id ? String(entry.project_id) : ""
   );
+  const [visibility, setVisibility] = useState<Visibility>(entry?.visibility ?? "admins");
+  const [chosen, setChosen] = useState<number[]>(initialPeople);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -300,6 +347,8 @@ function CredentialForm({
         username: username.trim() || null,
         notes: notes.trim() || null,
         projectId: projectId ? Number(projectId) : null,
+        visibility,
+        userIds: visibility === "people" ? chosen : [],
         ...(password ? { password } : {}),
       };
       if (entry) {
@@ -411,6 +460,64 @@ function CredentialForm({
             ))}
           </select>
         </div>
+        <fieldset className="rounded-xl border border-slate-200 p-3">
+          <legend className="px-1 text-sm font-medium text-slate-700">Who can see it</legend>
+          <div className="space-y-1.5">
+            {(
+              [
+                ["admins", "Admins only", "Nobody else can open it."],
+                [
+                  "project",
+                  "Everyone on its project",
+                  "Anyone who is a member of the project chosen above.",
+                ],
+                ["people", "Named people", "Only the people you pick."],
+              ] as [Visibility, string, string][]
+            ).map(([value, label, hint]) => (
+              <label key={value} className="flex items-start gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="cred-visibility"
+                  value={value}
+                  checked={visibility === value}
+                  onChange={() => setVisibility(value)}
+                  className="mt-0.5"
+                />
+                <span>
+                  <span className="font-medium text-slate-800">{label}</span>
+                  <span className="block text-xs text-slate-500">{hint}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+          {visibility === "people" && (
+            <div className="mt-2 max-h-40 overflow-y-auto rounded-lg border border-slate-200 p-2">
+              {people.map((person) => (
+                <label key={person.id} className="flex items-center gap-2 py-0.5 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={chosen.includes(person.id)}
+                    onChange={(ev) =>
+                      setChosen((prev) =>
+                        ev.target.checked
+                          ? [...prev, person.id]
+                          : prev.filter((x) => x !== person.id)
+                      )
+                    }
+                    className="h-4 w-4 rounded border-slate-300"
+                  />
+                  <span className="text-slate-700">{person.name}</span>
+                </label>
+              ))}
+            </div>
+          )}
+          {visibility === "project" && !projectId && (
+            <p className="mt-2 text-xs text-amber-700">
+              Pick the project above — otherwise there is nobody this would share it with.
+            </p>
+          )}
+        </fieldset>
+
         <div>
           <label htmlFor="cred-notes" className="mb-1 block text-sm font-medium text-slate-700">
             Notes <span className="font-normal text-slate-500">(optional)</span>

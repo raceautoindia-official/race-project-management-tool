@@ -54,13 +54,13 @@ export default async function AdminHomePage() {
           </p>
         </Link>
         <Link
-          href="/admin/credentials"
+          href="/credentials"
           className="rounded-xl border border-slate-200 bg-white p-6 hover:border-indigo-300 hover:shadow-sm"
         >
           <div className="text-lg font-semibold text-slate-800">Credentials →</div>
           <p className="mt-1 text-sm text-slate-600">
-            Website logins the team shares — encrypted, admin only, and every read is
-            recorded.
+            Website logins the team shares — encrypted, shared with whoever needs
+            them, and every read recorded.
           </p>
         </Link>
       </div>
