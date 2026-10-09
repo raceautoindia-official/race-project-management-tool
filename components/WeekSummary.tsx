@@ -32,14 +32,25 @@ function dayLabel(date: string | null): string {
  */
 export default function WeekSummaryPanel({
   summary,
+  show,
   onUseAsPlan,
 }: {
   summary: Week;
+  /** "upcoming" is what the week is for; "held" is what it came to. */
+  show: "upcoming" | "held";
   /** Adds the upcoming titles to the plan box, to edit from there. */
   onUseAsPlan: (titles: string[]) => void;
 }) {
   const { upcoming } = summary;
   const estimated = upcoming.reduce((sum, t) => sum + Number(t.estimated_hours ?? 0), 0);
+
+  if (show === "held") {
+    return (
+      <div className="mb-4">
+        <WeekHeld summary={summary} />
+      </div>
+    );
+  }
 
   return (
     <div className="mb-4 space-y-4">
@@ -103,7 +114,20 @@ export default function WeekSummaryPanel({
         )}
       </section>
 
-      {!summary.empty && (
+    </div>
+  );
+}
+
+/** What the week came to: hours, days, what was finished, what came in. */
+function WeekHeld({ summary }: { summary: Week }) {
+  return (
+    <>
+      {summary.empty ? (
+        <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center text-sm text-slate-500">
+          Nothing recorded for this week yet. Log time on a task, finish one, or sit in
+          a meeting, and it appears here by itself.
+        </p>
+      ) : (
         <section className="rounded-xl border border-slate-200 bg-white p-4">
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <h2 className="text-sm font-semibold text-slate-800">
@@ -157,6 +181,6 @@ export default function WeekSummaryPanel({
           )}
         </section>
       )}
-    </div>
+    </>
   );
 }

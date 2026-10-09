@@ -31,7 +31,7 @@ test("the day fills itself in, with a box for the rest", async () => {
   await expect(sam.getByLabel("What I mean to do")).toHaveValue(PLAN);
 });
 
-test("the week is a separate tab, and a separate entry", async () => {
+test("the week has its own two tabs, and its own entry", async () => {
   await sam.goto("/planner");
   await expect(sam.getByRole("tab", { name: "Daily summary" })).toHaveAttribute(
     "aria-selected",
@@ -47,6 +47,16 @@ test("the week is a separate tab, and a separate entry", async () => {
   await sam.getByLabel("What I mean to do").fill("Ship the export this week");
   await sam.getByRole("button", { name: "Save" }).click();
   await expect(sam.getByText(/Last saved/)).toBeVisible();
+
+  // The third tab is the other half of the same weekly entry: what it came
+  // to, and a box for saying so.
+  await sam.getByRole("tab", { name: "Weekly summary" }).click();
+  await expect(sam.getByText("What the week held").or(sam.getByText(/Nothing recorded for this week/))).toBeVisible();
+  await expect(sam.getByLabel("How it went")).toBeVisible();
+  await expect(sam.getByLabel("What I mean to do")).toHaveCount(0);
+
+  await sam.getByRole("tab", { name: "Weekly plan" }).click();
+  await expect(sam.getByLabel("What I mean to do")).toHaveValue("Ship the export this week");
 
   await sam.getByRole("tab", { name: "Daily summary" }).click();
   await expect(sam.getByLabel("What I mean to do")).toHaveValue(PLAN);

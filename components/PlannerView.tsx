@@ -64,7 +64,11 @@ export default function PlannerView({
   currentUserId: number;
 }) {
   const { toast } = useToast();
-  const [period, setPeriod] = useState<PlannerPeriod>(initialPeriod);
+  type Tab = "day" | "week-plan" | "week-summary";
+  const [tab, setTab] = useState<Tab>(
+    initialPeriod === "week" ? "week-plan" : "day"
+  );
+  const period: PlannerPeriod = tab === "day" ? "day" : "week";
   const [date, setDate] = useState(initialDate);
   const [plan, setPlan] = useState(initialEntry?.plan ?? "");
   const [progress, setProgress] = useState(initialEntry?.progress ?? "");
@@ -78,7 +82,14 @@ export default function PlannerView({
   const [dirty, setDirty] = useState(false);
   const planBox = useRef<HTMLTextAreaElement>(null);
 
-  async function load(nextPeriod: PlannerPeriod, nextDate: string) {
+  async function load(nextTab: Tab, nextDate: string) {
+    const nextPeriod: PlannerPeriod = nextTab === "day" ? "day" : "week";
+    // Both halves of a week come from one entry, so switching between them
+    // needs no round trip.
+    if (nextTab !== "day" && tab !== "day" && nextDate === date) {
+      setTab(nextTab);
+      return;
+    }
     setLoading(true);
     try {
       const mine = await apiFetch<{ entry: PlannerEntry | null }>(
@@ -125,7 +136,7 @@ export default function PlannerView({
         setTeamLines(Object.fromEntries(lines.filter(([, l]) => l)));
       }
 
-      setPeriod(nextPeriod);
+      setTab(nextTab);
       setDate(nextDate);
     } catch (e) {
       toast(e instanceof Error ? e.message : "Could not load that", "error");
@@ -172,16 +183,17 @@ export default function PlannerView({
         {(
           [
             ["day", "Daily summary"],
-            ["week", "Weekly plan"],
-          ] as [PlannerPeriod, string][]
-        ).map(([p, label]) => (
+            ["week-plan", "Weekly plan"],
+            ["week-summary", "Weekly summary"],
+          ] as [Tab, string][]
+        ).map(([t, label]) => (
           <button
-            key={p}
+            key={t}
             role="tab"
-            aria-selected={period === p}
-            onClick={() => void load(p, date)}
+            aria-selected={tab === t}
+            onClick={() => void load(t, date)}
             className={`-mb-px border-b-2 px-4 py-2 text-sm font-semibold transition ${
-              period === p
+              tab === t
                 ? "border-indigo-600 text-indigo-700"
                 : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700"
             }`}
@@ -193,7 +205,7 @@ export default function PlannerView({
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <button
-          onClick={() => void load(period, shiftPeriod(period, date, -1))}
+          onClick={() => void load(tab, shiftPeriod(period, date, -1))}
           aria-label="Previous"
           className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
         >
@@ -203,7 +215,7 @@ export default function PlannerView({
           {loading ? "…" : label}
         </span>
         <button
-          onClick={() => void load(period, shiftPeriod(period, date, 1))}
+          onClick={() => void load(tab, shiftPeriod(period, date, 1))}
           aria-label="Next"
           className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
         >
@@ -214,7 +226,7 @@ export default function PlannerView({
           type="date"
           value={date}
           aria-label="Jump to a date"
-          onChange={(e) => e.target.value && void load(period, e.target.value)}
+          onChange={(e) => e.target.value && void load(tab, e.target.value)}
           className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
         />
 
@@ -240,9 +252,10 @@ export default function PlannerView({
         </div>
       )}
 
-      {period === "week" && week && (
+      {tab !== "day" && week && (
         <WeekSummaryPanel
           summary={week}
+          show={tab === "week-plan" ? "upcoming" : "held"}
           onUseAsPlan={(titles) => {
             // Added to the box, not written to the database: it is a starting
             // point, and they still decide what the week is for — and press
@@ -273,7 +286,11 @@ export default function PlannerView({
 
       <section className="rounded-xl border border-slate-200 bg-white p-4">
         <h2 className="mb-1 text-sm font-semibold text-slate-800">
-          {period === "day" ? "In my own words" : "What the week is really for"}
+          {tab === "day"
+            ? "In my own words"
+            : tab === "week-plan"
+              ? "What the week is really for"
+              : "How the week went, in my own words"}
         </h2>
         <p className="mb-3 text-xs text-slate-500">
           {savedAt
@@ -281,6 +298,8 @@ export default function PlannerView({
             : "Nothing written yet."}
         </p>
 
+        {tab !== "week-summary" && (
+          <>
         <label htmlFor="planner-plan" className="mb-1 block text-sm font-medium text-slate-700">
           What I mean to do
         </label>
@@ -301,7 +320,11 @@ export default function PlannerView({
           }
           className={textareaClass}
         />
+          </>
+        )}
 
+        {tab !== "week-plan" && (
+          <>
         <label
           htmlFor="planner-progress"
           className="mb-1 mt-3 block text-sm font-medium text-slate-700"
@@ -324,6 +347,8 @@ export default function PlannerView({
           }
           className={textareaClass}
         />
+          </>
+        )}
 
         <div className="mt-3 flex items-center gap-3">
           <button
@@ -335,7 +360,11 @@ export default function PlannerView({
           </button>
           {dirty && <span className="text-xs text-amber-700">Not saved yet</span>}
           <span className="ml-auto text-xs text-slate-500">
-            Clearing both boxes and saving removes the entry.
+            {tab === "week-plan"
+              ? "How the week went is on the next tab — saving here keeps both."
+              : tab === "week-summary"
+                ? "The plan is on the previous tab — saving here keeps both."
+                : "Clearing both boxes and saving removes the entry."}
           </span>
         </div>
       </section>

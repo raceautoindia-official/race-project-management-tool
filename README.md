@@ -301,7 +301,7 @@ pm-app/
 
 ### Planner (Planner in the sidebar)
 
-Two tabs.
+Three tabs.
 
 **Daily summary** fills itself in. Time logged, tasks finished, extra work that came
 in, meetings, comments — all of it is already recorded as people use the app, so the
@@ -312,8 +312,8 @@ box for what the records cannot say.
 in those seven days, plus anything overdue and still open, marked *carried over*.
 **Start my plan from these** drops the titles into the box to edit from there. It is a
 proposal, not a commitment: what the week is really for is still yours to write.
-Underneath, **what the week held** fills in as it goes — hours, days worked, what was
-finished, what extra came in.
+**Weekly summary** is the other half of the same entry: **what the week held** — hours,
+days worked, what was finished, what extra came in — and a box for saying how it went.
 
 - **"Extra work" is the app's own word for it**: follow-up work raised after something
   was already finished. It appears in the day by itself, called out separately, because
