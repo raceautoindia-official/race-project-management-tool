@@ -71,8 +71,14 @@ export interface UpcomingTask {
 export interface WeekSummary {
   /** What the week is for, taken from the tasks already on the board. */
   upcoming: UpcomingTask[];
-  /** What it amounted to: filled in as the week goes. */
-  completed: { id: number; title: string; project_name: string | null }[];
+  /** What it amounted to: filled in as the week goes, newest last. */
+  completed: {
+    id: number;
+    title: string;
+    project_name: string | null;
+    /** The day it was finished, "YYYY-MM-DD". */
+    completed_on: string;
+  }[];
   extra: { id: number; title: string; project_name: string | null }[];
   totalMinutes: number;
   meetings: number;

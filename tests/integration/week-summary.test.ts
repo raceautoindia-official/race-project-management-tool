@@ -109,6 +109,10 @@ describe("the week proposes itself from what is due", () => {
     expect(w.totalMinutes).toBe(180);
     expect(w.daysWorked).toBe(2);
     expect(w.completed.map((t) => t.title)).toContain("Finished mid-week");
+    // The day it was finished, so a week reads as a week.
+    expect(w.completed.find((t) => t.title === "Finished mid-week")?.completed_on).toBe(
+      WED
+    );
     expect(w.extra.map((t) => t.title)).toContain("Extra that came in");
     expect(weekLine(w)).toContain("3h");
     expect(weekLine(w)).toContain("over 2 days");

@@ -13,6 +13,30 @@ const PRIORITY_COLOUR: Record<string, string> = {
   low: "bg-slate-100 text-slate-600",
 };
 
+type Finished = Week["completed"][number];
+
+/** The week's finished tasks, in the order the days ran. */
+function groupByDay(items: Finished[]): [string, Finished[]][] {
+  const byDay = new Map<string, Finished[]>();
+  for (const item of items) {
+    const list = byDay.get(item.completed_on);
+    if (list) list.push(item);
+    else byDay.set(item.completed_on, [item]);
+  }
+  return [...byDay.entries()].sort(([a], [b]) => a.localeCompare(b));
+}
+
+/** "Mon 5 Oct". */
+function dayHeading(date: string): string {
+  const [y, m, d] = date.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  });
+}
+
 function dayLabel(date: string | null): string {
   if (!date) return "no date";
   const [y, m, d] = date.split("-").map(Number);
@@ -154,20 +178,40 @@ function WeekHeld({ summary }: { summary: Week }) {
             ))}
           </dl>
 
-          {summary.completed.length > 0 && (
-            <ul className="space-y-1">
-              {summary.completed.map((t) => (
-                <li key={t.id} className="flex items-baseline gap-2 text-sm text-slate-700">
-                  <span aria-hidden="true" className="text-green-600">
-                    ✓
-                  </span>
-                  {t.title}
-                  {t.project_name && (
-                    <span className="text-xs text-slate-500">{t.project_name}</span>
-                  )}
-                </li>
+          {summary.completed.length > 0 ? (
+            <>
+              <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Finished this week ({summary.completed.length})
+              </h3>
+              {/* By the day it was finished, so the week reads as a week
+                  rather than as a pile. */}
+              {groupByDay(summary.completed).map(([day, items]) => (
+                <div key={day} className="mb-2">
+                  <p className="text-xs font-medium text-slate-500">{dayHeading(day)}</p>
+                  <ul className="space-y-1">
+                    {items.map((t) => (
+                      <li
+                        key={t.id}
+                        className="flex items-baseline gap-2 text-sm text-slate-700"
+                      >
+                        <span aria-hidden="true" className="text-green-600">
+                          ✓
+                        </span>
+                        {t.title}
+                        {t.project_name && (
+                          <span className="text-xs text-slate-500">{t.project_name}</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               ))}
-            </ul>
+            </>
+          ) : (
+            <p className="text-sm text-slate-500">
+              Nothing finished this week yet. Tasks appear here on the day they are
+              marked Done.
+            </p>
           )}
 
           {summary.extra.length > 0 && (

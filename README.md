@@ -313,7 +313,8 @@ in those seven days, plus anything overdue and still open, marked *carried over*
 **Start my plan from these** drops the titles into the box to edit from there. It is a
 proposal, not a commitment: what the week is really for is still yours to write.
 **Weekly summary** is the other half of the same entry: **what the week held** — hours,
-days worked, what was finished, what extra came in — and a box for saying how it went.
+days worked, what extra came in, and every task finished that week listed under the day
+it was finished on — with a box for saying how it went.
 
 - **"Extra work" is the app's own word for it**: follow-up work raised after something
   was already finished. It appears in the day by itself, called out separately, because

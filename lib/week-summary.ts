@@ -44,13 +44,14 @@ export async function weekSummary(
   );
 
   const completed = await query<DbRow[]>(
-    `SELECT t.id, t.title, p.name AS project_name
+    `SELECT t.id, t.title, p.name AS project_name,
+            DATE_FORMAT(CONVERT_TZ(t.completed_at, '+00:00', ?), '%Y-%m-%d') AS completed_on
        FROM tasks t
        LEFT JOIN projects p ON p.id = t.project_id
       WHERE t.assignee_id = ? AND t.completed_at IS NOT NULL
         AND DATE(CONVERT_TZ(t.completed_at, '+00:00', ?)) BETWEEN ? AND ?
       ORDER BY t.completed_at`,
-    [userId, IST, from, to]
+    [IST, userId, IST, from, to]
   );
 
   const extra = await query<DbRow[]>(
@@ -101,6 +102,7 @@ export async function weekSummary(
       id: t.id as number,
       title: t.title as string,
       project_name: (t.project_name as string) ?? null,
+      completed_on: t.completed_on as string,
     })),
     extra: extra.map((t) => ({
       id: t.id as number,
