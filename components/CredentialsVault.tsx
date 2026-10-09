@@ -16,6 +16,9 @@ export interface VaultEntry {
   project_id: number | null;
   project_name: string | null;
   visibility: Visibility;
+  /** Who saved it — theirs to change, and an admin's. */
+  created_by: number | null;
+  owner_name: string | null;
   /** Names of the people it is shared with, when visibility is "people". */
   shared_with: string | null;
   updated_at: string;
@@ -37,7 +40,9 @@ function whoCanSee(e: VaultEntry): string {
   if (e.visibility === "people") {
     return e.shared_with ? `Shared with ${e.shared_with}` : "Shared with nobody yet";
   }
-  return "Admins only";
+  // An administrator can see everything, so "private" means these two and
+  // nobody else — saying it that way is honest about who can read it.
+  return "Private — only you and admins";
 }
 
 interface Revealed {
@@ -54,16 +59,18 @@ export default function CredentialsVault({
   projects,
   people,
   sharedWith,
-  canManage,
+  isAdmin,
+  currentUserId,
   configured,
   problem,
 }: {
   initial: VaultEntry[];
   projects: Person[];
   people: Person[];
-  /** Credential id → the people it is shared with (admins only). */
+  /** Credential id → the people it is shared with (the ones you may change). */
   sharedWith: Record<number, number[]>;
-  canManage: boolean;
+  isAdmin: boolean;
+  currentUserId: number;
   configured: boolean;
   problem: string | null;
 }) {
@@ -126,7 +133,7 @@ export default function CredentialsVault({
 
   return (
     <div>
-      {!configured && canManage && (
+      {!configured && (
         <div
           role="alert"
           className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
@@ -137,33 +144,35 @@ export default function CredentialsVault({
 
       <div className="mb-4 flex items-center justify-between gap-4">
         <p className="text-sm text-slate-600">
-          {canManage
-            ? "Logins for websites the team shares. Stored encrypted, and every read is recorded."
-            : "Logins shared with you. Open one when you need it — each read is recorded."}
+          {isAdmin
+            ? "Everyone's website logins. Stored encrypted, and every read is recorded."
+            : "Website logins you have saved, and the ones shared with you. Each read is recorded."}
         </p>
-        {canManage && (
-          <button
-            onClick={() => {
-              setEditing(null);
-              setFormOpen(true);
-            }}
-            disabled={!configured}
-            title={configured ? undefined : "Set CREDENTIALS_KEY first"}
-            className="shrink-0 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-          >
-            + Add login
-          </button>
-        )}
+        <button
+          onClick={() => {
+            setEditing(null);
+            setFormOpen(true);
+          }}
+          disabled={!configured}
+          title={configured ? undefined : "Set CREDENTIALS_KEY first"}
+          className="shrink-0 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+        >
+          + Add login
+        </button>
       </div>
 
       {entries.length === 0 ? (
         <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-slate-500">
-          {canManage ? "Nothing saved yet." : "Nothing has been shared with you yet."}
+          Nothing saved yet. Add a login and it is yours — shared only with whoever
+          you choose, and visible to an administrator.
         </div>
       ) : (
         <ul className="space-y-3">
           {entries.map((e) => {
             const open = shown[e.id];
+            const mine = e.created_by === currentUserId;
+            // Theirs to change, or an admin's. Everyone else may only read.
+            const canEdit = isAdmin || mine;
             return (
               <li
                 key={e.id}
@@ -192,13 +201,12 @@ export default function CredentialsVault({
                       <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-600">
                         {whoCanSee(e)}
                       </span>{" "}
-                      ·{" "}
+                      · {mine ? "Saved by you" : `Saved by ${e.owner_name ?? "someone"}`} ·{" "}
                       {e.views > 0
                         ? `Read ${e.views} time${e.views === 1 ? "" : "s"}${
                             e.last_viewed ? `, last ${formatRelative(e.last_viewed)}` : ""
                           }`
                         : "Never read"}
-                      {e.updated_by_name ? ` · saved by ${e.updated_by_name}` : ""}
                     </p>
                   </div>
                   <div className="flex shrink-0 gap-2">
@@ -218,7 +226,7 @@ export default function CredentialsVault({
                         {busyId === e.id ? "Reading…" : "Show password"}
                       </button>
                     )}
-                    {canManage && (
+                    {canEdit && (
                       <>
                         <button
                           onClick={() => {
@@ -465,7 +473,11 @@ function CredentialForm({
           <div className="space-y-1.5">
             {(
               [
-                ["admins", "Admins only", "Nobody else can open it."],
+                [
+                  "admins",
+                  "Private",
+                  "Only you — and an administrator, who can see everything in here.",
+                ],
                 [
                   "project",
                   "Everyone on its project",

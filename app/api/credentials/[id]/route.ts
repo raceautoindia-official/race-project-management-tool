@@ -1,29 +1,35 @@
 import { NextRequest } from "next/server";
 import { query, DbRow } from "@/lib/db";
-import { requireAdmin } from "@/lib/auth";
-import { json, errorResponse, ApiError } from "@/lib/http";
+import { requireUser } from "@/lib/auth";
+import { json, errorResponse, ApiError, forbidden } from "@/lib/http";
 import { logActivity } from "@/lib/activity";
 import { encryptSecret, secretsConfigured, secretsProblem } from "@/lib/secrets";
 import { credentialUpdateSchema } from "@/lib/validation";
-import { setCredentialPeople } from "@/lib/credentials";
+import { canManageCredential, setCredentialPeople } from "@/lib/credentials";
 
 type Params = { params: Promise<{ id: string }> };
 
 export const dynamic = "force-dynamic";
 
-/** PATCH — change a stored login. Only the fields sent are touched. */
+/**
+ * PATCH — change a stored login. Only the fields sent are touched, and only
+ * by whoever saved it or an administrator.
+ */
 export async function PATCH(req: NextRequest, { params }: Params) {
   try {
-    const user = await requireAdmin();
+    const user = await requireUser();
     const { id } = await params;
     const credentialId = Number(id);
     if (!Number.isInteger(credentialId)) throw new ApiError(400, "Invalid id");
 
     const [existing] = await query<DbRow[]>(
-      `SELECT id, name, project_id FROM credentials WHERE id = ? LIMIT 1`,
+      `SELECT id, name, project_id, created_by FROM credentials WHERE id = ? LIMIT 1`,
       [credentialId]
     );
     if (!existing) throw new ApiError(404, "Credential not found");
+    if (!canManageCredential(user, { created_by: existing.created_by as number | null })) {
+      throw forbidden("Only the person who saved this, or an admin, can change it");
+    }
 
     const data = credentialUpdateSchema.parse(await req.json().catch(() => ({})));
     const sets: string[] = [];
@@ -105,16 +111,19 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 /** DELETE — remove it. The record of who read it stays. */
 export async function DELETE(_req: NextRequest, { params }: Params) {
   try {
-    const user = await requireAdmin();
+    const user = await requireUser();
     const { id } = await params;
     const credentialId = Number(id);
     if (!Number.isInteger(credentialId)) throw new ApiError(400, "Invalid id");
 
     const [existing] = await query<DbRow[]>(
-      `SELECT id, name FROM credentials WHERE id = ? LIMIT 1`,
+      `SELECT id, name, created_by FROM credentials WHERE id = ? LIMIT 1`,
       [credentialId]
     );
     if (!existing) throw new ApiError(404, "Credential not found");
+    if (!canManageCredential(user, { created_by: existing.created_by as number | null })) {
+      throw forbidden("Only the person who saved this, or an admin, can delete it");
+    }
 
     await query(`DELETE FROM credentials WHERE id = ?`, [credentialId]);
     await logActivity({

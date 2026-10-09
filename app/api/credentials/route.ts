@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { query, DbRow, DbResult } from "@/lib/db";
-import { requireAdmin, requireUser } from "@/lib/auth";
+import { requireUser } from "@/lib/auth";
 import { json, errorResponse, ApiError } from "@/lib/http";
 import { logActivity } from "@/lib/activity";
 import { encryptSecret, secretsConfigured, secretsProblem } from "@/lib/secrets";
@@ -12,9 +12,12 @@ export const dynamic = "force-dynamic";
 /**
  * The credentials vault — website logins the team shares.
  *
- * Reading is open to whoever a login was shared with; adding, changing and
- * deleting are an admin's. A listing never includes a password: reading one
- * is a separate, deliberate request that gets recorded.
+ * Anyone may keep a login here and say who else it is for. Changing or
+ * deleting one is for whoever saved it, or an administrator — who can see
+ * everything, so that a login does not leave with the person who saved it.
+ *
+ * A listing never includes a password: reading one is a separate, deliberate
+ * request that gets recorded.
  */
 export async function GET() {
   try {
@@ -29,10 +32,10 @@ export async function GET() {
   }
 }
 
-/** POST — store a new login (admin). */
+/** POST — store a new login. Anyone may; it is theirs. */
 export async function POST(req: NextRequest) {
   try {
-    const user = await requireAdmin();
+    const user = await requireUser();
     if (!secretsConfigured()) {
       throw new ApiError(503, secretsProblem() ?? "Credentials storage is not configured");
     }

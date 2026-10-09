@@ -113,23 +113,34 @@ export default function PlannerView({
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <div className="inline-flex overflow-hidden rounded-lg border border-slate-300">
-          {(["day", "week"] as PlannerPeriod[]).map((p) => (
-            <button
-              key={p}
-              onClick={() => void load(p, date)}
-              className={`px-3 py-1.5 text-sm font-medium ${
-                period === p
-                  ? "bg-indigo-600 text-white"
-                  : "bg-white text-slate-700 hover:bg-slate-50"
-              }`}
-            >
-              {p === "day" ? "Day" : "Week"}
-            </button>
-          ))}
-        </div>
+      <div
+        role="tablist"
+        aria-label="Planner"
+        className="mb-4 flex gap-1 border-b border-slate-200"
+      >
+        {(
+          [
+            ["day", "Daily summary"],
+            ["week", "Weekly plan"],
+          ] as [PlannerPeriod, string][]
+        ).map(([p, label]) => (
+          <button
+            key={p}
+            role="tab"
+            aria-selected={period === p}
+            onClick={() => void load(p, date)}
+            className={`-mb-px border-b-2 px-4 py-2 text-sm font-semibold transition ${
+              period === p
+                ? "border-indigo-600 text-indigo-700"
+                : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
+      <div className="mb-4 flex flex-wrap items-center gap-2">
         <button
           onClick={() => void load(period, shiftPeriod(period, date, -1))}
           aria-label="Previous"
@@ -174,7 +185,7 @@ export default function PlannerView({
 
       <section className="rounded-xl border border-slate-200 bg-white p-4">
         <h2 className="mb-1 text-sm font-semibold text-slate-800">
-          My plan for {period === "day" ? "this day" : "this week"}
+          {period === "day" ? "My day" : "My week"}
         </h2>
         <p className="mb-3 text-xs text-slate-500">
           {savedAt
@@ -194,7 +205,11 @@ export default function PlannerView({
             setPlan(e.target.value);
             setDirty(true);
           }}
-          placeholder={"One line per thing:\nFinish the dealer CSV export\nCall the client about the portal"}
+          placeholder={
+            period === "day"
+              ? "One line per thing:\nFinish the dealer CSV export\nCall the client about the portal"
+              : "What this week is for:\nShip the dealer export\nClear the contact-form backlog"
+          }
           className={textareaClass}
         />
 
@@ -213,7 +228,11 @@ export default function PlannerView({
             setProgress(e.target.value);
             setDirty(true);
           }}
-          placeholder="Filled in at the end — what happened, and what did not."
+          placeholder={
+            period === "day"
+              ? "Filled in at the end of the day — what happened, and what did not."
+              : "Filled in at the end of the week — what landed, and what slipped."
+          }
           className={textareaClass}
         />
 

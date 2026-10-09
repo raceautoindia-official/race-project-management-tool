@@ -84,16 +84,14 @@ describe("the admin credentials vault", () => {
     expect(views[0].credential_name).toBe("Dealer portal");
   });
 
-  it("is nobody else's to add to, change or delete", async () => {
+  it("is nobody else's to change or delete", async () => {
     for (const who of [lead, member]) {
       actAs(who);
+      // Saved by the admin, so not theirs to touch — even though they may
+      // save as many of their own as they like.
       expect(
-        (
-          await call(credentials.POST, {
-            method: "POST",
-            body: { name: "Theirs", password: "x" },
-          })
-        ).status
+        (await call(credential.PATCH, { method: "PATCH", id, body: { name: "Mine now" } }))
+          .status
       ).toBe(403);
       expect((await call(credential.DELETE, { method: "DELETE", id })).status).toBe(403);
     }
@@ -280,5 +278,86 @@ describe("sharing a login with the people who need it", () => {
       [projectOnly, member.id]
     );
     expect(views.length).toBeGreaterThan(0);
+  });
+});
+
+describe("the vault is everyone's store, and the admin sees all of it", () => {
+  let theirs: number;
+
+  it("lets a member save one of their own", async () => {
+    actAs(member);
+    const res = await call<{ id: number }>(credentials.POST, {
+      method: "POST",
+      body: { name: "Member's webmail", password: "mine-alone" },
+    });
+    expect(res.status).toBe(201);
+    theirs = res.body.id;
+
+    const listed = await call<{ credentials: { id: number; owner_name: string }[] }>(
+      credentials.GET,
+      {}
+    );
+    const entry = listed.body.credentials.find((c) => c.id === theirs)!;
+    expect(entry.owner_name).toBe(member.name);
+
+    const shown = await call<{ password: string }>(reveal.POST, { method: "POST", id: theirs });
+    expect(shown.body.password).toBe("mine-alone");
+  });
+
+  it("shows it to an admin, who did not save it", async () => {
+    actAs(admin);
+    const listed = await call<{ credentials: { id: number }[] }>(credentials.GET, {});
+    expect(listed.body.credentials.map((c) => c.id)).toContain(theirs);
+    // A login should not leave with the person who saved it.
+    const shown = await call<{ password: string }>(reveal.POST, { method: "POST", id: theirs });
+    expect(shown.body.password).toBe("mine-alone");
+  });
+
+  it("keeps it from another member who was not given it", async () => {
+    actAs(lead);
+    const listed = await call<{ credentials: { id: number }[] }>(credentials.GET, {});
+    expect(listed.body.credentials.map((c) => c.id)).not.toContain(theirs);
+    expect((await call(reveal.POST, { method: "POST", id: theirs })).status).toBe(404);
+  });
+
+  it("is the saver's to change and delete, and an admin's", async () => {
+    actAs(lead);
+    expect(
+      (await call(credential.PATCH, { method: "PATCH", id: theirs, body: { name: "No" } }))
+        .status
+    ).toBe(403);
+
+    actAs(member);
+    expect(
+      (
+        await call(credential.PATCH, {
+          method: "PATCH",
+          id: theirs,
+          body: { name: "Member's webmail (work)" },
+        })
+      ).status
+    ).toBe(200);
+
+    actAs(admin);
+    expect((await call(credential.DELETE, { method: "DELETE", id: theirs })).status).toBe(200);
+  });
+
+  it("lets a member choose who else gets one of theirs", async () => {
+    actAs(member);
+    const made = await call<{ id: number }>(credentials.POST, {
+      method: "POST",
+      body: {
+        name: "Shared by a member",
+        password: "for-the-lead",
+        visibility: "people",
+        userIds: [lead.id],
+      },
+    });
+    actAs(lead);
+    const shown = await call<{ password: string }>(reveal.POST, {
+      method: "POST",
+      id: made.body.id,
+    });
+    expect(shown.body.password).toBe("for-the-lead");
   });
 });

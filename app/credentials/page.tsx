@@ -22,21 +22,20 @@ export default async function CredentialsPage() {
 
   const rows = await listCredentials(user);
 
-  const projectRows = isAdmin
-    ? await query<DbRow[]>(
-        `SELECT id, name FROM projects WHERE status <> 'archived' ORDER BY name`
-      )
-    : [];
-  const userRows = isAdmin
-    ? await query<DbRow[]>(
-        `SELECT id, name FROM users WHERE is_active = TRUE ORDER BY name`
-      )
-    : [];
-  const peopleRows = isAdmin
-    ? await query<DbRow[]>(
-        `SELECT credential_id, user_id FROM credential_access`
-      )
-    : [];
+  // Everyone can save a login and say who it is for, so everyone needs the
+  // projects and the people to choose from.
+  const projectRows = await query<DbRow[]>(
+    `SELECT id, name FROM projects WHERE status <> 'archived' ORDER BY name`
+  );
+  const userRows = await query<DbRow[]>(
+    `SELECT id, name FROM users WHERE is_active = TRUE ORDER BY name`
+  );
+  const peopleRows = await query<DbRow[]>(
+    `SELECT a.credential_id, a.user_id FROM credential_access a
+       JOIN credentials c ON c.id = a.credential_id
+      WHERE c.created_by = ? OR ? = 'admin'`,
+    [user.id, user.role]
+  );
 
   // Who read what, most recent first — the answer to "who has this login".
   const viewRows = isAdmin
@@ -61,8 +60,8 @@ export default async function CredentialsPage() {
         title="Credentials"
         subtitle={
           isAdmin
-            ? "Website logins the team shares — encrypted, and every read is recorded."
-            : "Website logins shared with you. Every read is recorded."
+            ? "Website logins, encrypted. Everyone keeps their own; you can see all of them, and every read is recorded."
+            : "Website logins — yours, and the ones shared with you. Encrypted, and every read is recorded."
         }
       />
 
@@ -71,9 +70,10 @@ export default async function CredentialsPage() {
         projects={projectRows.map((p) => ({ id: p.id as number, name: p.name as string }))}
         people={userRows.map((u) => ({ id: u.id as number, name: u.name as string }))}
         sharedWith={shared}
-        canManage={isAdmin}
+        isAdmin={isAdmin}
+        currentUserId={user.id}
         configured={secretsConfigured()}
-        problem={isAdmin ? secretsProblem() : null}
+        problem={secretsProblem()}
       />
 
       {isAdmin && (

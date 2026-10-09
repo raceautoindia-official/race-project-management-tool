@@ -15,11 +15,35 @@ test.beforeAll(async ({ browser }) => {
   member = await signIn(browser, USERS.sam);
 });
 
-test("a member opens it and finds nothing shared with them yet", async () => {
+test("a member keeps their own, and the admin can see it", async ({ browser }) => {
   await member.goto("/credentials");
-  await expect(member.getByText("Nothing has been shared with you yet.")).toBeVisible();
-  // Theirs to read, never to change.
-  await expect(member.getByRole("button", { name: "+ Add login" })).toHaveCount(0);
+  await expect(member.getByText(/Nothing saved yet/)).toBeVisible();
+
+  // Everyone has somewhere to put a login — this one is nobody else's.
+  await member.getByRole("button", { name: "+ Add login" }).click();
+  const form = member.getByRole("dialog", { name: "Add a login" });
+  await form.getByRole("textbox", { name: /^Name/ }).fill("My own webmail");
+  await form.getByLabel(/^Password/).fill("mine-alone");
+  await form.getByRole("button", { name: "Add login" }).click();
+  await expect(form).toBeHidden();
+  await expect(member.getByText("Private — only you and admins")).toBeVisible();
+  await expect(member.getByText("Saved by you")).toBeVisible();
+
+  // An admin sees everything in here, which is the point of it being the
+  // company's store rather than a private one.
+  await admin.goto("/credentials");
+  await expect(admin.getByText("My own webmail")).toBeVisible();
+  await expect(admin.getByText(`Saved by ${USERS.sam.name}`)).toBeVisible();
+
+  // …and another member does not.
+  const other = await signIn(browser, USERS.olivia);
+  await other.goto("/credentials");
+  await expect(other.getByText("My own webmail")).toHaveCount(0);
+
+  // Put it back as they found it, so the tests below see one entry.
+  await member.goto("/credentials");
+  await member.getByRole("button", { name: "Delete" }).click();
+  await expect(member.getByText(/Nothing saved yet/)).toBeVisible();
 });
 
 test("an admin saves a login and reads it back", async () => {
@@ -76,7 +100,7 @@ test("sharing it with someone lets them open it themselves", async () => {
   await expect(member.getByText(NAME)).toHaveCount(0);
 
   await admin.goto("/credentials");
-  await expect(admin.getByText("Admins only")).toBeVisible();
+  await expect(admin.getByText("Private — only you and admins")).toBeVisible();
   await admin.getByRole("button", { name: "Edit" }).click();
   const form = admin.getByRole("dialog", { name: "Edit login" });
   await form.getByRole("radio", { name: /Named people/ }).check();

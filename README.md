@@ -301,11 +301,11 @@ pm-app/
 
 ### Planner (Planner in the sidebar)
 
-A daily and weekly planner each person writes for themselves: **what I mean to do**
-and **how it went**. Nothing is worked out from the tasks — the point is what the app
-cannot know until somebody says it.
+Two tabs — **Daily summary** and **Weekly plan** — each written by the person:
+**what I mean to do** and **how it went**. Nothing is worked out from the tasks; the
+point is what the app cannot know until somebody says it.
 
-- **Day and week are separate entries.** A weekly one is filed under that week's
+- **The two tabs are separate entries.** A weekly one is filed under that week's
   Monday, so writing it on Thursday and again on Saturday updates one entry rather
   than making two.
 - **Yours to write, and nobody else's.** There is no way to type into someone else's
@@ -342,9 +342,11 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 CREDENTIALS_KEY=<the 64 hex characters>
 ```
 
-- **Each login says who can see it**: admins only (the default), everyone on its
-  project, or named people. Reading is open to those people; adding, changing and
-  deleting stay an admin’s. Enforced on the server, not just hidden in the interface —
+- **Everyone has somewhere to put one.** Anyone can save a login; it is theirs to change
+  and delete, and nobody else’s — except an administrator, who can see and manage
+  everything in here, so a login does not leave with the person who saved it.
+- **Whoever saves one says who else it is for**: private (them and admins), everyone on
+  a project, or named people. Enforced on the server, not just hidden in the interface —
   and a login that is not in your list cannot be revealed to you, because the list and
   the reveal ask the database the same question.
 - **The list never carries a secret.** Reading a password is a separate POST, and it is

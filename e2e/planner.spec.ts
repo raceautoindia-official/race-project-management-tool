@@ -28,16 +28,20 @@ test("someone writes their plan for today", async () => {
   await expect(sam.getByLabel("What I mean to do")).toHaveValue(PLAN);
 });
 
-test("the week is a separate entry from the day", async () => {
+test("the week is a separate tab, and a separate entry", async () => {
   await sam.goto("/planner");
-  await sam.getByRole("button", { name: "Week" }).click();
+  await expect(sam.getByRole("tab", { name: "Daily summary" })).toHaveAttribute(
+    "aria-selected",
+    "true"
+  );
+  await sam.getByRole("tab", { name: "Weekly plan" }).click();
   // Switching to the week shows an empty one, not the day's.
   await expect(sam.getByLabel("What I mean to do")).toHaveValue("");
   await sam.getByLabel("What I mean to do").fill("Ship the export this week");
   await sam.getByRole("button", { name: "Save" }).click();
   await expect(sam.getByText(/Last saved/)).toBeVisible();
 
-  await sam.getByRole("button", { name: "Day" }).click();
+  await sam.getByRole("tab", { name: "Daily summary" }).click();
   await expect(sam.getByLabel("What I mean to do")).toHaveValue(PLAN);
 });
 
