@@ -6,6 +6,7 @@ import PlannerView, { type PlannerEntry } from "@/components/PlannerView";
 import { entryDateFor, isDateKey, todayIst, type PlannerPeriod } from "@/lib/planner";
 import { plannerForPeriod } from "@/lib/planner-data";
 import { dailySummary, dailySummaryLines } from "@/lib/daily-summary";
+import { weekSummary } from "@/lib/week-summary";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +35,8 @@ export default async function PlannerPage({
   // The day, worked out rather than typed. Only for the daily tab: a week
   // is a plan, and planning is the part the app cannot do for anyone.
   const summary = period === "day" ? await dailySummary(user.id, date) : null;
+  // The week, from the board: what is due, and what it has come to so far.
+  const week = period === "week" ? await weekSummary(user.id, entryDate) : null;
   const teamLines =
     period === "day"
       ? Object.fromEntries(
@@ -69,6 +72,7 @@ export default async function PlannerPage({
         initialEntry={(mine as unknown as PlannerEntry) ?? null}
         initialTeam={team as unknown as PlannerEntry[]}
         initialSummary={summary}
+        initialWeek={week}
         initialTeamLines={teamLines}
         canSeeOthers={canSeeOthers}
         currentUserId={user.id}

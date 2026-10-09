@@ -308,8 +308,12 @@ in, meetings, comments — all of it is already recorded as people use the app, 
 day is right by the time anyone looks at it, with nothing to maintain. Underneath is a
 box for what the records cannot say.
 
-**Weekly plan** is written: *what I mean to do* and *how it went*. Planning is the part
-the app cannot do for anyone.
+**Weekly plan** opens with **what is due this week** — the tasks already on you, due
+in those seven days, plus anything overdue and still open, marked *carried over*.
+**Start my plan from these** drops the titles into the box to edit from there. It is a
+proposal, not a commitment: what the week is really for is still yours to write.
+Underneath, **what the week held** fills in as it goes — hours, days worked, what was
+finished, what extra came in.
 
 - **"Extra work" is the app's own word for it**: follow-up work raised after something
   was already finished. It appears in the day by itself, called out separately, because

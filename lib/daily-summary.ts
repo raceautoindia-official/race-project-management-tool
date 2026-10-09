@@ -4,10 +4,10 @@ import {
   formatMinutes,
   type DailySummary,
   type SummaryTask,
-} from "@/lib/daily-summary-shape";
+} from "@/lib/planner-summary-shape";
 
-export { formatMinutes, summaryLine } from "@/lib/daily-summary-shape";
-export type { DailySummary, SummaryTask } from "@/lib/daily-summary-shape";
+export { formatMinutes, summaryLine } from "@/lib/planner-summary-shape";
+export type { DailySummary, SummaryTask } from "@/lib/planner-summary-shape";
 
 /**
  * What someone actually did on a day, worked out rather than typed.

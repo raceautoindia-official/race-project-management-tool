@@ -3,7 +3,12 @@
 import { useState } from "react";
 import Avatar from "@/components/Avatar";
 import DailySummaryPanel from "@/components/DailySummary";
-import { summaryLine, type DailySummary } from "@/lib/daily-summary-shape";
+import WeekSummaryPanel from "@/components/WeekSummary";
+import {
+  summaryLine,
+  type DailySummary,
+  type WeekSummary,
+} from "@/lib/planner-summary-shape";
 import { apiFetch } from "@/lib/api-client";
 import { useToast } from "@/components/ToastProvider";
 import {
@@ -40,6 +45,7 @@ export default function PlannerView({
   initialEntry,
   initialTeam,
   initialSummary,
+  initialWeek,
   initialTeamLines,
   canSeeOthers,
   currentUserId,
@@ -50,6 +56,8 @@ export default function PlannerView({
   initialTeam: PlannerEntry[];
   /** The day as the app recorded it — null on the weekly tab. */
   initialSummary: DailySummary | null;
+  /** The week from the board — null on the daily tab. */
+  initialWeek: WeekSummary | null;
   /** One line each for the team, same source. */
   initialTeamLines: Record<number, string>;
   canSeeOthers: boolean;
@@ -63,6 +71,7 @@ export default function PlannerView({
   const [savedAt, setSavedAt] = useState<string | null>(initialEntry?.updated_at ?? null);
   const [team, setTeam] = useState<PlannerEntry[]>(initialTeam);
   const [summary, setSummary] = useState<DailySummary | null>(initialSummary);
+  const [week, setWeek] = useState<WeekSummary | null>(initialWeek);
   const [teamLines, setTeamLines] = useState<Record<number, string>>(initialTeamLines);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -87,8 +96,17 @@ export default function PlannerView({
         setTeam(others);
       }
 
-      // The day works itself out; a week is a plan, which nobody can.
-      if (nextPeriod === "day") {
+      // Both tabs lean on what the app already knows: the day on what was
+      // logged, the week on what is due.
+      if (nextPeriod === "week") {
+        const w = await apiFetch<{ week: WeekSummary }>(
+          `/api/planner/summary?period=week&date=${nextDate}`
+        );
+        setWeek(w.week);
+        setSummary(null);
+        setTeamLines({});
+      } else if (nextPeriod === "day") {
+        setWeek(null);
         const s = await apiFetch<{ summary: DailySummary }>(
           `/api/planner/summary?date=${nextDate}`
         );
@@ -104,9 +122,6 @@ export default function PlannerView({
             })
         );
         setTeamLines(Object.fromEntries(lines.filter(([, l]) => l)));
-      } else {
-        setSummary(null);
-        setTeamLines({});
       }
 
       setPeriod(nextPeriod);
@@ -224,9 +239,21 @@ export default function PlannerView({
         </div>
       )}
 
+      {period === "week" && week && (
+        <WeekSummaryPanel
+          summary={week}
+          onUseAsPlan={(text) => {
+            // Into the box, not into the database: it is a starting point,
+            // and they still decide what the week is for.
+            setPlan((current) => (current.trim() ? current : text));
+            setDirty(true);
+          }}
+        />
+      )}
+
       <section className="rounded-xl border border-slate-200 bg-white p-4">
         <h2 className="mb-1 text-sm font-semibold text-slate-800">
-          {period === "day" ? "In my own words" : "My week"}
+          {period === "day" ? "In my own words" : "What the week is really for"}
         </h2>
         <p className="mb-3 text-xs text-slate-500">
           {savedAt

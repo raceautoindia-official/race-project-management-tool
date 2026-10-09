@@ -1,6 +1,6 @@
 "use client";
 
-import { formatMinutes, type DailySummary as Summary } from "@/lib/daily-summary-shape";
+import { formatMinutes, type DailySummary as Summary } from "@/lib/planner-summary-shape";
 
 /**
  * The day as the app recorded it — nothing to fill in.

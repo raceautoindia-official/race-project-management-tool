@@ -1,16 +1,20 @@
 import { NextRequest } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { json, errorResponse, ApiError, forbidden } from "@/lib/http";
-import { isDateKey, todayIst } from "@/lib/planner";
+import { entryDateFor, isDateKey, todayIst } from "@/lib/planner";
 import { canReadPlanner } from "@/lib/planner-data";
 import { dailySummary } from "@/lib/daily-summary";
+import { weekSummary } from "@/lib/week-summary";
 
 export const dynamic = "force-dynamic";
 
 /**
- * GET /api/planner/summary?date=&userId= — what the app recorded of that
- * person's day. Worked out on every read rather than stored, so it is right
- * the moment someone logs time, without anything having to be rebuilt.
+ * GET /api/planner/summary?date=&userId=&period= — what the app knows of
+ * that person's day, or of their week: what is due in it and what it has
+ * amounted to so far.
+ *
+ * Worked out on every read rather than stored, so it is right the moment
+ * someone logs time or a due date moves, without anything to rebuild.
  */
 export async function GET(req: NextRequest) {
   try {
@@ -26,6 +30,10 @@ export async function GET(req: NextRequest) {
       throw forbidden("That planner is not yours to read");
     }
 
+    if (params.get("period") === "week") {
+      const start = entryDateFor("week", date);
+      return json({ date: start, week: await weekSummary(forUser, start) });
+    }
     return json({ date, summary: await dailySummary(forUser, date) });
   } catch (err) {
     return errorResponse(err);

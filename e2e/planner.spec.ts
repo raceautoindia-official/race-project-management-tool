@@ -38,7 +38,9 @@ test("the week is a separate tab, and a separate entry", async () => {
     "true"
   );
   await sam.getByRole("tab", { name: "Weekly plan" }).click();
-  // Switching to the week shows an empty one, not the day's.
+  // The week opens with what is due on it, from the board.
+  await expect(sam.getByText("What is due this week")).toBeVisible();
+  // Switching to the week shows an empty box, not the day's.
   await expect(sam.getByLabel("What I mean to do")).toHaveValue("");
   await sam.getByLabel("What I mean to do").fill("Ship the export this week");
   await sam.getByRole("button", { name: "Save" }).click();
