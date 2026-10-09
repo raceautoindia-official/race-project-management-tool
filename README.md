@@ -301,19 +301,31 @@ pm-app/
 
 ### Planner (Planner in the sidebar)
 
-Two tabs — **Daily summary** and **Weekly plan** — each written by the person:
-**what I mean to do** and **how it went**. Nothing is worked out from the tasks; the
-point is what the app cannot know until somebody says it.
+Two tabs.
 
-- **The two tabs are separate entries.** A weekly one is filed under that week's
-  Monday, so writing it on Thursday and again on Saturday updates one entry rather
-  than making two.
+**Daily summary** fills itself in. Time logged, tasks finished, extra work that came
+in, meetings, comments — all of it is already recorded as people use the app, so the
+day is right by the time anyone looks at it, with nothing to maintain. Underneath is a
+box for what the records cannot say.
+
+**Weekly plan** is written: *what I mean to do* and *how it went*. Planning is the part
+the app cannot do for anyone.
+
+- **"Extra work" is the app's own word for it**: follow-up work raised after something
+  was already finished. It appears in the day by itself, called out separately, because
+  nobody planned it at the start of the day.
+- **The written notes are separate entries per tab.** A weekly one is filed under that
+  week's Monday, so writing it on Thursday and again on Saturday updates one entry
+  rather than making two.
+- Days are grouped the Indian way: work logged at 11pm belongs to that day, not the
+  UTC one after it.
 - **Yours to write, and nobody else's.** There is no way to type into someone else's
   planner, whatever your role.
 - **A project lead reads the people on the projects they lead**; an admin reads
   everyone; a member reads their own.
 - **Download** as a spreadsheet: your own last month of days (or quarter of weeks),
-  or the whole team for one period. What you can download is what you can see.
+  or the whole team for one period. The daily sheet carries a **Recorded** column — the
+  worked-out summary — beside what was typed. What you can download is what you can see.
 - Clearing both boxes and saving removes the entry.
 
 ### Personal documents (Profile → My documents)

@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/Cards";
 import PlannerView, { type PlannerEntry } from "@/components/PlannerView";
 import { entryDateFor, isDateKey, todayIst, type PlannerPeriod } from "@/lib/planner";
 import { plannerForPeriod } from "@/lib/planner-data";
+import { dailySummary, dailySummaryLines } from "@/lib/daily-summary";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +30,19 @@ export default async function PlannerPage({
 
   // A lead sees the people on the projects they lead; an admin sees everyone.
   const team = await plannerForPeriod(user, period, entryDate);
+
+  // The day, worked out rather than typed. Only for the daily tab: a week
+  // is a plan, and planning is the part the app cannot do for anyone.
+  const summary = period === "day" ? await dailySummary(user.id, date) : null;
+  const teamLines =
+    period === "day"
+      ? Object.fromEntries(
+          await dailySummaryLines(
+            team.map((t) => t.user_id).filter((id) => id !== user.id),
+            date
+          )
+        )
+      : {};
   const canSeeOthers =
     user.role === "admin" ||
     (
@@ -54,6 +68,8 @@ export default async function PlannerPage({
         initialDate={date}
         initialEntry={(mine as unknown as PlannerEntry) ?? null}
         initialTeam={team as unknown as PlannerEntry[]}
+        initialSummary={summary}
+        initialTeamLines={teamLines}
         canSeeOthers={canSeeOthers}
         currentUserId={user.id}
       />

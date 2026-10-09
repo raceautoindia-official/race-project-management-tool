@@ -15,8 +15,11 @@ test.beforeAll(async ({ browser }) => {
   admin = await signIn(browser, USERS.admin);
 });
 
-test("someone writes their plan for today", async () => {
+test("the day fills itself in, with a box for the rest", async () => {
   await sam.goto("/planner");
+  // Nothing logged in this run, so the summary says so rather than
+  // showing an empty table.
+  await expect(sam.getByText(/Nothing recorded for this day yet/)).toBeVisible();
   await expect(sam.getByText("Nothing written yet.")).toBeVisible();
 
   await sam.getByLabel("What I mean to do").fill(PLAN);

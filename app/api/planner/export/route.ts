@@ -15,6 +15,7 @@ import {
   plannerRange,
   type PlannerRow,
 } from "@/lib/planner-data";
+import { dailySummary, summaryLine } from "@/lib/daily-summary";
 
 export const dynamic = "force-dynamic";
 
@@ -58,38 +59,46 @@ export async function GET(req: NextRequest) {
       title = `planner-${period}-${from}-to-${to}`;
     }
 
+    // The daily sheet carries what the app recorded as well as what was
+    // typed: a download of the day is only half the day without it.
+    const daily = period === "day";
     const wb = new ExcelJS.Workbook();
-    const ws = wb.addWorksheet(period === "week" ? "Weekly planner" : "Daily planner");
-    ws.addRow([
-      period === "week" ? "Week" : "Date",
-      "Person",
-      "Employee ID",
-      "Plan",
-      "How it went",
-      "Last updated",
-    ]);
+    const ws = wb.addWorksheet(daily ? "Daily summary" : "Weekly planner");
+    ws.addRow(
+      daily
+        ? ["Date", "Person", "Employee ID", "Recorded", "Plan", "How it went", "Last updated"]
+        : ["Week", "Person", "Employee ID", "Plan", "How it went", "Last updated"]
+    );
     for (const r of rows) {
-      ws.addRow([
-        describePeriod(period, String(r.entry_date)),
-        r.user_name,
-        (r.emp_id as string) ?? "",
-        r.plan ?? "",
-        r.progress ?? "",
-        String(r.updated_at).replace("T", " ").slice(0, 16),
-      ]);
+      const recorded = daily
+        ? summaryLine(await dailySummary(r.user_id, String(r.entry_date)))
+        : null;
+      ws.addRow(
+        [
+          describePeriod(period, String(r.entry_date)),
+          r.user_name,
+          (r.emp_id as string) ?? "",
+          ...(daily ? [recorded ?? ""] : []),
+          r.plan ?? "",
+          r.progress ?? "",
+          String(r.updated_at).replace("T", " ").slice(0, 16),
+        ]
+      );
     }
 
     ws.columns = [
       { width: 18 },
       { width: 22 },
       { width: 14 },
+      ...(daily ? [{ width: 38 }] : []),
       { width: 60 },
       { width: 60 },
       { width: 18 },
     ];
     // The plans are paragraphs, so let them be paragraphs.
-    ws.getColumn(4).alignment = { wrapText: true, vertical: "top" };
-    ws.getColumn(5).alignment = { wrapText: true, vertical: "top" };
+    const planColumn = daily ? 5 : 4;
+    ws.getColumn(planColumn).alignment = { wrapText: true, vertical: "top" };
+    ws.getColumn(planColumn + 1).alignment = { wrapText: true, vertical: "top" };
     const header = ws.getRow(1);
     header.font = { bold: true, color: { argb: "FFFFFFFF" } };
     header.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF4F46E5" } };

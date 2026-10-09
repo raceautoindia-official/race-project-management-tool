@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import Avatar from "@/components/Avatar";
+import DailySummaryPanel from "@/components/DailySummary";
+import { summaryLine, type DailySummary } from "@/lib/daily-summary-shape";
 import { apiFetch } from "@/lib/api-client";
 import { useToast } from "@/components/ToastProvider";
 import {
@@ -37,6 +39,8 @@ export default function PlannerView({
   initialDate,
   initialEntry,
   initialTeam,
+  initialSummary,
+  initialTeamLines,
   canSeeOthers,
   currentUserId,
 }: {
@@ -44,6 +48,10 @@ export default function PlannerView({
   initialDate: string;
   initialEntry: PlannerEntry | null;
   initialTeam: PlannerEntry[];
+  /** The day as the app recorded it — null on the weekly tab. */
+  initialSummary: DailySummary | null;
+  /** One line each for the team, same source. */
+  initialTeamLines: Record<number, string>;
   canSeeOthers: boolean;
   currentUserId: number;
 }) {
@@ -54,6 +62,8 @@ export default function PlannerView({
   const [progress, setProgress] = useState(initialEntry?.progress ?? "");
   const [savedAt, setSavedAt] = useState<string | null>(initialEntry?.updated_at ?? null);
   const [team, setTeam] = useState<PlannerEntry[]>(initialTeam);
+  const [summary, setSummary] = useState<DailySummary | null>(initialSummary);
+  const [teamLines, setTeamLines] = useState<Record<number, string>>(initialTeamLines);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -68,12 +78,37 @@ export default function PlannerView({
       setProgress(mine.entry?.progress ?? "");
       setSavedAt(mine.entry?.updated_at ?? null);
       setDirty(false);
+      let others: PlannerEntry[] = [];
       if (canSeeOthers) {
-        const others = await apiFetch<{ entries: PlannerEntry[] }>(
+        const res = await apiFetch<{ entries: PlannerEntry[] }>(
           `/api/planner?scope=team&period=${nextPeriod}&date=${nextDate}`
         );
-        setTeam(others.entries);
+        others = res.entries;
+        setTeam(others);
       }
+
+      // The day works itself out; a week is a plan, which nobody can.
+      if (nextPeriod === "day") {
+        const s = await apiFetch<{ summary: DailySummary }>(
+          `/api/planner/summary?date=${nextDate}`
+        );
+        setSummary(s.summary);
+        const lines = await Promise.all(
+          others
+            .filter((o) => o.user_id !== currentUserId)
+            .map(async (o) => {
+              const r = await apiFetch<{ summary: DailySummary }>(
+                `/api/planner/summary?date=${nextDate}&userId=${o.user_id}`
+              );
+              return [o.user_id as number, summaryLine(r.summary)] as const;
+            })
+        );
+        setTeamLines(Object.fromEntries(lines.filter(([, l]) => l)));
+      } else {
+        setSummary(null);
+        setTeamLines({});
+      }
+
       setPeriod(nextPeriod);
       setDate(nextDate);
     } catch (e) {
@@ -183,9 +218,15 @@ export default function PlannerView({
         )}
       </div>
 
+      {period === "day" && summary && (
+        <div className="mb-4">
+          <DailySummaryPanel summary={summary} />
+        </div>
+      )}
+
       <section className="rounded-xl border border-slate-200 bg-white p-4">
         <h2 className="mb-1 text-sm font-semibold text-slate-800">
-          {period === "day" ? "My day" : "My week"}
+          {period === "day" ? "In my own words" : "My week"}
         </h2>
         <p className="mb-3 text-xs text-slate-500">
           {savedAt
@@ -281,6 +322,12 @@ export default function PlannerView({
                         {String(t.updated_at).replace("T", " ").slice(0, 16)}
                       </span>
                     </div>
+                    {period === "day" && teamLines[t.user_id as number] && (
+                      <p className="mb-2 text-xs text-slate-600">
+                        <span className="font-medium">Recorded:</span>{" "}
+                        {teamLines[t.user_id as number]}
+                      </p>
+                    )}
                     <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div>
                         <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">
