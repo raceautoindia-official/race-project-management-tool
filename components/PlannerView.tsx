@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Avatar from "@/components/Avatar";
 import DailySummaryPanel from "@/components/DailySummary";
 import WeekSummaryPanel from "@/components/WeekSummary";
@@ -76,6 +76,7 @@ export default function PlannerView({
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const planBox = useRef<HTMLTextAreaElement>(null);
 
   async function load(nextPeriod: PlannerPeriod, nextDate: string) {
     setLoading(true);
@@ -242,11 +243,30 @@ export default function PlannerView({
       {period === "week" && week && (
         <WeekSummaryPanel
           summary={week}
-          onUseAsPlan={(text) => {
-            // Into the box, not into the database: it is a starting point,
-            // and they still decide what the week is for.
-            setPlan((current) => (current.trim() ? current : text));
+          onUseAsPlan={(titles) => {
+            // Added to the box, not written to the database: it is a starting
+            // point, and they still decide what the week is for — and press
+            // Save. Lines already there are left alone, so pressing it twice
+            // does not double the list.
+            const existing = plan
+              .split(/\r?\n/)
+              .map((l) => l.trim().toLowerCase())
+              .filter(Boolean);
+            const fresh = titles.filter((t) => !existing.includes(t.trim().toLowerCase()));
+            if (!fresh.length) {
+              toast("They are all in your plan already");
+              return;
+            }
+            setPlan((current) =>
+              current.trim() ? `${current.replace(/\s+$/, "")}\n${fresh.join("\n")}` : fresh.join("\n")
+            );
             setDirty(true);
+            planBox.current?.focus();
+            toast(
+              fresh.length === 1
+                ? "1 task added — press Save to keep it"
+                : `${fresh.length} tasks added — press Save to keep them`
+            );
           }}
         />
       )}
@@ -266,6 +286,7 @@ export default function PlannerView({
         </label>
         <textarea
           id="planner-plan"
+          ref={planBox}
           rows={4}
           maxLength={4000}
           value={plan}

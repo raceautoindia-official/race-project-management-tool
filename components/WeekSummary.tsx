@@ -35,8 +35,8 @@ export default function WeekSummaryPanel({
   onUseAsPlan,
 }: {
   summary: Week;
-  /** Puts the upcoming titles into the plan box, to edit from there. */
-  onUseAsPlan: (text: string) => void;
+  /** Adds the upcoming titles to the plan box, to edit from there. */
+  onUseAsPlan: (titles: string[]) => void;
 }) {
   const { upcoming } = summary;
   const estimated = upcoming.reduce((sum, t) => sum + Number(t.estimated_hours ?? 0), 0);
@@ -54,10 +54,10 @@ export default function WeekSummaryPanel({
           {upcoming.length > 0 && (
             <button
               type="button"
-              onClick={() => onUseAsPlan(upcoming.map((t) => t.title).join("\n"))}
+              onClick={() => onUseAsPlan(upcoming.map((t) => t.title))}
               className="ml-auto rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
             >
-              Start my plan from these
+              ↓ Add these to my plan
             </button>
           )}
         </div>
@@ -97,7 +97,7 @@ export default function WeekSummaryPanel({
             <p className="mt-2 text-xs text-slate-500">
               {upcoming.length} task{upcoming.length === 1 ? "" : "s"}
               {estimated ? `, ${estimated}h estimated` : ""} — a proposal, not a
-              commitment. Say what the week is really for below.
+              commitment. Add them below, change them, and press <strong>Save</strong>.
             </p>
           </>
         )}
