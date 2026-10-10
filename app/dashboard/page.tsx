@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AttentionPanel, GlanceList } from "@/components/AttentionPanel";
 import { requirePageUser } from "@/lib/page-guard";
 import { getAdminDashboard, getMemberDashboard } from "@/lib/dashboard";
 import AppShell from "@/components/AppShell";
@@ -83,31 +84,73 @@ async function AdminDashboard() {
         subtitle="Organization-wide overview of projects, tasks, effort, and what needs attention."
       />
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
-        <KpiTile label="Users" value={data.totals.users} />
-        <KpiTile
-          label="Projects"
-          value={data.totals.projects}
-          hint={`${data.totals.activeProjects} active`}
-        />
-        <KpiTile label="Tasks" value={data.totals.tasks} />
-        <KpiTile
-          label="Overdue"
-          value={data.overdue.length}
-          href="/outstanding"
-          tone={data.overdue.length ? "danger" : "default"}
-        />
-        <KpiTile
-          label="Outstanding"
-          value={data.outstandingCount}
-          href="/outstanding"
-          tone={data.outstandingCount ? "warn" : "default"}
-        />
-        <KpiTile
-          label="Awaiting approval"
-          value={data.pendingApprovalCount}
-          href="/outstanding"
-          tone={data.pendingApprovalCount ? "warn" : "default"}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[2fr_1fr]">
+        <AttentionPanel
+          items={[
+            {
+              label: "overdue",
+              clear: "nothing overdue",
+              value: data.overdue.length,
+              href: "/outstanding",
+              tone: "danger",
+            },
+            {
+              label: "outstanding",
+              clear: "nothing outstanding",
+              value: data.outstandingCount,
+              href: "/outstanding",
+              tone: "warn",
+            },
+            {
+              label: "awaiting approval",
+              clear: "none awaiting",
+              value: data.pendingApprovalCount,
+              href: "/outstanding",
+              tone: "warn",
+            },
+          ]}
+        >
+          {data.overdue.length === 0 ? (
+            <p className="text-sm text-slate-500">
+              Every task is inside its due date.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {data.overdue.slice(0, 3).map((t) => (
+                <li key={t.id} className="flex items-center justify-between gap-3">
+                  <Link
+                    href={`/projects/${t.project_id}?task=${t.id}`}
+                    className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800 hover:text-indigo-600"
+                  >
+                    {t.title}
+                    <span className="ml-2 font-normal text-slate-500">
+                      {t.assignee_name ?? "Unassigned"}
+                    </span>
+                  </Link>
+                  <span className="figure shrink-0 text-xs font-semibold text-rose-600">
+                    {formatDate(t.due_date)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </AttentionPanel>
+
+        <GlanceList
+          items={[
+            { label: "People", value: data.totals.users },
+            {
+              label: "Projects",
+              value: data.totals.projects,
+              hint: `${data.totals.activeProjects} active`,
+            },
+            { label: "Tasks", value: data.totals.tasks },
+            {
+              label: "Hours logged",
+              value: `${data.hours.spent}h`,
+              hint: `of ${data.hours.estimated}h`,
+            },
+          ]}
         />
       </div>
 
@@ -125,7 +168,7 @@ async function AdminDashboard() {
 
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
         <SectionCard
-          title="Overdue tasks"
+          title="Everything overdue"
           action={
             <Link href="/outstanding" className="text-sm font-medium text-indigo-600 hover:underline">
               Outstanding
