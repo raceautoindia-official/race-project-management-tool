@@ -310,8 +310,10 @@ box for what the records cannot say.
 
 **Weekly plan** opens with **what is due this week** — the tasks already on you, due
 in those seven days, plus anything overdue and still open, marked *carried over*.
-**Start my plan from these** drops the titles into the box to edit from there. It is a
-proposal, not a commitment: what the week is really for is still yours to write.
+Each row has a **+** to put that one in your plan, or **Add all to my plan** for the
+lot; rows already in it show a tick instead. The plan itself is a list — one line per
+thing, Enter for the next, ✕ to take one out — not a paragraph. It is a proposal, not a
+commitment: what the week is really for is still yours to write.
 **Weekly summary** is the other half of the same entry: **what the week held** — hours,
 days worked, what extra came in, and every task finished that week listed under the day
 it was finished on — with a box for saying how it went.

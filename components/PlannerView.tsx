@@ -1,8 +1,9 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import Avatar from "@/components/Avatar";
 import DailySummaryPanel from "@/components/DailySummary";
+import PointsInput, { pointsOf } from "@/components/project/PointsInput";
 import WeekSummaryPanel from "@/components/WeekSummary";
 import {
   summaryLine,
@@ -80,7 +81,9 @@ export default function PlannerView({
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [dirty, setDirty] = useState(false);
-  const planBox = useRef<HTMLTextAreaElement>(null);
+  // The list of lines holds its own editing state, so adding from outside it
+  // has to re-seed it. Bumping this remounts it around the new value.
+  const [planSeed, setPlanSeed] = useState(0);
 
   async function load(nextTab: Tab, nextDate: string) {
     const nextPeriod: PlannerPeriod = nextTab === "day" ? "day" : "week";
@@ -256,6 +259,7 @@ export default function PlannerView({
         <WeekSummaryPanel
           summary={week}
           show={tab === "week-plan" ? "upcoming" : "held"}
+          planned={pointsOf(plan).map((l) => l.toLowerCase())}
           onUseAsPlan={(titles) => {
             // Added to the box, not written to the database: it is a starting
             // point, and they still decide what the week is for — and press
@@ -271,14 +275,16 @@ export default function PlannerView({
               return;
             }
             setPlan((current) =>
-              current.trim() ? `${current.replace(/\s+$/, "")}\n${fresh.join("\n")}` : fresh.join("\n")
+              current.trim()
+                ? `${current.replace(/\s+$/, "")}\n${fresh.join("\n")}`
+                : fresh.join("\n")
             );
             setDirty(true);
-            planBox.current?.focus();
+            setPlanSeed((n) => n + 1);
             toast(
               fresh.length === 1
-                ? "1 task added — press Save to keep it"
-                : `${fresh.length} tasks added — press Save to keep them`
+                ? "Added — press Save to keep it"
+                : `${fresh.length} added — press Save to keep them`
             );
           }}
         />
@@ -299,28 +305,31 @@ export default function PlannerView({
         </p>
 
         {tab !== "week-summary" && (
-          <>
-        <label htmlFor="planner-plan" className="mb-1 block text-sm font-medium text-slate-700">
-          What I mean to do
-        </label>
-        <textarea
-          id="planner-plan"
-          ref={planBox}
-          rows={4}
-          maxLength={4000}
-          value={plan}
-          onChange={(e) => {
-            setPlan(e.target.value);
-            setDirty(true);
-          }}
-          placeholder={
-            period === "day"
-              ? "One line per thing:\nFinish the dealer CSV export\nCall the client about the portal"
-              : "What this week is for:\nShip the dealer export\nClear the contact-form backlog"
-          }
-          className={textareaClass}
-        />
-          </>
+          <PointsInput
+            // Re-seeded when the period or the day changes: the rows are the
+            // editing state, and this is a different entry.
+            key={`plan-${tab}-${date}-${planSeed}`}
+            id="planner-plan"
+            label="What I mean to do"
+            required={false}
+            hint={
+              period === "day"
+                ? "Finish the dealer CSV export"
+                : "Ship the dealer export"
+            }
+            help={
+              <>
+                One thing per line. <strong>Enter</strong> starts the next,{" "}
+                <strong>✕</strong> removes one.
+              </>
+            }
+            addLabel="+ Add a line"
+            value={plan}
+            onChange={(v) => {
+              setPlan(v);
+              setDirty(true);
+            }}
+          />
         )}
 
         {tab !== "week-plan" && (

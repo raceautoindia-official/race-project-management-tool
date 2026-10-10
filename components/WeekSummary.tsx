@@ -58,12 +58,15 @@ export default function WeekSummaryPanel({
   summary,
   show,
   onUseAsPlan,
+  planned,
 }: {
   summary: Week;
   /** "upcoming" is what the week is for; "held" is what it came to. */
   show: "upcoming" | "held";
-  /** Adds the upcoming titles to the plan box, to edit from there. */
+  /** Adds the given titles to the plan, to edit from there. */
   onUseAsPlan: (titles: string[]) => void;
+  /** Titles already in the plan, so each row knows whether it is in. */
+  planned: string[];
 }) {
   const { upcoming } = summary;
   const estimated = upcoming.reduce((sum, t) => sum + Number(t.estimated_hours ?? 0), 0);
@@ -92,7 +95,7 @@ export default function WeekSummaryPanel({
               onClick={() => onUseAsPlan(upcoming.map((t) => t.title))}
               className="ml-auto rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
             >
-              ↓ Add these to my plan
+              ↓ Add all to my plan
             </button>
           )}
         </div>
@@ -106,6 +109,25 @@ export default function WeekSummaryPanel({
             <ul className="space-y-1">
               {upcoming.map((t: UpcomingTask) => (
                 <li key={t.id} className="flex flex-wrap items-baseline gap-2 text-sm">
+                  {/* One at a time is how a plan actually gets written. */}
+                  {planned.includes(t.title.trim().toLowerCase()) ? (
+                    <span
+                      aria-label={`${t.title} is in your plan`}
+                      className="shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold text-green-700"
+                    >
+                      ✓
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => onUseAsPlan([t.title])}
+                      aria-label={`Add "${t.title}" to my plan`}
+                      title="Add this one to my plan"
+                      className="shrink-0 rounded border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+                    >
+                      +
+                    </button>
+                  )}
                   <span className="text-slate-700">{t.title}</span>
                   <span
                     className={`rounded-full px-1.5 py-0.5 text-[11px] font-medium ${
@@ -132,7 +154,8 @@ export default function WeekSummaryPanel({
             <p className="mt-2 text-xs text-slate-500">
               {upcoming.length} task{upcoming.length === 1 ? "" : "s"}
               {estimated ? `, ${estimated}h estimated` : ""} — a proposal, not a
-              commitment. Add them below, change them, and press <strong>Save</strong>.
+              commitment. Add them one at a time with <strong>+</strong>, or all at
+              once, then change them below and press <strong>Save</strong>.
             </p>
           </>
         )}

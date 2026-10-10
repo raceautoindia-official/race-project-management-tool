@@ -26,6 +26,8 @@ export default function PointsInput({
   label,
   required,
   hint,
+  help,
+  addLabel = "+ Add point",
   value,
   onChange,
 }: {
@@ -34,6 +36,9 @@ export default function PointsInput({
   required: boolean;
   /** What this field is for, shown under the label. */
   hint: string;
+  /** Replaces the sentence under the label, where "a checkbox" is wrong. */
+  help?: React.ReactNode;
+  addLabel?: string;
   value: string;
   onChange: (value: string) => void;
 }) {
@@ -70,8 +75,12 @@ export default function PointsInput({
       </legend>
       {/* Every field says what it wants, so it is never a guess. */}
       <p className="mb-2 text-xs text-slate-500">
-        Add one point per box — <strong>each becomes a checkbox</strong> on the task,
-        ticked off as the work is done. {hint}.
+        {help ?? (
+          <>
+            Add one point per box — <strong>each becomes a checkbox</strong> on the
+            task, ticked off as the work is done. {hint}.
+          </>
+        )}
       </p>
       <div className="space-y-1.5">
         {rows.map((row, i) => (
@@ -114,10 +123,13 @@ export default function PointsInput({
               }}
               className="w-full flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
-            {rows.length > 1 && (
+            {(rows.length > 1 || row.trim()) && (
               <button
                 type="button"
-                onClick={() => commit(rows.filter((_, x) => x !== i))}
+                onClick={() => {
+                  const next = rows.filter((_, x) => x !== i);
+                  commit(next.length ? next : [""]);
+                }}
                 aria-label={`Remove point ${i + 1}`}
                 className="text-slate-300 hover:text-red-500"
               >
@@ -132,7 +144,7 @@ export default function PointsInput({
         onClick={() => commit([...rows, ""])}
         className="mt-1.5 rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
       >
-        + Add point
+        {addLabel}
       </button>
     </fieldset>
   );

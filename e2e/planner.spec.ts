@@ -22,13 +22,13 @@ test("the day fills itself in, with a box for the rest", async () => {
   await expect(sam.getByText(/Nothing recorded for this day yet/)).toBeVisible();
   await expect(sam.getByText("Nothing written yet.")).toBeVisible();
 
-  await sam.getByLabel("What I mean to do").fill(PLAN);
+  await sam.getByLabel("What I mean to do — point 1").fill(PLAN);
   await sam.getByLabel("How it went").fill(PROGRESS);
   await sam.getByRole("button", { name: "Save" }).click();
 
   await expect(sam.getByText(/Last saved/)).toBeVisible();
   await sam.reload();
-  await expect(sam.getByLabel("What I mean to do")).toHaveValue(PLAN);
+  await expect(sam.getByLabel("What I mean to do — point 1")).toHaveValue(PLAN);
 });
 
 test("the week has its own two tabs, and its own entry", async () => {
@@ -43,8 +43,8 @@ test("the week has its own two tabs, and its own entry", async () => {
   // Nothing is due in this run, so there is nothing to add from.
   await expect(sam.getByRole("button", { name: /Add these to my plan/ })).toHaveCount(0);
   // Switching to the week shows an empty box, not the day's.
-  await expect(sam.getByLabel("What I mean to do")).toHaveValue("");
-  await sam.getByLabel("What I mean to do").fill("Ship the export this week");
+  await expect(sam.getByLabel("What I mean to do — point 1")).toHaveValue("");
+  await sam.getByLabel("What I mean to do — point 1").fill("Ship the export this week");
   await sam.getByRole("button", { name: "Save" }).click();
   await expect(sam.getByText(/Last saved/)).toBeVisible();
 
@@ -53,13 +53,13 @@ test("the week has its own two tabs, and its own entry", async () => {
   await sam.getByRole("tab", { name: "Weekly summary" }).click();
   await expect(sam.getByText("What the week held").or(sam.getByText(/Nothing recorded for this week/))).toBeVisible();
   await expect(sam.getByLabel("How it went")).toBeVisible();
-  await expect(sam.getByLabel("What I mean to do")).toHaveCount(0);
+  await expect(sam.getByLabel(/What I mean to do/)).toHaveCount(0);
 
   await sam.getByRole("tab", { name: "Weekly plan" }).click();
-  await expect(sam.getByLabel("What I mean to do")).toHaveValue("Ship the export this week");
+  await expect(sam.getByLabel("What I mean to do — point 1")).toHaveValue("Ship the export this week");
 
   await sam.getByRole("tab", { name: "Daily summary" }).click();
-  await expect(sam.getByLabel("What I mean to do")).toHaveValue(PLAN);
+  await expect(sam.getByLabel("What I mean to do — point 1")).toHaveValue(PLAN);
 });
 
 test("an admin reads it without being able to change it", async () => {
@@ -68,13 +68,13 @@ test("an admin reads it without being able to change it", async () => {
   await expect(theirs).toContainText(PLAN);
   await expect(theirs).toContainText(PROGRESS);
   // One box, theirs alone — no way to type into somebody else's.
-  await expect(admin.getByLabel("What I mean to do")).toHaveCount(1);
+  await expect(admin.getByLabel("What I mean to do — point 1")).toHaveCount(1);
 });
 
 test("a member sees nobody else's", async ({ browser }) => {
   const other = await signIn(browser, USERS.olivia);
   await other.goto("/planner");
-  await expect(other.getByLabel("What I mean to do")).toBeVisible();
+  await expect(other.getByLabel("What I mean to do — point 1")).toBeVisible();
   await expect(other.getByText(PLAN)).toHaveCount(0);
   await expect(other.getByRole("link", { name: /Download the team/ })).toHaveCount(0);
 });
@@ -95,9 +95,10 @@ test("it downloads as a spreadsheet", async () => {
   expect(teamFile.suggestedFilename()).toMatch(/^team-day-.*\.xlsx$/);
 });
 
-test("clearing both boxes takes the entry back", async () => {
+test("clearing it takes the entry back", async () => {
   await sam.goto("/planner");
-  await sam.getByLabel("What I mean to do").fill("");
+  // One line per thing, so emptying the plan means emptying its lines.
+  await sam.getByLabel("What I mean to do — point 1").fill("");
   await sam.getByLabel("How it went").fill("");
   await sam.getByRole("button", { name: "Save" }).click();
   await expect(sam.getByText("Nothing written yet.")).toBeVisible();
