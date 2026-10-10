@@ -14,6 +14,17 @@ export interface ChartDatum {
   color: string;
 }
 
+/**
+ * How tall the ring is, in pixels.
+ *
+ * It is a number rather than a class because the chart is told the same
+ * figure: asked for a height of "100%", the chart has nothing to measure on
+ * its first render and writes a complaint about being -1 by -1 into the
+ * server log on every dashboard load. Given a height it can read, it draws
+ * quietly. The width stays proportional, so the ring still fits its column.
+ */
+const RING_HEIGHT = 224;
+
 interface TipProps {
   active?: boolean;
   payload?: { payload: ChartDatum }[];
@@ -44,8 +55,8 @@ export default function StatusChart({ data }: { data: ChartDatum[] }) {
   }
   return (
     <div>
-      <div className="relative h-56">
-        <ResponsiveContainer width="100%" height="100%">
+      <div className="relative" style={{ height: RING_HEIGHT }}>
+        <ResponsiveContainer width="100%" height={RING_HEIGHT}>
           <PieChart>
             <Pie
               data={data}
