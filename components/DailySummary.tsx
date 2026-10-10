@@ -1,5 +1,11 @@
 "use client";
 
+import {
+  EmptyRecord,
+  RecordCard,
+  Strand,
+  type MeasureItem,
+} from "@/components/RecordPanel";
 import { formatMinutes, type DailySummary as Summary } from "@/lib/planner-summary-shape";
 
 /**
@@ -12,56 +18,58 @@ import { formatMinutes, type DailySummary as Summary } from "@/lib/planner-summa
 export default function DailySummaryPanel({ summary }: { summary: Summary }) {
   if (summary.empty) {
     return (
-      <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center text-sm text-slate-500">
+      <EmptyRecord>
         Nothing recorded for this day yet. Log time on a task, finish one, or sit in a
         meeting, and it appears here by itself.
-      </p>
+      </EmptyRecord>
     );
   }
 
+  const measures: MeasureItem[] = [
+    {
+      label: "Logged",
+      value: formatMinutes(summary.totalMinutes),
+      tone: "time",
+      live: summary.totalMinutes > 0,
+    },
+    {
+      label: "Finished",
+      value: String(summary.completed.length),
+      tone: "done",
+      live: summary.completed.length > 0,
+    },
+    {
+      label: "Extra work",
+      value: String(summary.extra.length),
+      tone: "extra",
+      live: summary.extra.length > 0,
+    },
+    {
+      label: "Meetings",
+      value: String(summary.meetings.length),
+      tone: "met",
+      live: summary.meetings.length > 0,
+    },
+  ];
+
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4">
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <h2 className="text-sm font-semibold text-slate-800">What the day held</h2>
-        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-          filled in by itself
-        </span>
-      </div>
-
-      <dl className="mb-4 grid grid-cols-2 divide-slate-200 text-center sm:grid-cols-4 sm:divide-x">
-        {[
-          ["Logged", formatMinutes(summary.totalMinutes)],
-          ["Finished", String(summary.completed.length)],
-          ["Extra work", String(summary.extra.length)],
-          ["Meetings", String(summary.meetings.length)],
-        ].map(([label, value]) => (
-          <div key={label} className="px-2 py-1">
-            <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              {label}
-            </dt>
-            <dd className="mt-0.5 text-sm font-semibold text-slate-800">{value}</dd>
-          </div>
-        ))}
-      </dl>
-
+    <RecordCard title="What the day held" badge="filled in by itself" measures={measures}>
       {summary.worked.length > 0 && (
-        <section className="mb-3">
-          <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Worked on
-          </h3>
+        <section>
+          <Strand tone="time">Worked on</Strand>
           <ul className="space-y-1">
             {summary.worked.map((t) => (
               <li key={t.id} className="flex items-baseline gap-2 text-sm">
                 <span className="text-slate-700">{t.title}</span>
                 {t.is_additional && (
-                  <span className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[11px] font-medium text-violet-700">
+                  <span className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[11px] font-medium text-violet-800">
                     extra
                   </span>
                 )}
                 {t.project_name && (
                   <span className="text-xs text-slate-500">{t.project_name}</span>
                 )}
-                <span className="ml-auto shrink-0 font-medium text-slate-600">
+                <span className="figure ml-auto shrink-0 text-sm font-medium text-slate-700">
                   {formatMinutes(t.minutes)}
                 </span>
               </li>
@@ -71,14 +79,12 @@ export default function DailySummaryPanel({ summary }: { summary: Summary }) {
       )}
 
       {summary.completed.length > 0 && (
-        <section className="mb-3">
-          <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Finished
-          </h3>
+        <section>
+          <Strand tone="done">Finished</Strand>
           <ul className="space-y-1">
             {summary.completed.map((t) => (
               <li key={t.id} className="flex items-baseline gap-2 text-sm text-slate-700">
-                <span aria-hidden="true" className="text-green-600">
+                <span aria-hidden="true" className="text-emerald-600">
                   ✓
                 </span>
                 {t.title}
@@ -92,10 +98,8 @@ export default function DailySummaryPanel({ summary }: { summary: Summary }) {
       )}
 
       {summary.extra.length > 0 && (
-        <section className="mb-3 rounded-lg border border-violet-200 bg-violet-50 p-3">
-          <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-violet-700">
-            Extra work that came in
-          </h3>
+        <section className="rounded-xl bg-violet-50 p-3 ring-1 ring-violet-200">
+          <Strand tone="extra">Extra work that came in</Strand>
           <ul className="space-y-1">
             {summary.extra.map((t) => (
               <li key={t.id} className="flex items-baseline gap-2 text-sm text-slate-700">
@@ -109,29 +113,35 @@ export default function DailySummaryPanel({ summary }: { summary: Summary }) {
               </li>
             ))}
           </ul>
-          <p className="mt-1.5 text-xs text-violet-800">
+          <p className="mt-2 text-xs text-violet-900">
             Follow-up work raised after something was already finished — nobody planned
             this at the start of the day.
           </p>
         </section>
       )}
 
-      {(summary.meetings.length > 0 || summary.comments > 0) && (
-        <p className="text-xs text-slate-600">
-          {summary.meetings.length > 0 && (
-            <>
-              <span className="font-medium">Meetings:</span>{" "}
-              {summary.meetings.map((m) => `${m.at} ${m.title}`).join(" · ")}
-            </>
-          )}
-          {summary.meetings.length > 0 && summary.comments > 0 && " · "}
-          {summary.comments > 0 && (
-            <>
-              {summary.comments} comment{summary.comments === 1 ? "" : "s"}
-            </>
-          )}
+      {summary.meetings.length > 0 && (
+        <section>
+          <Strand tone="met">Meetings</Strand>
+          <ul className="space-y-1">
+            {summary.meetings.map((m, i) => (
+              <li
+                key={`${m.at}-${i}`}
+                className="flex items-baseline gap-3 text-sm text-slate-700"
+              >
+                <span className="figure shrink-0 text-slate-600">{m.at}</span>
+                {m.title}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {summary.comments > 0 && (
+        <p className="text-sm text-slate-600">
+          {summary.comments} comment{summary.comments === 1 ? "" : "s"} written.
         </p>
       )}
-    </div>
+    </RecordCard>
   );
 }

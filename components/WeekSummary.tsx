@@ -1,5 +1,6 @@
 "use client";
 
+import { EmptyRecord, RecordCard, Strand } from "@/components/RecordPanel";
 import {
   formatMinutes,
   type UpcomingTask,
@@ -81,12 +82,12 @@ export default function WeekSummaryPanel({
 
   return (
     <div className="mb-4 space-y-4">
-      <section className="rounded-xl border border-slate-200 bg-white p-4">
+      <section className="rounded-2xl bg-white p-5 ring-1 ring-slate-200">
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          <h2 className="text-sm font-semibold text-slate-800">
+          <h2 className="text-base font-semibold text-slate-900">
             What is due this week
           </h2>
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+          <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-800">
             from your tasks
           </span>
           {upcoming.length > 0 && (
@@ -170,42 +171,46 @@ function WeekHeld({ summary }: { summary: Week }) {
   return (
     <>
       {summary.empty ? (
-        <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center text-sm text-slate-500">
+        <EmptyRecord>
           Nothing recorded for this week yet. Log time on a task, finish one, or sit in
           a meeting, and it appears here by itself.
-        </p>
+        </EmptyRecord>
       ) : (
-        <section className="rounded-xl border border-slate-200 bg-white p-4">
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <h2 className="text-sm font-semibold text-slate-800">
-              What the week held
-            </h2>
-            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-              filled in by itself
-            </span>
-          </div>
-
-          <dl className="mb-3 grid grid-cols-2 divide-slate-200 text-center sm:grid-cols-4 sm:divide-x">
-            {[
-              ["Logged", formatMinutes(summary.totalMinutes)],
-              ["Days worked", String(summary.daysWorked)],
-              ["Finished", String(summary.completed.length)],
-              ["Extra work", String(summary.extra.length)],
-            ].map(([label, value]) => (
-              <div key={label} className="px-2 py-1">
-                <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  {label}
-                </dt>
-                <dd className="mt-0.5 text-sm font-semibold text-slate-800">{value}</dd>
-              </div>
-            ))}
-          </dl>
-
+        <RecordCard
+          title="What the week held"
+          badge="filled in by itself"
+          measures={[
+            {
+              label: "Logged",
+              value: formatMinutes(summary.totalMinutes),
+              tone: "time",
+              live: summary.totalMinutes > 0,
+            },
+            {
+              label: "Days worked",
+              value: String(summary.daysWorked),
+              tone: "span",
+              live: summary.daysWorked > 0,
+            },
+            {
+              label: "Finished",
+              value: String(summary.completed.length),
+              tone: "done",
+              live: summary.completed.length > 0,
+            },
+            {
+              label: "Extra work",
+              value: String(summary.extra.length),
+              tone: "extra",
+              live: summary.extra.length > 0,
+            },
+          ]}
+        >
           {summary.completed.length > 0 ? (
-            <>
-              <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <section>
+              <Strand tone="done">
                 Finished this week ({summary.completed.length})
-              </h3>
+              </Strand>
               {/* By the day it was finished, so the week reads as a week
                   rather than as a pile. */}
               {groupByDay(summary.completed).map(([day, items]) => (
@@ -217,7 +222,7 @@ function WeekHeld({ summary }: { summary: Week }) {
                         key={t.id}
                         className="flex items-baseline gap-2 text-sm text-slate-700"
                       >
-                        <span aria-hidden="true" className="text-green-600">
+                        <span aria-hidden="true" className="text-emerald-600">
                           ✓
                         </span>
                         {t.title}
@@ -229,24 +234,26 @@ function WeekHeld({ summary }: { summary: Week }) {
                   </ul>
                 </div>
               ))}
-            </>
+            </section>
           ) : (
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-slate-600">
               Nothing finished this week yet. Tasks appear here on the day they are
               marked Done.
             </p>
           )}
 
           {summary.extra.length > 0 && (
-            <p className="mt-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-900">
-              <span className="font-semibold">
+            <section className="rounded-xl bg-violet-50 p-3 ring-1 ring-violet-200">
+              <Strand tone="extra">
                 {summary.extra.length} piece
-                {summary.extra.length === 1 ? "" : "s"} of extra work
-              </span>{" "}
-              came in this week: {summary.extra.map((t) => t.title).join(", ")}.
-            </p>
+                {summary.extra.length === 1 ? "" : "s"} of extra work came in
+              </Strand>
+              <p className="text-sm text-violet-900">
+                {summary.extra.map((t) => t.title).join(", ")}.
+              </p>
+            </section>
           )}
-        </section>
+        </RecordCard>
       )}
     </>
   );

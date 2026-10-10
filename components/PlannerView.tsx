@@ -178,10 +178,12 @@ export default function PlannerView({
 
   return (
     <div>
+      {/* Three views of the same week, so they sit in one control rather
+          than reading as three separate links. */}
       <div
         role="tablist"
         aria-label="Planner"
-        className="mb-4 flex gap-1 border-b border-slate-200"
+        className="mb-4 inline-flex rounded-xl bg-slate-100 p-1"
       >
         {(
           [
@@ -195,10 +197,10 @@ export default function PlannerView({
             role="tab"
             aria-selected={tab === t}
             onClick={() => void load(t, date)}
-            className={`-mb-px border-b-2 px-4 py-2 text-sm font-semibold transition ${
+            className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
               tab === t
-                ? "border-indigo-600 text-indigo-700"
-                : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700"
+                ? "bg-white text-amber-800 shadow-sm ring-1 ring-amber-200"
+                : "text-slate-600 hover:text-slate-900"
             }`}
           >
             {label}
@@ -207,42 +209,47 @@ export default function PlannerView({
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <button
-          onClick={() => void load(tab, shiftPeriod(period, date, -1))}
-          aria-label="Previous"
-          className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
-        >
-          ←
-        </button>
-        <span className="min-w-[9rem] text-center text-sm font-semibold text-slate-800">
-          {loading ? "…" : label}
-        </span>
-        <button
-          onClick={() => void load(tab, shiftPeriod(period, date, 1))}
-          aria-label="Next"
-          className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
-        >
-          →
-        </button>
+        {/* Back, the date, forward: one object, because it is one decision. */}
+        <div className="inline-flex items-stretch overflow-hidden rounded-xl bg-white ring-1 ring-slate-300">
+          <button
+            onClick={() => void load(tab, shiftPeriod(period, date, -1))}
+            aria-label="Previous"
+            className="px-3 text-slate-600 transition hover:bg-amber-50 hover:text-amber-800"
+          >
+            ←
+          </button>
+          <span className="min-w-[9.5rem] border-x border-slate-200 px-3 py-2 text-center text-sm font-semibold text-slate-900">
+            {loading ? "…" : label}
+          </span>
+          <button
+            onClick={() => void load(tab, shiftPeriod(period, date, 1))}
+            aria-label="Next"
+            className="px-3 text-slate-600 transition hover:bg-amber-50 hover:text-amber-800"
+          >
+            →
+          </button>
+        </div>
 
         <input
           type="date"
           value={date}
           aria-label="Jump to a date"
           onChange={(e) => e.target.value && void load(tab, e.target.value)}
-          className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+          className="rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
         />
 
+        {/* Mine and everyone's are different acts, so they are not the same
+            colour. */}
         <a
           href={exportHref}
-          className="ml-auto rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          className="ml-auto rounded-xl px-3 py-2 text-sm font-medium text-amber-800 ring-1 ring-amber-300 transition hover:bg-amber-50"
         >
           ⤓ Download mine
         </a>
         {canSeeOthers && (
           <a
             href={`/api/planner/export?scope=team&period=${period}&date=${date}`}
-            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            className="rounded-xl px-3 py-2 text-sm font-medium text-sky-800 ring-1 ring-sky-300 transition hover:bg-sky-50"
           >
             ⤓ Download the team&rsquo;s
           </a>
@@ -290,20 +297,30 @@ export default function PlannerView({
         />
       )}
 
-      <section className="rounded-xl border border-slate-200 bg-white p-4">
-        <h2 className="mb-1 text-sm font-semibold text-slate-800">
-          {tab === "day"
-            ? "In my own words"
-            : tab === "week-plan"
-              ? "What the week is really for"
-              : "How the week went, in my own words"}
-        </h2>
-        <p className="mb-3 text-xs text-slate-500">
-          {savedAt
-            ? `Last saved ${String(savedAt).replace("T", " ").slice(0, 16)}`
-            : "Nothing written yet."}
-        </p>
+      {/* The other half of the page: the part only a person can write. */}
+      <section className="mt-4 overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200">
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50 px-5 py-3">
+          <h2 className="text-base font-semibold text-slate-900">
+            {tab === "day"
+              ? "In my own words"
+              : tab === "week-plan"
+                ? "What the week is really for"
+                : "How the week went, in my own words"}
+          </h2>
+          <span
+            className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+              savedAt
+                ? "bg-emerald-100 text-emerald-800"
+                : "bg-slate-200 text-slate-700"
+            }`}
+          >
+            {savedAt
+              ? `Saved ${String(savedAt).replace("T", " ").slice(0, 16)}`
+              : "Nothing written yet"}
+          </span>
+        </div>
 
+        <div className="px-5 py-4">
         {tab !== "week-summary" && (
           <PointsInput
             // Re-seeded when the period or the day changes: the rows are the
@@ -359,22 +376,29 @@ export default function PlannerView({
           </>
         )}
 
-        <div className="mt-3 flex items-center gap-3">
-          <button
-            onClick={save}
-            disabled={busy}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
-          >
-            {busy ? "Saving…" : "Save"}
-          </button>
-          {dirty && <span className="text-xs text-amber-700">Not saved yet</span>}
-          <span className="ml-auto text-xs text-slate-500">
+        <div className="mt-4 border-t border-slate-100 pt-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={save}
+              disabled={busy}
+              className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-60"
+            >
+              {busy ? "Saving…" : "Save"}
+            </button>
+            {dirty && (
+              <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-900">
+                Not saved yet
+              </span>
+            )}
+          </div>
+          <p className="mt-2 text-xs text-slate-500">
             {tab === "week-plan"
               ? "How the week went is on the next tab — saving here keeps both."
               : tab === "week-summary"
                 ? "The plan is on the previous tab — saving here keeps both."
                 : "Clearing both boxes and saving removes the entry."}
-          </span>
+          </p>
+        </div>
         </div>
       </section>
 

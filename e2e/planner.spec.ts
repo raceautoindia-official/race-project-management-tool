@@ -20,13 +20,13 @@ test("the day fills itself in, with a box for the rest", async () => {
   // Nothing logged in this run, so the summary says so rather than
   // showing an empty table.
   await expect(sam.getByText(/Nothing recorded for this day yet/)).toBeVisible();
-  await expect(sam.getByText("Nothing written yet.")).toBeVisible();
+  await expect(sam.getByText("Nothing written yet")).toBeVisible();
 
   await sam.getByLabel("What I mean to do — point 1").fill(PLAN);
   await sam.getByLabel("How it went").fill(PROGRESS);
   await sam.getByRole("button", { name: "Save" }).click();
 
-  await expect(sam.getByText(/Last saved/)).toBeVisible();
+  await expect(sam.getByText(/Saved \d/)).toBeVisible();
   await sam.reload();
   await expect(sam.getByLabel("What I mean to do — point 1")).toHaveValue(PLAN);
 });
@@ -46,7 +46,7 @@ test("the week has its own two tabs, and its own entry", async () => {
   await expect(sam.getByLabel("What I mean to do — point 1")).toHaveValue("");
   await sam.getByLabel("What I mean to do — point 1").fill("Ship the export this week");
   await sam.getByRole("button", { name: "Save" }).click();
-  await expect(sam.getByText(/Last saved/)).toBeVisible();
+  await expect(sam.getByText(/Saved \d/)).toBeVisible();
 
   // The third tab is the other half of the same weekly entry: what it came
   // to, and a box for saying so.
@@ -101,5 +101,5 @@ test("clearing it takes the entry back", async () => {
   await sam.getByLabel("What I mean to do — point 1").fill("");
   await sam.getByLabel("How it went").fill("");
   await sam.getByRole("button", { name: "Save" }).click();
-  await expect(sam.getByText("Nothing written yet.")).toBeVisible();
+  await expect(sam.getByText("Nothing written yet")).toBeVisible();
 });
