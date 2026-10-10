@@ -37,7 +37,8 @@ export default function RecurringTasksModal({
 }) {
   const { toast } = useToast();
   const [items, setItems] = useState<RecurringTask[]>([]);
-  const [loading, setLoading] = useState(false);
+  // The board remounts this modal each time it opens, so it starts loading.
+  const [loading, setLoading] = useState(open);
   const [busy, setBusy] = useState(false);
 
   const [title, setTitle] = useState("");
@@ -52,7 +53,6 @@ export default function RecurringTasksModal({
 
   useEffect(() => {
     if (!open) return;
-    setLoading(true);
     apiFetch<{ recurring: RecurringTask[] }>(
       `/api/projects/${projectId}/recurring`
     )
@@ -123,9 +123,9 @@ export default function RecurringTasksModal({
   return (
     <Modal open={open} onClose={onClose} title="Recurring tasks" widthClass="max-w-2xl">
       {loading ? (
-        <p className="text-sm text-slate-400">Loading…</p>
+        <p className="text-sm text-slate-500">Loading…</p>
       ) : items.length === 0 ? (
-        <p className="text-sm text-slate-400">No recurring tasks yet.</p>
+        <p className="text-sm text-slate-500">No recurring tasks yet.</p>
       ) : (
         <ul className="mb-4 divide-y divide-slate-100">
           {items.map((it) => (
@@ -134,7 +134,7 @@ export default function RecurringTasksModal({
                 <div className="flex items-center gap-2">
                   <span
                     className={`font-medium ${
-                      it.is_active ? "text-slate-800" : "text-slate-400 line-through"
+                      it.is_active ? "text-slate-800" : "text-slate-500 line-through"
                     }`}
                   >
                     {it.title}
@@ -143,7 +143,7 @@ export default function RecurringTasksModal({
                     {RECURRENCE_LABELS[it.recurrence] ?? it.recurrence}
                   </span>
                 </div>
-                <div className="mt-0.5 text-xs text-slate-400">
+                <div className="mt-0.5 text-xs text-slate-500">
                   Next: {formatDate(it.next_run)}
                   {it.assignee_name ? ` · ${it.assignee_name}` : ""}
                   {` · ${it.priority}`}
@@ -187,7 +187,7 @@ export default function RecurringTasksModal({
             className={inputClass}
           />
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <label className="text-xs text-slate-500">
+            <label className="text-xs text-slate-600">
               Repeat
               <select
                 value={recurrence}
@@ -201,7 +201,7 @@ export default function RecurringTasksModal({
                 <option value="monthly">Monthly</option>
               </select>
             </label>
-            <label className="text-xs text-slate-500">
+            <label className="text-xs text-slate-600">
               First run
               <input
                 type="date"
@@ -210,7 +210,7 @@ export default function RecurringTasksModal({
                 className={inputClass}
               />
             </label>
-            <label className="text-xs text-slate-500">
+            <label className="text-xs text-slate-600">
               Priority
               <select
                 value={priority}
@@ -224,7 +224,7 @@ export default function RecurringTasksModal({
                 ))}
               </select>
             </label>
-            <label className="text-xs text-slate-500">
+            <label className="text-xs text-slate-600">
               Est. hours
               <input
                 type="number"
@@ -236,7 +236,7 @@ export default function RecurringTasksModal({
               />
             </label>
           </div>
-          <label className="block text-xs text-slate-500">
+          <label className="block text-xs text-slate-600">
             Assignee
             <select
               value={assigneeId}

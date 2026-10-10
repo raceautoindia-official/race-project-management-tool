@@ -1,16 +1,30 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Modal from "@/components/Modal";
-import { TaskStatusBadge, TaskPriorityBadge } from "@/components/Badge";
+import {
+  ReadOnlyBadge,
+  TaskStatusBadge,
+  TaskPriorityBadge,
+  WorkTypeBadge,
+} from "@/components/Badge";
 import LabelChip from "@/components/LabelChip";
 import Avatar from "@/components/Avatar";
-import { apiFetch } from "@/lib/api-client";
+import { apiFetch, isConflict } from "@/lib/api-client";
 import { useToast } from "@/components/ToastProvider";
 import { ProgressBar } from "@/components/ProgressBar";
 import { taskProgress } from "@/lib/progress";
 import { formatDate, formatRelative, isOverdue } from "@/lib/format";
 import { formatHM, formatMinutes, formatIst } from "@/lib/tz";
+import {
+  canSignOff,
+  pendingChecklistItems,
+  signOffBlockers,
+  SPEC_LABELS,
+  specFieldsFor,
+  type SpecKey,
+} from "@/lib/workflow";
+import { SpecView } from "./WorkSpec";
 
 interface TimeLog {
   id: number;
@@ -36,6 +50,11 @@ interface Dependency {
   title: string;
   status: TaskStatus;
   done: boolean;
+  /** Raised by a member and waiting, or agreed by a lead. */
+  approval: "pending" | "approved";
+  reason: string | null;
+  requested_by: number | null;
+  requester_name: string | null;
 }
 
 function fmtBytes(n: number): string {
@@ -48,8 +67,10 @@ export default function TaskDetailModal({
   open,
   onClose,
   task,
+  focus = null,
   currentUser,
   canManage,
+  projectReadOnlyReason,
   members,
   projectTasks,
   onEdit,
@@ -60,8 +81,12 @@ export default function TaskDetailModal({
   open: boolean;
   onClose: () => void;
   task: Task | null;
+  /** The part to scroll to on opening (a notification was about it). */
+  focus?: "blockers" | null;
   currentUser: { id: number; role: Role };
   canManage: boolean;
+  /** Set when the whole project is read-only (pending, rejected, completed). */
+  projectReadOnlyReason: string | null;
   members: ProjectMember[];
   projectTasks: { id: number; title: string; status: TaskStatus }[];
   onEdit: (task: Task) => void;
@@ -72,9 +97,23 @@ export default function TaskDetailModal({
   const { toast } = useToast();
   const [comments, setComments] = useState<Comment[]>([]);
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
+  const [seedingSpec, setSeedingSpec] = useState(false);
+  // The section a notification was about, so opening lands on it rather
+  // than at the top of a long task.
+  const focusRef = useRef<HTMLDivElement>(null);
+  // Seconds left before the finished checklist sends itself for review,
+  // and whether this person has already said not yet.
+  const [reviewIn, setReviewIn] = useState<number | null>(null);
+  const [reviewDeclined, setReviewDeclined] = useState(false);
+  // Said only when someone presses Post comment with nothing written.
+  const [commentHint, setCommentHint] = useState(false);
+  const commentInput = useRef<HTMLInputElement>(null);
   const [deps, setDeps] = useState<Dependency[]>([]);
   const [depToAdd, setDepToAdd] = useState("");
-  const [newSub, setNewSub] = useState("");
+  const [depReason, setDepReason] = useState("");
+  // The blocker a lead is rejecting, and why.
+  const [rejecting, setRejecting] = useState<number | null>(null);
+  const [rejectNote, setRejectNote] = useState("");
   const [body, setBody] = useState("");
   // @mention state
   const [picked, setPicked] = useState<{ id: number; name: string }[]>([]);
@@ -91,23 +130,28 @@ export default function TaskDetailModal({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [signOffOpen, setSignOffOpen] = useState(false);
+  const [signOffNote, setSignOffNote] = useState("");
+  const [downloading, setDownloading] = useState(false);
 
-  // The parent keys this modal by task id, so it remounts per task and the
-  // fetches below run once on mount. All state updates happen after `await`.
+  // The parent keys this modal by task id and open state, so it remounts each
+  // time it opens and the fetches below run once per opening (not on every
+  // task change). All state updates happen after `await`.
+  const taskId = task?.id;
   useEffect(() => {
-    if (!task) return;
+    if (!taskId || !open) return;
     let active = true;
     (async () => {
       try {
         const [c, s, d, tl, at] = await Promise.all([
-          apiFetch<{ comments: Comment[] }>(`/api/tasks/${task.id}/comments`),
-          apiFetch<{ subtasks: Subtask[] }>(`/api/tasks/${task.id}/subtasks`),
+          apiFetch<{ comments: Comment[] }>(`/api/tasks/${taskId}/comments`),
+          apiFetch<{ subtasks: Subtask[] }>(`/api/tasks/${taskId}/subtasks`),
           apiFetch<{ dependencies: Dependency[] }>(
-            `/api/tasks/${task.id}/dependencies`
+            `/api/tasks/${taskId}/dependencies`
           ),
-          apiFetch<{ logs: TimeLog[] }>(`/api/tasks/${task.id}/time-logs`),
+          apiFetch<{ logs: TimeLog[] }>(`/api/tasks/${taskId}/time-logs`),
           apiFetch<{ attachments: Attachment[] }>(
-            `/api/tasks/${task.id}/attachments`
+            `/api/tasks/${taskId}/attachments`
           ),
         ]);
         if (active) {
@@ -126,21 +170,84 @@ export default function TaskDetailModal({
     return () => {
       active = false;
     };
-  }, [task]);
+  }, [taskId, open]);
+
+  // Once the task has loaded — the section may not exist before then.
+  useEffect(() => {
+    if (loading || !focus || !focusRef.current) return;
+    focusRef.current.scrollIntoView({ block: "center" });
+  }, [loading, focus]);
+
+  // Counts the offer down a second at a time. The send happens inside the
+  // timer rather than in the effect body, so nothing cascades a render.
+  useEffect(() => {
+    if (reviewIn === null) return;
+    const timer = setTimeout(() => {
+      if (reviewIn > 1) {
+        setReviewIn(reviewIn - 1);
+        return;
+      }
+      setReviewIn(null);
+      void changeStatus("review");
+    }, 1000);
+    return () => clearTimeout(timer);
+    // changeStatus is rebuilt every render; listing it here would restart
+    // the countdown on each tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reviewIn]);
 
   if (!task) return null;
   const currentTask = task;
 
   const isAssignee = currentTask.assignee_id === currentUser.id;
+  // A signed-off task, or any task in a read-only project, can't be changed.
+  const lockReason = currentTask.signed_off_at
+    ? "This task is signed off and read-only."
+    : projectReadOnlyReason;
+  const readOnly = Boolean(lockReason);
   // Managers (admin/lead) manage everything; the assignee may drive execution
   // (status, checklist, logged hours) on their own task.
-  const canEditExecution = canManage || isAssignee;
-  const canDelete = canManage;
+  const canEditExecution = !readOnly && (canManage || isAssignee);
+  const canManageTask = !readOnly && canManage;
+  // The owner reports blockers; a lead decides them. Not both.
+  const mayReportBlocker = canEditExecution && !canManage;
+  const canDelete = canManageTask;
+  const isTyped = specFieldsFor(currentTask.task_type).length > 0;
+  const signOffMissing = signOffBlockers(currentTask, { signerIsManager: canManage });
+  // Only an admin/lead can move a task out of Done (it's awaiting sign-off).
+  const canChangeStatus = canEditExecution && (canManage || currentTask.status !== "done");
+  const maySignOff =
+    !readOnly &&
+    currentTask.status === "done" &&
+    canSignOff(currentUser, canManage, currentTask);
   const overdue = isOverdue(currentTask.due_date, currentTask.status);
   const subDone = subtasks.filter((s) => s.is_done).length;
   const subPct = subtasks.length
     ? Math.round((subDone / subtasks.length) * 100)
     : 0;
+  // What the specification asks for but the checklist doesn't have yet.
+  // A task created before its spec was seeded — or whose spec was written
+  // afterwards — can be brought up to date in one click.
+  const specPending = pendingChecklistItems(
+    currentTask.task_type,
+    currentTask,
+    subtasks.map((s) => s.title)
+  );
+  // Grouped by the spec field each item came from, in the order the spec
+  // asks for them, so it is plain which are the expected behaviour and
+  // which are the acceptance criteria. Items typed here come last.
+  const checklistGroups = (() => {
+    const groups = new Map<string, Subtask[]>();
+    for (const s of subtasks) {
+      const key = s.source ?? "";
+      const list = groups.get(key);
+      if (list) list.push(s);
+      else groups.set(key, [s]);
+    }
+    return [...groups.entries()];
+  })();
+  // One unlabelled group is just a list; headings would say nothing.
+  const showChecklistGroups = checklistGroups.some(([source]) => source !== "");
   const progress = taskProgress({
     status: currentTask.status,
     subtask_total: subtasks.length,
@@ -150,6 +257,45 @@ export default function TaskDetailModal({
   });
 
   const totalMinutes = timeLogs.reduce((s, l) => s + l.minutes, 0);
+
+  // Someone else changed the task (e.g. signed it off): show the current state.
+  async function reloadIfChanged(e: unknown) {
+    if (!isConflict(e)) return;
+    try {
+      const res = await apiFetch<{ task: Task }>(`/api/tasks/${currentTask.id}`);
+      onChanged(res.task);
+    } catch {
+      // keep the error already shown
+    }
+  }
+
+  async function downloadPdf() {
+    setDownloading(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/tasks/${currentTask.id}/pdf`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? `Could not create the PDF (${res.status})`);
+      }
+      const blob = await res.blob();
+      const name =
+        /filename="([^"]+)"/.exec(res.headers.get("content-disposition") ?? "")?.[1] ??
+        `task-${currentTask.id}.pdf`;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = name;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not download the PDF");
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   async function logTime() {
     const minutes =
@@ -176,6 +322,7 @@ export default function TaskDetailModal({
       });
       toast("Time logged");
     } catch (e) {
+      void reloadIfChanged(e);
       setError(e instanceof Error ? e.message : "Could not log time");
     } finally {
       setSavingLog(false);
@@ -195,11 +342,12 @@ export default function TaskDetailModal({
         status: res.status as TaskStatus,
       });
     } catch (e) {
+      void reloadIfChanged(e);
       toast(e instanceof Error ? e.message : "Could not remove entry", "error");
     }
   }
 
-  const blocked = deps.some((d) => !d.done);
+  const blocked = deps.some((d) => d.approval === "approved" && !d.done);
   const depCandidates = projectTasks.filter(
     (t) => t.id !== currentTask.id && !deps.some((d) => d.id === t.id)
   );
@@ -216,35 +364,64 @@ export default function TaskDetailModal({
   async function addDependency() {
     if (!depToAdd) return;
     try {
-      await apiFetch(`/api/tasks/${currentTask.id}/dependencies`, {
-        method: "POST",
-        body: JSON.stringify({ dependsOnTaskId: Number(depToAdd) }),
-      });
-      const t = projectTasks.find((x) => x.id === Number(depToAdd));
-      if (t)
-        setDeps((prev) => [
-          ...prev,
-          { id: t.id, title: t.title, status: t.status, done: t.status === "done" },
-        ]);
+      const res = await apiFetch<{ dependencies: Dependency[] }>(
+        `/api/tasks/${currentTask.id}/dependencies`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            dependsOnTaskId: Number(depToAdd),
+            reason: depReason.trim() || null,
+          }),
+        }
+      );
+      setDeps(res.dependencies);
       setDepToAdd("");
+      setDepReason("");
+      toast("Sent to a project lead — they will confirm it");
     } catch (e) {
+      void reloadIfChanged(e);
       toast(e instanceof Error ? e.message : "Could not add blocker", "error");
     }
   }
+  async function decideDependency(depId: number, decision: "approve" | "reject") {
+    try {
+      const res = await apiFetch<{ dependencies: Dependency[] }>(
+        `/api/tasks/${currentTask.id}/dependencies/decision`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            dependsOnTaskId: depId,
+            decision,
+            note: rejectNote.trim() || null,
+          }),
+        }
+      );
+      setDeps(res.dependencies);
+      setRejecting(null);
+      setRejectNote("");
+      toast(decision === "approve" ? "Blocker confirmed" : "Blocker rejected");
+    } catch (e) {
+      void reloadIfChanged(e);
+      toast(e instanceof Error ? e.message : "Could not save the decision", "error");
+    }
+  }
+
   async function removeDependency(depId: number) {
     try {
-      await apiFetch(
+      const res = await apiFetch<{ dependencies: Dependency[] }>(
         `/api/tasks/${currentTask.id}/dependencies?dependsOnTaskId=${depId}`,
         { method: "DELETE" }
       );
-      setDeps((prev) => prev.filter((d) => d.id !== depId));
+      setDeps(res.dependencies);
     } catch (e) {
+      void reloadIfChanged(e);
       toast(e instanceof Error ? e.message : "Could not remove blocker", "error");
     }
   }
 
   function onBodyChange(v: string) {
     setBody(v);
+    if (v.trim()) setCommentHint(false);
     const m = v.match(/@(\w*)$/);
     setMentionQuery(m ? m[1] : null);
   }
@@ -288,13 +465,21 @@ export default function TaskDetailModal({
       onChanged(res.task);
       toast("Status updated");
     } catch (e) {
+      void reloadIfChanged(e);
       setError(e instanceof Error ? e.message : "Could not update status");
     }
   }
 
   async function addComment(e: React.FormEvent) {
     e.preventDefault();
-    if (!body.trim()) return;
+    // Pressing it with an empty box used to do nothing at all, which reads
+    // as a broken button. Put the cursor where the comment goes and say so.
+    if (!body.trim()) {
+      setCommentHint(true);
+      commentInput.current?.focus();
+      return;
+    }
+    setCommentHint(false);
     setBusy(true);
     const mentionIds = picked
       .filter((p) => body.includes("@" + p.name))
@@ -313,6 +498,7 @@ export default function TaskDetailModal({
         comment_count: (currentTask.comment_count ?? 0) + 1,
       });
     } catch (e) {
+      void reloadIfChanged(e);
       setError(e instanceof Error ? e.message : "Could not add comment");
     } finally {
       setBusy(false);
@@ -332,6 +518,7 @@ export default function TaskDetailModal({
       setEditingId(null);
       setEditBody("");
     } catch (e) {
+      void reloadIfChanged(e);
       toast(e instanceof Error ? e.message : "Could not edit comment", "error");
     }
   }
@@ -345,6 +532,7 @@ export default function TaskDetailModal({
         comment_count: Math.max(0, (currentTask.comment_count ?? 1) - 1),
       });
     } catch (e) {
+      void reloadIfChanged(e);
       toast(e instanceof Error ? e.message : "Could not delete comment", "error");
     }
   }
@@ -375,25 +563,54 @@ export default function TaskDetailModal({
       await apiFetch(`/api/attachments/${attId}`, { method: "DELETE" });
       setAttachments((prev) => prev.filter((a) => a.id !== attId));
     } catch (e) {
+      void reloadIfChanged(e);
       toast(e instanceof Error ? e.message : "Could not remove file", "error");
     }
   }
 
-  async function addSubtask(e: React.FormEvent) {
-    e.preventDefault();
-    if (!newSub.trim()) return;
+  /**
+   * Bring the checklist up to date with the specification. A new task is
+   * seeded at creation; this is for the ones created before that, and for a
+   * spec written or corrected afterwards. The server re-reads the stored
+   * spec — this only asks it to.
+   */
+  async function addChecklistFromSpec() {
+    setSeedingSpec(true);
     try {
-      const res = await apiFetch<{ subtask: Subtask }>(
-        `/api/tasks/${currentTask.id}/subtasks`,
-        { method: "POST", body: JSON.stringify({ title: newSub.trim() }) }
+      const res = await apiFetch<{ added: number; subtasks: Subtask[] }>(
+        `/api/tasks/${currentTask.id}/subtasks/from-spec`,
+        { method: "POST" }
       );
-      const list = [...subtasks, res.subtask];
-      setSubtasks(list);
-      setNewSub("");
-      syncCounts(list);
+      setSubtasks(res.subtasks);
+      syncCounts(res.subtasks);
+      toast(
+        res.added === 1
+          ? "1 item added from the specification"
+          : `${res.added} items added from the specification`
+      );
     } catch (e) {
-      toast(e instanceof Error ? e.message : "Could not add subtask", "error");
+      void reloadIfChanged(e);
+      toast(
+        e instanceof Error ? e.message : "Could not read the specification",
+        "error"
+      );
+    } finally {
+      setSeedingSpec(false);
     }
+  }
+
+
+  /**
+   * Every box ticked means the work is done, so the task offers to hand
+   * itself over rather than waiting for someone to find the status menu.
+   * It waits five seconds first — a box ticked by mistake is common, and
+   * moving a task back out of review is not this person's to do.
+   */
+  function offerReview(list: Subtask[]) {
+    if (reviewDeclined || !canEditExecution) return;
+    if (currentTask.status === "review" || currentTask.status === "done") return;
+    if (!list.length || list.some((x) => !x.is_done)) return;
+    setReviewIn(5);
   }
 
   async function toggleSubtask(s: Subtask) {
@@ -405,7 +622,11 @@ export default function TaskDetailModal({
       const list = subtasks.map((x) => (x.id === s.id ? res.subtask : x));
       setSubtasks(list);
       syncCounts(list);
+      offerReview(list);
+      // Unticking something takes back the offer.
+      if (list.some((x) => !x.is_done)) setReviewIn(null);
     } catch (e) {
+      void reloadIfChanged(e);
       toast(e instanceof Error ? e.message : "Could not update subtask", "error");
     }
   }
@@ -417,7 +638,28 @@ export default function TaskDetailModal({
       setSubtasks(list);
       syncCounts(list);
     } catch (e) {
+      void reloadIfChanged(e);
       toast(e instanceof Error ? e.message : "Could not delete subtask", "error");
+    }
+  }
+
+  async function signOff() {
+    if (signOffMissing.length) return;
+    setBusy(true);
+    setError("");
+    try {
+      const res = await apiFetch<{ task: Task }>(
+        `/api/tasks/${currentTask.id}/signoff`,
+        { method: "POST", body: JSON.stringify({ note: signOffNote || null }) }
+      );
+      onChanged(res.task);
+      setSignOffOpen(false);
+      toast("Signed off — this task is now read-only");
+    } catch (e) {
+      void reloadIfChanged(e);
+      setError(e instanceof Error ? e.message : "Could not sign off");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -437,6 +679,55 @@ export default function TaskDetailModal({
 
   return (
     <Modal open={open} onClose={onClose} title={currentTask.title} widthClass="max-w-2xl">
+      {/* The checklist is finished: the task is going for review unless
+          this is stopped. Inside the modal's own content, so clicking it
+          does not fall through and close the task. */}
+      {reviewIn !== null && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 p-4">
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-label="Checklist finished"
+            className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl"
+          >
+            <h3 className="text-base font-semibold text-slate-900">
+              ✅ Checklist finished
+            </h3>
+            <p aria-live="polite" className="mt-1 text-sm text-slate-600">
+              Every item is ticked, so this task is going for review in{" "}
+              <strong className="text-slate-900">{reviewIn}</strong>{" "}
+              second{reviewIn === 1 ? "" : "s"}.
+            </p>
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setReviewIn(null);
+                  void changeStatus("review");
+                }}
+                className="flex-1 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+              >
+                Send for review now
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setReviewIn(null);
+                  setReviewDeclined(true);
+                }}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Not yet
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-slate-500">
+              “Not yet” leaves it where it is and tells nobody. Send it whenever
+              you are ready with the <strong>Send for review</strong> button at the
+              top of the task.
+            </p>
+          </div>
+        </div>
+      )}
       {error && (
         <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
           {error}
@@ -444,8 +735,10 @@ export default function TaskDetailModal({
       )}
 
       <div className="flex flex-wrap items-center gap-2">
+        <WorkTypeBadge type={currentTask.task_type} />
         <TaskStatusBadge status={currentTask.status} />
         <TaskPriorityBadge priority={currentTask.priority} />
+        {currentTask.signed_off_at && <ReadOnlyBadge />}
         {Boolean(currentTask.is_additional) && (
           <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-700">
             Additional work
@@ -459,8 +752,46 @@ export default function TaskDetailModal({
         {currentTask.labels?.map((l) => (
           <LabelChip key={l.id} name={l.name} color={l.color} />
         ))}
-        <div className="ml-auto flex gap-2">
-          {canManage && currentTask.status === "done" && (
+        <div className="ml-auto flex flex-wrap gap-2">
+          <button
+            onClick={downloadPdf}
+            disabled={downloading}
+            className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60"
+          >
+            {downloading ? "Preparing PDF…" : "Download PDF"}
+          </button>
+          {currentTask.due_date && (
+            <a
+              href={`/api/tasks/${currentTask.id}/ics`}
+              download
+              className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+            >
+              📅 Add to calendar
+            </a>
+          )}
+          {canChangeStatus &&
+            (currentTask.status === "todo" ||
+              currentTask.status === "in_progress") && (
+              <button
+                onClick={() => {
+                  setReviewIn(null);
+                  void changeStatus("review");
+                }}
+                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700"
+              >
+                Send for review
+              </button>
+            )}
+          {maySignOff && (
+            <button
+              onClick={() => setSignOffOpen((v) => !v)}
+              aria-expanded={signOffOpen}
+              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700"
+            >
+              Sign off
+            </button>
+          )}
+          {canManage && !projectReadOnlyReason && currentTask.status === "done" && (
             <button
               onClick={() => onAddFollowUp(currentTask)}
               className="rounded-lg border border-violet-200 px-3 py-1.5 text-sm font-medium text-violet-700 hover:bg-violet-50"
@@ -468,7 +799,7 @@ export default function TaskDetailModal({
               + Follow-up work
             </button>
           )}
-          {canManage && (
+          {canManageTask && (
             <button
               onClick={() => onEdit(currentTask)}
               className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
@@ -488,15 +819,100 @@ export default function TaskDetailModal({
         </div>
       </div>
 
-      <p className="mt-4 whitespace-pre-wrap text-sm text-slate-700">
-        {currentTask.description || (
-          <span className="text-slate-400">No description.</span>
-        )}
-      </p>
+      {lockReason && (
+        <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          <span aria-hidden="true">🔒 </span>
+          {lockReason}
+          {currentTask.signed_off_at && (
+            <>
+              {" "}Signed off by <strong>{currentTask.signer_name ?? "—"}</strong> on{" "}
+              {formatIst(String(currentTask.signed_off_at))}
+              {currentTask.signoff_note ? ` — “${currentTask.signoff_note}”` : ""}
+            </>
+          )}
+        </div>
+      )}
+
+      {signOffOpen && maySignOff && (
+        <div className="mt-4 rounded-lg border border-emerald-200 bg-white p-3">
+          <h3 className="text-sm font-semibold text-slate-800">Sign off this task</h3>
+          {signOffMissing.length > 0 ? (
+            <>
+              <p className="mt-1 text-sm text-slate-600">
+                These are mandatory before sign-off:
+              </p>
+              <ul className="mt-1 list-disc pl-5 text-sm text-red-700">
+                {signOffMissing.map((b) => (
+                  <li key={b}>{b}</li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <>
+              <p className="mt-1 text-sm text-slate-600">
+                Confirm the work meets its{" "}
+                {currentTask.task_type === "correction" ? "acceptance criteria" : "specification"}.
+                Signing off makes this task and everything on it{" "}
+                <strong>permanently read-only</strong>.
+              </p>
+              <label htmlFor="signoff-note" className="mt-2 block text-xs text-slate-600">
+                Note (optional)
+              </label>
+              <textarea
+                id="signoff-note"
+                rows={2}
+                maxLength={1000}
+                value={signOffNote}
+                onChange={(e) => setSignOffNote(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              />
+            </>
+          )}
+          <div className="mt-2 flex justify-end gap-2">
+            <button
+              onClick={() => setSignOffOpen(false)}
+              className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={signOff}
+              disabled={busy || signOffMissing.length > 0}
+              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+            >
+              {busy ? "Signing off…" : "Confirm sign-off"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <ApprovalTrail task={currentTask} />
+
+      {isTyped ? (
+        <div className="mt-4 rounded-lg border border-slate-200 p-3">
+          <SpecView item={currentTask} />
+          {currentTask.description && (
+            <div className="mt-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Notes
+              </div>
+              <p className="mt-0.5 whitespace-pre-wrap text-sm text-slate-700">
+                {currentTask.description}
+              </p>
+            </div>
+          )}
+        </div>
+      ) : (
+        <p className="mt-4 whitespace-pre-wrap text-sm text-slate-700">
+          {currentTask.description || (
+            <span className="text-slate-500">No description.</span>
+          )}
+        </p>
+      )}
 
       {/* Progress */}
       <div className="mt-4">
-        <div className="mb-1 flex items-center justify-between text-xs text-slate-500">
+        <div className="mb-1 flex items-center justify-between text-xs text-slate-600">
           <span>Progress</span>
           <span className="font-medium text-slate-600">{progress}%</span>
         </div>
@@ -519,7 +935,7 @@ export default function TaskDetailModal({
             <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
               <div>
                 <span className="font-medium text-slate-700">Time</span>
-                <span className="ml-2 text-slate-500">
+                <span className="ml-2 text-slate-600">
                   {formatMinutes(totalMinutes)} logged
                   {estMin > 0 ? ` of ${formatHM(currentTask.estimated_hours)} est.` : ""}
                 </span>
@@ -539,8 +955,11 @@ export default function TaskDetailModal({
             {canEditExecution && (
               <div className="mt-3 flex flex-wrap items-end gap-2">
                 <div>
-                  <label className="block text-xs text-slate-500">Hours</label>
+                  <label htmlFor="log-hours" className="block text-xs text-slate-600">
+                    Hours
+                  </label>
                   <input
+                    id="log-hours"
                     type="number"
                     min="0"
                     value={logH}
@@ -550,8 +969,11 @@ export default function TaskDetailModal({
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-500">Minutes</label>
+                  <label htmlFor="log-minutes" className="block text-xs text-slate-600">
+                    Minutes
+                  </label>
                   <input
+                    id="log-minutes"
                     type="number"
                     min="0"
                     max="59"
@@ -584,15 +1006,15 @@ export default function TaskDetailModal({
                     <span className="font-medium text-slate-700">
                       {formatMinutes(l.minutes)}
                     </span>
-                    <span className="text-slate-400">{l.user_name ?? "—"}</span>
-                    {l.note && <span className="text-slate-500">· {l.note}</span>}
-                    <span className="ml-auto text-slate-400">
+                    <span className="text-slate-500">{l.user_name ?? "—"}</span>
+                    {l.note && <span className="text-slate-600">· {l.note}</span>}
+                    <span className="ml-auto text-slate-500">
                       {formatIst(l.logged_at)}
                     </span>
-                    {(canManage || l.user_id === currentUser.id) && (
+                    {!readOnly && (canManage || l.user_id === currentUser.id) && (
                       <button
                         onClick={() => deleteLog(l.id)}
-                        className="text-slate-300 hover:text-red-500"
+                        className="rounded px-1 text-slate-500 hover:bg-red-50 hover:text-red-600"
                         aria-label="Remove entry"
                       >
                         ✕
@@ -606,61 +1028,155 @@ export default function TaskDetailModal({
         );
       })()}
 
-      {/* Blocked by (dependencies) */}
-      {(deps.length > 0 || canManage) && (
-        <div className="mt-4">
+      {/* Blocked by (dependencies). The owner reports one — they are the
+          one who finds out the work is stuck — and a lead confirms it
+          before it counts. A lead has nothing to add here: approving
+          their own claim is the one thing this is meant to prevent. */}
+      {(deps.length > 0 || mayReportBlocker) && (
+        <div ref={focus === "blockers" ? focusRef : null} className="mt-4">
           <h3 className="mb-1 text-sm font-semibold text-slate-700">Blocked by</h3>
           {deps.length === 0 ? (
-            <p className="text-xs text-slate-400">No dependencies.</p>
+            <p className="text-xs text-slate-500">Nothing is holding this up.</p>
           ) : (
-            <ul className="space-y-1">
-              {deps.map((d) => (
-                <li key={d.id} className="flex items-center gap-2 text-sm">
-                  <span
-                    className={`h-2 w-2 shrink-0 rounded-full ${
-                      d.done ? "bg-green-500" : "bg-red-500"
-                    }`}
-                  />
-                  <span className={d.done ? "text-slate-400 line-through" : "text-slate-700"}>
-                    {d.title}
-                  </span>
-                  <span className="text-xs text-slate-400">
-                    {TASK_STATUS_LABELS[d.status]}
-                  </span>
-                  {canManage && (
-                    <button
-                      onClick={() => removeDependency(d.id)}
-                      className="ml-auto text-xs text-slate-300 hover:text-red-500"
-                      aria-label="Remove blocker"
-                    >
-                      ✕
-                    </button>
-                  )}
-                </li>
-              ))}
+            <ul className="space-y-2">
+              {deps.map((d) => {
+                const pending = d.approval === "pending";
+                const mine = d.requested_by === currentUser.id;
+                return (
+                  <li
+                    key={d.id}
+                    className={
+                      pending
+                        ? "rounded-lg border border-amber-200 bg-amber-50 p-2"
+                        : "rounded-lg border border-transparent p-2"
+                    }
+                  >
+                    <div className="flex items-center gap-2 text-sm">
+                      <span
+                        className={`h-2 w-2 shrink-0 rounded-full ${
+                          pending ? "bg-amber-400" : d.done ? "bg-green-500" : "bg-red-500"
+                        }`}
+                      />
+                      <span
+                        className={d.done ? "text-slate-500 line-through" : "text-slate-700"}
+                      >
+                        {d.title}
+                      </span>
+                      <span className="text-xs text-slate-500">
+                        {TASK_STATUS_LABELS[d.status]}
+                      </span>
+                      {pending && (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                          Awaiting a lead
+                        </span>
+                      )}
+                      {/* A lead removes any blocker; whoever raised one can
+                          take it back while it is still waiting. */}
+                      {(canManageTask || (pending && mine)) && (
+                        <button
+                          onClick={() => removeDependency(d.id)}
+                          className="ml-auto text-xs rounded px-1 text-slate-500 hover:bg-red-50 hover:text-red-600"
+                          aria-label={pending && mine && !canManageTask ? "Withdraw blocker" : "Remove blocker"}
+                        >
+                          {pending && mine && !canManageTask ? "Withdraw" : "✕"}
+                        </button>
+                      )}
+                    </div>
+                    {(d.reason || (pending && d.requester_name)) && (
+                      <p className="mt-1 pl-4 text-xs text-slate-600">
+                        {d.requester_name ? `${d.requester_name}: ` : ""}
+                        {d.reason ? `“${d.reason}”` : "no reason given"}
+                      </p>
+                    )}
+                    {pending && canManageTask && (
+                      <div className="mt-2 pl-4">
+                        {rejecting === d.id ? (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <input
+                              autoFocus
+                              value={rejectNote}
+                              onChange={(e) => setRejectNote(e.target.value)}
+                              placeholder="Why it isn't blocked — they're waiting to hear"
+                              aria-label="Reason for rejecting the blocker"
+                              className="flex-1 rounded-lg border border-slate-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none"
+                            />
+                            <button
+                              onClick={() => decideDependency(d.id, "reject")}
+                              disabled={!rejectNote.trim()}
+                              className="rounded-lg bg-red-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-700 disabled:bg-slate-300"
+                            >
+                              Reject
+                            </button>
+                            <button
+                              onClick={() => {
+                                setRejecting(null);
+                                setRejectNote("");
+                              }}
+                              className="text-xs text-slate-500 hover:text-slate-700"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => decideDependency(d.id, "approve")}
+                              className="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
+                            >
+                              Confirm blocker
+                            </button>
+                            <button
+                              onClick={() => setRejecting(d.id)}
+                              className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                            >
+                              Not blocked
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
-          {canManage && depCandidates.length > 0 && (
-            <div className="mt-2 flex gap-2">
-              <select
-                value={depToAdd}
-                onChange={(e) => setDepToAdd(e.target.value)}
-                className="flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
-              >
-                <option value="">Add a blocking task…</option>
-                {depCandidates.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.title}
-                  </option>
-                ))}
-              </select>
-              <button
-                onClick={addDependency}
-                disabled={!depToAdd}
-                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-              >
-                Add
-              </button>
+          {mayReportBlocker && depCandidates.length > 0 && (
+            <div className="mt-2 space-y-2">
+              <div className="flex gap-2">
+                <select
+                  aria-label="Add a blocking task"
+                  value={depToAdd}
+                  onChange={(e) => setDepToAdd(e.target.value)}
+                  className="flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+                >
+                  <option value="">Add a blocking task…</option>
+                  {depCandidates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.title}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={addDependency}
+                  disabled={!depToAdd}
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                >
+                  Report
+                </button>
+              </div>
+              {depToAdd && (
+                <input
+                  value={depReason}
+                  onChange={(e) => setDepReason(e.target.value)}
+                  maxLength={500}
+                  placeholder="Why does it have to wait? (optional)"
+                  aria-label="Why this task is blocked"
+                  className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+                />
+              )}
+              <p className="text-xs text-slate-500">
+                A project lead confirms it before the task counts as blocked.
+              </p>
             </div>
           )}
         </div>
@@ -668,7 +1184,7 @@ export default function TaskDetailModal({
 
       <dl className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
         <div>
-          <dt className="text-xs text-slate-400">Assignee</dt>
+          <dt className="text-xs text-slate-500">Assignee</dt>
           <dd className="flex items-center gap-1.5 font-medium text-slate-700">
             {currentTask.assignee_name ? (
               <>
@@ -681,24 +1197,25 @@ export default function TaskDetailModal({
           </dd>
         </div>
         <div>
-          <dt className="text-xs text-slate-400">Due date</dt>
+          <dt className="text-xs text-slate-500">Due date</dt>
           <dd className={`font-medium ${overdue ? "text-red-600" : "text-slate-700"}`}>
             {currentTask.due_date ? formatDate(currentTask.due_date) : "—"}
           </dd>
         </div>
         <div>
-          <dt className="text-xs text-slate-400">Created by</dt>
+          <dt className="text-xs text-slate-500">Created by</dt>
           <dd className="font-medium text-slate-700">
             {currentTask.creator_name ?? "—"}
           </dd>
         </div>
         <div>
-          <dt className="text-xs text-slate-400">
-            {canEditExecution ? "Move to" : "Status"}
+          <dt className="text-xs text-slate-500">
+            {canChangeStatus ? "Move to" : "Status"}
           </dt>
           <dd>
-            {canEditExecution ? (
+            {canChangeStatus ? (
               <select
+                aria-label="Task status"
                 value={currentTask.status}
                 onChange={(e) => changeStatus(e.target.value as TaskStatus)}
                 className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none"
@@ -724,61 +1241,82 @@ export default function TaskDetailModal({
 
       {/* Subtasks / checklist */}
       <div className="mt-6 border-t border-slate-100 pt-4">
-        <div className="mb-2 flex items-center justify-between">
+        <div className="mb-2 flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold text-slate-700">
             Checklist {subtasks.length > 0 && `(${subDone}/${subtasks.length})`}
           </h3>
+          {canEditExecution && specPending.length > 0 && (
+            <button
+              type="button"
+              onClick={addChecklistFromSpec}
+              disabled={seedingSpec}
+              title="Add what this task asks for — its expected behaviour and acceptance criteria, or its features and rules — as checklist items"
+              className="shrink-0 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {seedingSpec ? "Adding…" : `+ From specification (${specPending.length})`}
+            </button>
+          )}
         </div>
         {subtasks.length > 0 && (
           <div className="mb-3 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
             <div className="h-full bg-green-500" style={{ width: `${subPct}%` }} />
           </div>
         )}
-        <ul className="space-y-1">
-          {subtasks.map((s) => (
-            <li key={s.id} className="group flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={s.is_done}
-                disabled={!canEditExecution}
-                onChange={() => toggleSubtask(s)}
-                className="h-4 w-4 rounded border-slate-300 disabled:opacity-60"
-              />
-              <span
-                className={`flex-1 text-sm ${
-                  s.is_done ? "text-slate-400 line-through" : "text-slate-700"
-                }`}
-              >
-                {s.title}
-              </span>
-              {canEditExecution && (
-                <button
-                  onClick={() => deleteSubtask(s.id)}
-                  className="text-xs text-slate-300 hover:text-red-500"
-                  aria-label="Delete subtask"
-                >
-                  ✕
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
+        {checklistGroups.map(([source, items]) => (
+          <div key={source || "typed-here"} className="mb-2">
+            {showChecklistGroups && (
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                {source
+                  ? SPEC_LABELS[source as SpecKey]
+                  : "Added on this task"}{" "}
+                <span className="font-normal normal-case text-slate-400">
+                  ({items.filter((i) => i.is_done).length}/{items.length})
+                </span>
+              </p>
+            )}
+            <ul className="space-y-1">
+              {items.map((s) => (
+                <li key={s.id} className="group flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={s.is_done}
+                    disabled={!canEditExecution}
+                    onChange={() => toggleSubtask(s)}
+                    className="h-4 w-4 rounded border-slate-300 disabled:opacity-60"
+                  />
+                  <span
+                    className={`flex-1 text-sm ${
+                      s.is_done ? "text-slate-500 line-through" : "text-slate-700"
+                    }`}
+                  >
+                    {s.title}
+                  </span>
+                  {canEditExecution && (
+                    <button
+                      onClick={() => deleteSubtask(s.id)}
+                      className="text-xs rounded px-1 text-slate-500 hover:bg-red-50 hover:text-red-600"
+                      aria-label="Delete subtask"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+        {/* The checklist is the specification, not a scratch list: items
+            come from what the work was asked to do. To change it, change
+            the specification and press “From specification”. */}
         {canEditExecution && (
-          <form onSubmit={addSubtask} className="mt-2 flex gap-2">
-            <input
-              value={newSub}
-              onChange={(e) => setNewSub(e.target.value)}
-              placeholder="Add a checklist item…"
-              className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
-            />
-            <button
-              type="submit"
-              disabled={!newSub.trim()}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-            >
-              Add
-            </button>
-          </form>
+          <p className="mt-2 text-xs text-slate-500">
+            {subtasks.length === 0
+              ? "No checklist yet — it is built from this task's specification."
+              : "These come from the specification."}{" "}
+            {canManageTask
+              ? "Edit the task to add or reword a point."
+              : "Ask a lead to edit the task if a point is missing."}
+          </p>
         )}
       </div>
 
@@ -794,21 +1332,21 @@ export default function TaskDetailModal({
                 key={a.id}
                 className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-1.5 text-sm"
               >
-                <span className="text-slate-400">📎</span>
+                <span className="text-slate-500">📎</span>
                 <a
                   href={`/api/attachments/${a.id}`}
                   className="truncate font-medium text-indigo-600 hover:underline"
                 >
                   {a.filename}
                 </a>
-                <span className="text-xs text-slate-400">
+                <span className="text-xs text-slate-500">
                   {fmtBytes(Number(a.size_bytes))}
                   {a.uploader_name ? ` · ${a.uploader_name}` : ""}
                 </span>
-                {(canManage || a.uploaded_by === currentUser.id) && (
+                {!readOnly && (canManage || a.uploaded_by === currentUser.id) && (
                   <button
                     onClick={() => deleteAttachment(a.id)}
-                    className="ml-auto text-xs text-slate-300 hover:text-red-500"
+                    className="ml-auto text-xs rounded px-1 text-slate-500 hover:bg-red-50 hover:text-red-600"
                     aria-label="Remove attachment"
                   >
                     ✕
@@ -818,36 +1356,41 @@ export default function TaskDetailModal({
             ))}
           </ul>
         )}
-        <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
-          {uploading ? "Uploading…" : "+ Attach file"}
-          <input
-            type="file"
-            className="hidden"
-            disabled={uploading}
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) uploadFile(f);
-              e.target.value = "";
-            }}
-          />
-        </label>
-        <span className="ml-2 text-xs text-slate-400">Max 10 MB</span>
+        {!readOnly && (
+          <>
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
+              {uploading ? "Uploading…" : "+ Attach file"}
+              <input
+                type="file"
+                className="hidden"
+                disabled={uploading}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) uploadFile(f);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            <span className="ml-2 text-xs text-slate-500">Max 10 MB</span>
+          </>
+        )}
       </div>
 
-      {/* Comments */}
-      <div className="mt-6 border-t border-slate-100 pt-4">
+      {/* Comments — set apart from the checklist above, which has its own
+          input and button and was being mistaken for this one. */}
+      <div className="mt-6 rounded-xl border-2 border-slate-200 bg-slate-50/60 p-4">
         <h3 className="mb-3 text-sm font-semibold text-slate-700">
-          Comments ({comments.length})
+          💬 Comments ({comments.length})
         </h3>
         {loading ? (
-          <p className="text-sm text-slate-400">Loading…</p>
+          <p className="text-sm text-slate-500">Loading…</p>
         ) : comments.length === 0 ? (
-          <p className="text-sm text-slate-400">No comments yet.</p>
+          <p className="text-sm text-slate-500">No comments yet.</p>
         ) : (
           <ul className="space-y-3">
             {comments.map((c) => {
               const mine = c.user_id === currentUser.id;
-              const canDel = mine || canManage;
+              const canDel = !readOnly && (mine || canManage);
               return (
                 <li key={c.id} className="flex gap-2">
                   <Avatar name={c.user_name ?? "?"} size="sm" />
@@ -856,7 +1399,7 @@ export default function TaskDetailModal({
                       <span className="text-sm font-medium text-slate-700">
                         {c.user_name}
                       </span>
-                      <span className="text-xs text-slate-400">
+                      <span className="text-xs text-slate-500">
                         {formatRelative(c.created_at)}
                         {c.edited_at ? " · edited" : ""}
                       </span>
@@ -879,7 +1422,7 @@ export default function TaskDetailModal({
                             setEditingId(null);
                             setEditBody("");
                           }}
-                          className="text-xs text-slate-400 hover:text-slate-600"
+                          className="text-xs text-slate-500 hover:text-slate-600"
                         >
                           Cancel
                         </button>
@@ -890,7 +1433,7 @@ export default function TaskDetailModal({
                           {c.body}
                         </p>
                         {canDel && (
-                          <div className="mt-1 flex gap-3 text-xs text-slate-400">
+                          <div className="mt-1 flex gap-3 text-xs text-slate-500">
                             {mine && (
                               <button
                                 onClick={() => {
@@ -919,9 +1462,12 @@ export default function TaskDetailModal({
           </ul>
         )}
 
-        <form onSubmit={addComment} className="mt-4 flex gap-2">
+        {!readOnly && (
+        <div className="mt-4">
+        <form onSubmit={addComment} className="flex gap-2">
           <div className="relative flex-1">
             <input
+              ref={commentInput}
               value={body}
               onChange={(e) => onBodyChange(e.target.value)}
               placeholder="Write a comment… use @ to mention"
@@ -944,13 +1490,94 @@ export default function TaskDetailModal({
           </div>
           <button
             type="submit"
-            disabled={busy || !body.trim()}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+            // Only ever off while a comment is on its way. An empty box is
+            // answered with a hint, not with a button that looks broken.
+            disabled={busy}
+            className="shrink-0 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-wait disabled:opacity-70"
           >
-            Send
+            {busy ? "Posting…" : "Post comment"}
           </button>
         </form>
+        {commentHint && (
+          <p role="status" className="mt-2 text-xs text-amber-700">
+            Write your comment in the box above, then press Post comment.
+          </p>
+        )}
+        </div>
+        )}
       </div>
     </Modal>
+  );
+}
+
+/** Requested → approved → owner → completed → signed off, with who and when. */
+function ApprovalTrail({ task }: { task: Task }) {
+  const steps: {
+    label: string;
+    who: string | null | undefined;
+    when?: string | null;
+    done: boolean;
+  }[] = [
+    {
+      label: "Requested by",
+      who: task.requester_name,
+      when: task.requested_at,
+      done: Boolean(task.requested_by),
+    },
+    {
+      label: "Approved by",
+      who: task.request_approver_name,
+      when: task.request_approved_at,
+      done: Boolean(task.request_approved_by),
+    },
+    { label: "Assigned owner", who: task.assignee_name, done: Boolean(task.assignee_id) },
+    {
+      label: "Completed",
+      who: task.status === "done" ? task.done_by_name ?? "Done" : null,
+      when: task.completed_at,
+      done: task.status === "done",
+    },
+    {
+      label: "Signed off by",
+      who: task.signer_name,
+      when: task.signed_off_at,
+      done: Boolean(task.signed_off_at),
+    },
+  ];
+  return (
+    <section aria-label="Approval trail" className="mt-4">
+      <h3 className="mb-2 text-sm font-semibold text-slate-700">Approval trail</h3>
+      <ol className="grid grid-cols-1 gap-2 sm:grid-cols-5">
+        {steps.map((s) => (
+          <li
+            key={s.label}
+            className={`min-w-0 rounded-lg border px-2.5 py-2 ${
+              s.done ? "border-emerald-200 bg-emerald-50/60" : "border-dashed border-slate-300"
+            }`}
+          >
+            <div className="flex items-center gap-1.5 text-xs text-slate-600">
+              <span
+                aria-hidden="true"
+                className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] ${
+                  s.done ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-600"
+                }`}
+              >
+                {s.done ? "✓" : ""}
+              </span>
+              {s.label}
+            </div>
+            <div
+              className="mt-0.5 truncate text-sm font-medium text-slate-800"
+              title={s.who ?? undefined}
+            >
+              {s.who || <span className="font-normal text-slate-500">Pending</span>}
+            </div>
+            {s.when && (
+              <div className="text-[11px] text-slate-500">{formatIst(String(s.when))}</div>
+            )}
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }

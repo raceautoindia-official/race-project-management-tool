@@ -1,19 +1,30 @@
 import { NextRequest } from "next/server";
-import { query, DbRow } from "@/lib/db";
-import { requireUser, requireAdmin } from "@/lib/auth";
-import { json, errorResponse, ApiError } from "@/lib/http";
-import { assertProjectAccess, assertProjectManage } from "@/lib/rbac";
+import { query, DbRow, DbResult } from "@/lib/db";
+import { requireUser } from "@/lib/auth";
+import { json, errorResponse, ApiError, conflict, forbidden } from "@/lib/http";
+import {
+  assertProjectAccess,
+  assertProjectManage,
+  completionBlockers,
+  findProject,
+} from "@/lib/rbac";
 import { updateProjectSchema } from "@/lib/validation";
 import { logActivity } from "@/lib/activity";
+import { projectLockReason } from "@/lib/workflow";
+import type { ProjectStatus, RequestStatus } from "@/lib/types";
 
 type Params = { params: Promise<{ id: string }> };
 
 async function projectDetail(projectId: number) {
   const rows = await query<DbRow[]>(
-    `SELECT p.id, p.name, p.description, p.status, p.owner_id,
-            p.created_at, p.updated_at, u.name AS owner_name
+    `SELECT p.id, p.name, p.description, p.status, p.approval_status, p.owner_id,
+            p.requested_by, p.requested_at, p.decided_by, p.decided_at, p.decision_note,
+            p.created_at, p.updated_at, u.name AS owner_name,
+            rq.name AS requester_name, dc.name AS decider_name
      FROM projects p
      LEFT JOIN users u ON u.id = p.owner_id
+     LEFT JOIN users rq ON rq.id = p.requested_by
+     LEFT JOIN users dc ON dc.id = p.decided_by
      WHERE p.id = ? LIMIT 1`,
     [projectId]
   );
@@ -56,6 +67,10 @@ export async function GET(_req: NextRequest, { params }: Params) {
       ...detail,
       myRole: projectRole,
       canManage: user.role === "admin" || projectRole === "lead",
+      readOnlyReason: projectLockReason({
+        status: detail.project.status as ProjectStatus,
+        approval_status: detail.project.approval_status as RequestStatus,
+      }),
     });
   } catch (err) {
     return errorResponse(err);
@@ -69,9 +84,38 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     const projectId = Number(id);
     if (!Number.isInteger(projectId)) throw new ApiError(400, "Invalid id");
 
-    await assertProjectManage(user, projectId);
+    const project = await assertProjectManage(user, projectId);
     const body = await req.json().catch(() => ({}));
     const data = updateProjectSchema.parse(body);
+
+    // Pending/rejected requests are decided via /decision, never edited.
+    if (project.approval_status !== "approved") {
+      throw conflict(
+        projectLockReason({
+          status: project.status as ProjectStatus,
+          approval_status: project.approval_status as RequestStatus,
+        }) ?? "This project is read-only."
+      );
+    }
+    // A completed project is read-only; only an admin may reopen it.
+    const reopening =
+      project.status === "completed" &&
+      data.status !== undefined &&
+      data.status !== "completed";
+    if (project.status === "completed" && !reopening) {
+      throw conflict("This project is completed and read-only.");
+    }
+    if (reopening && user.role !== "admin") {
+      throw forbidden("Only an admin can reopen a completed project");
+    }
+    // Completing requires every task signed off and no open task requests.
+    const completing = data.status === "completed" && project.status !== "completed";
+    if (completing) {
+      const blockers = await completionBlockers(projectId);
+      if (blockers.length) {
+        throw conflict(`The project can't be completed yet: ${blockers.join("; ")}.`);
+      }
+    }
 
     const sets: string[] = [];
     const values: unknown[] = [];
@@ -91,12 +135,36 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       sets.push("owner_id = ?");
       values.push(data.ownerId);
     }
-    values.push(projectId);
-    await query(`UPDATE projects SET ${sets.join(", ")} WHERE id = ?`, values);
+    if (sets.length > 0) {
+      values.push(projectId);
+      // When completing, the blockers are re-checked in the same statement so a
+      // task or request added after the check above can't slip through.
+      const guard = completing
+        ? ` AND NOT EXISTS (SELECT 1 FROM tasks WHERE project_id = ? AND signed_off_at IS NULL)
+            AND NOT EXISTS (SELECT 1 FROM task_requests WHERE project_id = ? AND status = 'pending')`
+        : "";
+      if (completing) values.push(projectId, projectId);
+      const res = (await query<DbResult>(
+        `UPDATE projects SET ${sets.join(", ")} WHERE id = ?${guard}`,
+        values
+      )) as unknown as DbResult;
+      if (completing && res.affectedRows === 0) {
+        const blockers = await completionBlockers(projectId);
+        throw conflict(
+          `The project can't be completed yet: ${blockers.join("; ") || "it changed — reload and try again"}.`
+        );
+      }
+    }
 
+    const statusChanged = data.status !== undefined && data.status !== project.status;
     await logActivity({
       userId: user.id,
-      action: "project.updated",
+      action:
+        statusChanged && data.status === "completed"
+          ? "project.completed"
+          : reopening
+            ? "project.reopened"
+            : "project.updated",
       entityType: "project",
       entityId: projectId,
       metadata: data as Record<string, unknown>,
@@ -109,26 +177,34 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   }
 }
 
+/**
+ * DELETE — an admin may delete any project; the requester may withdraw their
+ * own project request while it is pending or after it was rejected.
+ */
 export async function DELETE(_req: NextRequest, { params }: Params) {
   try {
-    const admin = await requireAdmin();
+    const user = await requireUser();
     const { id } = await params;
     const projectId = Number(id);
     if (!Number.isInteger(projectId)) throw new ApiError(400, "Invalid id");
 
-    const rows = await query<DbRow[]>(
-      `SELECT id FROM projects WHERE id = ? LIMIT 1`,
-      [projectId]
-    );
-    if (!rows.length) throw new ApiError(404, "Project not found");
+    const project = await findProject(projectId);
+    if (!project) throw new ApiError(404, "Project not found");
+
+    const withdrawing =
+      project.approval_status !== "approved" && project.requested_by === user.id;
+    if (user.role !== "admin" && !withdrawing) {
+      throw forbidden("Only an admin can delete a project");
+    }
 
     await query(`DELETE FROM projects WHERE id = ?`, [projectId]);
 
     await logActivity({
-      userId: admin.id,
-      action: "project.deleted",
+      userId: user.id,
+      action: withdrawing && user.role !== "admin" ? "project.request_withdrawn" : "project.deleted",
       entityType: "project",
       entityId: projectId,
+      metadata: { name: project.name },
     });
 
     return json({ ok: true });

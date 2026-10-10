@@ -8,12 +8,15 @@ import { logActivity } from "@/lib/activity";
 export const dynamic = "force-dynamic";
 
 /** GET — list project templates (admin). */
-export async function GET(_req: NextRequest) {
+export async function GET() {
   try {
     await requireAdmin();
     const rows = await query<DbRow[]>(
       `SELECT t.id, t.name, t.description, t.created_at, u.name AS created_by_name,
-              JSON_LENGTH(t.data, '$.tasks') AS task_count
+              JSON_LENGTH(t.data, '$.tasks') AS task_count,
+              JSON_LENGTH(t.data, '$.labels') AS label_count,
+              JSON_LENGTH(t.data, '$.milestones') AS milestone_count,
+              JSON_EXTRACT(t.data, '$.tasks[*].title') AS task_titles
          FROM project_templates t LEFT JOIN users u ON u.id = t.created_by
         ORDER BY t.created_at DESC`
     );

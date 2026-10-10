@@ -1,7 +1,10 @@
 type Cell = string | number | boolean | null | undefined;
 
 function escapeCell(value: Cell): string {
-  const s = value === null || value === undefined ? "" : String(value);
+  let s = value === null || value === undefined ? "" : String(value);
+  // A text cell starting with = + - @ (or tab/CR) would run as a formula in
+  // Excel/Sheets; prefix an apostrophe so it stays text. Numbers are untouched.
+  if (typeof value === "string" && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   if (/[",\n\r]/.test(s)) {
     return `"${s.replace(/"/g, '""')}"`;
   }

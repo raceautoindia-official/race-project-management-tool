@@ -1,16 +1,28 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Archivo, IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
 import "./globals.css";
 import ToastProvider from "@/components/ToastProvider";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+// Headings: a grotesque with slightly condensed proportions, set tight.
+const archivo = Archivo({
+  variable: "--font-archivo",
   subsets: ["latin"],
+  weight: ["600", "700"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+// Everything you read: engineering heritage, and not the face every other
+// dashboard reaches for.
+const plexSans = IBM_Plex_Sans({
+  variable: "--font-plex-sans",
   subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+});
+
+// Figures only — hours, counts, dates in a column.
+const plexMono = IBM_Plex_Mono({
+  variable: "--font-plex-mono",
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
 });
 
 export const metadata: Metadata = {
@@ -24,7 +36,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
+    <html
+      lang="en"
+      className={`${archivo.variable} ${plexSans.variable} ${plexMono.variable}`}
+    >
       <body className="min-h-full antialiased text-slate-900">
         <ToastProvider>{children}</ToastProvider>
       </body>

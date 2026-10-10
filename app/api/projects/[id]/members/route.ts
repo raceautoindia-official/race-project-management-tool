@@ -2,7 +2,11 @@ import { NextRequest } from "next/server";
 import { query, DbRow } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { json, errorResponse, ApiError } from "@/lib/http";
-import { assertProjectAccess, assertProjectManage } from "@/lib/rbac";
+import {
+  assertProjectAccess,
+  assertProjectManage,
+  assertProjectWritable,
+} from "@/lib/rbac";
 import { addMemberSchema } from "@/lib/validation";
 import { logActivity, notify } from "@/lib/activity";
 
@@ -38,6 +42,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (!Number.isInteger(projectId)) throw new ApiError(400, "Invalid id");
 
     const project = await assertProjectManage(user, projectId);
+    assertProjectWritable(project);
     const body = await req.json().catch(() => ({}));
     const data = addMemberSchema.parse(body);
 
@@ -46,6 +51,10 @@ export async function POST(req: NextRequest, { params }: Params) {
       [data.userId]
     );
     if (!exists.length) throw new ApiError(404, "User not found");
+    // The owner is always a lead (DELETE protects them the same way).
+    if (data.userId === project.owner_id && (data.roleInProject ?? "member") !== "lead") {
+      throw new ApiError(400, "The project owner must stay a lead");
+    }
 
     await query(
       `INSERT INTO project_members (project_id, user_id, role_in_project)
@@ -82,6 +91,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     if (!Number.isInteger(projectId)) throw new ApiError(400, "Invalid id");
 
     const project = await assertProjectManage(user, projectId);
+    assertProjectWritable(project);
     const { searchParams } = new URL(req.url);
     const memberId = Number(searchParams.get("userId"));
     if (!Number.isInteger(memberId)) throw new ApiError(400, "Invalid userId");

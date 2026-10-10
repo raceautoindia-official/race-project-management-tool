@@ -2,16 +2,17 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ProjectStatusBadge } from "@/components/Badge";
+import { ProjectStatusBadge, RequestStatusBadge } from "@/components/Badge";
 import LabelChip from "@/components/LabelChip";
 import Avatar from "@/components/Avatar";
 import Calendar from "@/components/Calendar";
 import ExportButton from "@/components/ExportButton";
 import { StatusBar } from "@/components/ProgressBar";
-import { apiFetch } from "@/lib/api-client";
+import { apiFetch, isConflict } from "@/lib/api-client";
 import { useToast } from "@/components/ToastProvider";
 import { statusCounts } from "@/lib/progress";
 import { formatDate, isOverdue } from "@/lib/format";
+import { projectLockReason } from "@/lib/workflow";
 import {
   TASK_STATUSES,
   TASK_STATUS_LABELS,
@@ -19,8 +20,10 @@ import {
   type Milestone,
   type ProjectMember,
   type ProjectStatus,
+  type RequestStatus,
   type Role,
   type Task,
+  type TaskRequest,
   type TaskPriority,
   type TaskStatus,
 } from "@/lib/types";
@@ -32,6 +35,8 @@ import EditProjectModal from "./EditProjectModal";
 import ImportTasksModal from "./ImportTasksModal";
 import TimelineView from "./TimelineView";
 import RecurringTasksModal from "./RecurringTasksModal";
+import TaskRequestsPanel from "./TaskRequestsPanel";
+import ProjectStatusBanner from "./ProjectStatusBanner";
 
 interface PickUser {
   id: number;
@@ -46,6 +51,13 @@ interface ProjectInfo {
   status: ProjectStatus;
   owner_id: number | null;
   owner_name: string | null;
+  approval_status: RequestStatus;
+  requested_by: number | null;
+  requester_name: string | null;
+  requested_at: string | null;
+  decider_name: string | null;
+  decided_at: string | null;
+  decision_note: string | null;
 }
 
 const PRIORITY_ORDER: Record<TaskPriority, number> = {
@@ -63,6 +75,9 @@ export default function ProjectBoard({
   initialMembers,
   initialLabels,
   initialMilestones,
+  initialRequests,
+  openTaskId = null,
+  focus = null,
   allUsers,
   currentUser,
   canManage,
@@ -72,8 +87,13 @@ export default function ProjectBoard({
   initialMembers: ProjectMember[];
   initialLabels: Label[];
   initialMilestones: Milestone[];
+  initialRequests: TaskRequest[];
+  /** Opened as soon as the page loads (a notification linked straight to it). */
+  openTaskId?: number | null;
+  /** The part of that task the notification was about. */
+  focus?: "blockers" | null;
   allUsers: PickUser[];
-  currentUser: { id: number; role: Role };
+  currentUser: { id: number; role: Role; name: string };
   canManage: boolean;
 }) {
   const { toast } = useToast();
@@ -85,12 +105,19 @@ export default function ProjectBoard({
   const [newMs, setNewMs] = useState("");
   const [newMsDate, setNewMsDate] = useState("");
   const [view, setView] = useState<ViewMode>("board");
+  const [requests, setRequests] = useState<TaskRequest[]>(initialRequests);
+  const [raiseOpen, setRaiseOpen] = useState(false);
 
   const [formOpen, setFormOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [followUpParent, setFollowUpParent] = useState<Task | null>(null);
-  const [detailTask, setDetailTask] = useState<Task | null>(null);
-  const [detailOpen, setDetailOpen] = useState(false);
+  // A notification links to the task, not just the board it sits on, so the
+  // thing someone was told about is what they see.
+  const linkedTask = openTaskId
+    ? (initialTasks.find((t) => t.id === openTaskId) ?? null)
+    : null;
+  const [detailTask, setDetailTask] = useState<Task | null>(linkedTask);
+  const [detailOpen, setDetailOpen] = useState(Boolean(linkedTask));
   const [membersOpen, setMembersOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -112,6 +139,14 @@ export default function ProjectBoard({
   const totalEst = tasks.reduce((s, t) => s + Number(t.estimated_hours ?? 0), 0);
   const spentSum = tasks.reduce((s, t) => s + Number(t.spent_hours ?? 0), 0);
   const isAdmin = currentUser.role === "admin";
+  // Pending/rejected requests and completed projects are read-only for everyone.
+  const lockReason = projectLockReason(project);
+  const writable = !lockReason;
+  const canManageWritable = canManage && writable;
+  const readyToComplete =
+    tasks.length > 0 &&
+    tasks.every((t) => t.signed_off_at) &&
+    !requests.some((r) => r.status === "pending");
 
   function upsertTask(task: Task) {
     setTasks((ts) =>
@@ -129,6 +164,10 @@ export default function ProjectBoard({
   async function moveTask(id: number, status: TaskStatus) {
     const current = tasks.find((t) => t.id === id);
     if (!current || current.status === status) return;
+    if (lockReason || current.signed_off_at) {
+      toast(lockReason ?? "This task is signed off and read-only.", "error");
+      return;
+    }
     // Members submit for review; only a lead/admin marks Done.
     if (status === "done" && !canManage) {
       toast("Move it to Review to submit — a lead will mark it Done.", "error");
@@ -144,6 +183,7 @@ export default function ProjectBoard({
       upsertTask(res.task);
     } catch (e) {
       setTasks(snapshot);
+      if (isConflict(e)) void reloadTasks();
       toast(e instanceof Error ? e.message : "Could not move task", "error");
     }
   }
@@ -168,6 +208,30 @@ export default function ProjectBoard({
   function openDetail(task: Task) {
     setDetailTask(task);
     setDetailOpen(true);
+  }
+
+  async function reloadRequests() {
+    try {
+      const res = await apiFetch<{ requests: TaskRequest[] }>(
+        `/api/projects/${project.id}/requests`
+      );
+      setRequests(res.requests);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not refresh requests", "error");
+    }
+  }
+
+  /** Open a task's detail (e.g. from an approved request), loading it if needed. */
+  async function openTaskById(taskId: number) {
+    const known = tasks.find((t) => t.id === taskId);
+    if (known) return openDetail(known);
+    try {
+      const res = await apiFetch<{ task: Task }>(`/api/tasks/${taskId}`);
+      upsertTask(res.task);
+      openDetail(res.task);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not open the task", "error");
+    }
   }
 
   async function reloadTasks() {
@@ -269,20 +333,24 @@ export default function ProjectBoard({
 
   return (
     <div>
-      <div className="mb-2 text-sm text-slate-400">
-        <Link href="/projects" className="hover:text-indigo-600">
+      <div className="mb-2 text-sm text-slate-500">
+        <Link href="/projects" className="inline-block py-1 text-slate-600 hover:text-indigo-600">
           ← Projects
         </Link>
       </div>
 
-      <div className="mb-6 rounded-xl border border-slate-200 bg-white p-5">
+      <div className="mb-6 overflow-hidden rounded-2xl bg-gradient-to-br from-violet-600 via-violet-700 to-fuchsia-800 shadow-lg shadow-slate-900/10">
+        <div className="p-5 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold text-slate-900">{project.name}</h1>
+              <h1 className="text-2xl font-bold text-white sm:text-3xl">{project.name}</h1>
               <ProjectStatusBadge status={project.status} />
+              {project.approval_status !== "approved" && (
+                <RequestStatusBadge status={project.approval_status} />
+              )}
             </div>
-            <p className="mt-1 max-w-2xl text-sm text-slate-500">
+            <p className="mt-1 max-w-[65ch] text-sm text-slate-300">
               {project.description || "No description"}
             </p>
             {project.owner_name && (
@@ -290,87 +358,126 @@ export default function ProjectBoard({
             )}
           </div>
           <div className="flex flex-wrap gap-2">
-            {canManage && (
+            {canManageWritable && (
               <button
                 onClick={openCreate}
-                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
               >
                 + New task
+              </button>
+            )}
+            {writable && !canManage && (
+              <button
+                onClick={() => setRaiseOpen(true)}
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
+              >
+                + Raise request
               </button>
             )}
             <ExportButton href={`/api/projects/${project.id}/tasks/export`} />
             <a
               href={`/api/projects/${project.id}/tasks/xlsx`}
-              className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+              className="on-band rounded-lg border px-3 py-1.5 text-sm font-medium band-sheet"
             >
               Export Excel
             </a>
-            {canManage && (
+            {canManageWritable && (
               <>
                 <a
                   href={`/api/projects/${project.id}/tasks/template`}
-                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                  className="on-band rounded-lg border px-3 py-1.5 text-sm font-medium band-sheet"
                 >
                   Template
                 </a>
                 <button
                   onClick={() => setImportOpen(true)}
-                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                  className="on-band rounded-lg border px-3 py-1.5 text-sm font-medium band-in"
                 >
                   Import Excel
                 </button>
                 <button
                   onClick={() => setRecurringOpen(true)}
-                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                  className="on-band rounded-lg border px-3 py-1.5 text-sm font-medium band-set"
                 >
                   Recurring
                 </button>
                 <button
                   onClick={() => setMembersOpen(true)}
-                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                  className="on-band rounded-lg border px-3 py-1.5 text-sm font-medium band-people"
                 >
                   Members ({members.length})
                 </button>
-                {isAdmin && (
-                  <button
-                    onClick={saveAsTemplate}
-                    disabled={savingTemplate}
-                    className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40"
-                  >
-                    Save as template
-                  </button>
-                )}
                 <button
                   onClick={() => setEditOpen(true)}
-                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                  className="on-band rounded-lg border px-3 py-1.5 text-sm font-medium band-edit"
                 >
                   Edit project
                 </button>
               </>
             )}
+            {isAdmin && project.approval_status === "approved" && (
+              <button
+                onClick={saveAsTemplate}
+                disabled={savingTemplate}
+                className="on-band rounded-lg border px-3 py-1.5 text-sm font-medium band-in disabled:opacity-40"
+              >
+                Save as template
+              </button>
+            )}
           </div>
         </div>
 
         <div className="mt-4">
-          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
             <span>
-              {done}/{total} tasks done ({pct}%)
+              <span className="figure text-sm font-semibold text-white">
+                {done}/{total}
+              </span>{" "}
+              tasks done ({pct}%)
             </span>
             {totalEst > 0 && (
-              <span>
+              <span className="figure">
                 {spentSum}h logged / {totalEst}h estimated
               </span>
             )}
           </div>
           <StatusBar counts={counts} />
         </div>
+        </div>
       </div>
 
-      {(milestones.length > 0 || canManage) && (
+      <ProjectStatusBanner
+        project={project}
+        currentUser={currentUser}
+        canManage={canManage}
+        readyToComplete={readyToComplete}
+        onProjectChange={(patch) => setProject((prev) => ({ ...prev, ...patch }))}
+      />
+
+      <TaskRequestsPanel
+        projectId={project.id}
+        requests={requests}
+        onRequestsChange={setRequests}
+        members={members}
+        currentUserId={currentUser.id}
+        isAdmin={isAdmin}
+        canManage={canManage}
+        writable={writable}
+        raiseOpen={raiseOpen}
+        onRaiseOpenChange={setRaiseOpen}
+        onTaskCreated={upsertTask}
+        onOpenTask={openTaskById}
+        onStale={() => {
+          void reloadRequests();
+          void reloadTasks();
+        }}
+      />
+
+      {(milestones.length > 0 || canManageWritable) && (
         <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4">
           <div className="mb-2 text-sm font-semibold text-slate-700">Milestones</div>
           {milestones.length === 0 ? (
-            <p className="text-xs text-slate-400">No milestones yet.</p>
+            <p className="text-xs text-slate-500">No milestones yet.</p>
           ) : (
             <div className="flex flex-wrap gap-2">
               {milestones.map((m) => (
@@ -382,7 +489,7 @@ export default function ProjectBoard({
                       : "border-slate-200 text-slate-600"
                   }`}
                 >
-                  {canManage ? (
+                  {canManageWritable ? (
                     <input
                       type="checkbox"
                       checked={m.is_done}
@@ -394,12 +501,12 @@ export default function ProjectBoard({
                   )}
                   <span className={m.is_done ? "line-through" : ""}>{m.name}</span>
                   {m.due_date && (
-                    <span className="text-slate-400">· {formatDate(m.due_date)}</span>
+                    <span className="text-slate-500">· {formatDate(m.due_date)}</span>
                   )}
-                  {canManage && (
+                  {canManageWritable && (
                     <button
                       onClick={() => deleteMilestone(m.id)}
-                      className="text-slate-300 hover:text-red-500"
+                      className="rounded px-1 text-slate-500 hover:bg-red-50 hover:text-red-600"
                       aria-label="Remove milestone"
                     >
                       ✕
@@ -409,7 +516,7 @@ export default function ProjectBoard({
               ))}
             </div>
           )}
-          {canManage && (
+          {canManageWritable && (
             <div className="mt-3 flex flex-wrap gap-2">
               <input
                 value={newMs}
@@ -419,6 +526,7 @@ export default function ProjectBoard({
               />
               <input
                 type="date"
+                aria-label="Milestone due date"
                 value={newMsDate}
                 onChange={(e) => setNewMsDate(e.target.value)}
                 className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
@@ -467,7 +575,7 @@ export default function ProjectBoard({
                   <span className="text-sm font-semibold text-slate-700">
                     {TASK_STATUS_LABELS[status]}
                   </span>
-                  <span className="rounded-full bg-white px-2 text-xs font-medium text-slate-500">
+                  <span className="rounded-full bg-white px-2 text-xs font-medium text-slate-600">
                     {colTasks.length}
                   </span>
                 </div>
@@ -476,7 +584,7 @@ export default function ProjectBoard({
                     <TaskCard key={t.id} task={t} onOpen={openDetail} onDragStart={setDraggedId} />
                   ))}
                   {colTasks.length === 0 && (
-                    <p className="px-1 py-4 text-center text-xs text-slate-400">Drop tasks here</p>
+                    <p className="px-1 py-4 text-center text-xs text-slate-500">Drop tasks here</p>
                   )}
                 </div>
               </div>
@@ -502,7 +610,7 @@ export default function ProjectBoard({
           toggleSort={toggleSort}
           sortKey={sortKey}
           sortDir={sortDir}
-          canManage={canManage}
+          canManage={canManageWritable}
           projectId={project.id}
           onBulkDone={reloadTasks}
         />
@@ -530,16 +638,19 @@ export default function ProjectBoard({
         labels={labels}
         task={editingTask}
         parentTask={followUpParent}
+        currentUserId={currentUser.id}
         onSaved={upsertTask}
         onLabelCreated={(l) => setLabels((prev) => [...prev, l])}
       />
       <TaskDetailModal
-        key={`taskdetail-${detailTask?.id ?? "none"}`}
+        key={`taskdetail-${detailTask?.id ?? "none"}-${detailOpen ? "open" : "closed"}`}
         open={detailOpen}
         onClose={() => setDetailOpen(false)}
         task={detailTask}
+        focus={detailTask?.id === openTaskId ? focus : null}
         currentUser={currentUser}
         canManage={canManage}
+        projectReadOnlyReason={lockReason}
         members={members}
         projectTasks={tasks.map((t) => ({
           id: t.id,
@@ -551,7 +662,7 @@ export default function ProjectBoard({
         onChanged={upsertTask}
         onDeleted={removeTask}
       />
-      {canManage && (
+      {canManageWritable && (
         <ImportTasksModal
           open={importOpen}
           onClose={() => setImportOpen(false)}
@@ -559,8 +670,10 @@ export default function ProjectBoard({
           onImported={reloadTasks}
         />
       )}
-      {canManage && (
+      {canManageWritable && (
         <RecurringTasksModal
+          // Remount per opening so it starts in its loading state.
+          key={recurringOpen ? "recurring-open" : "recurring-closed"}
           open={recurringOpen}
           onClose={() => setRecurringOpen(false)}
           projectId={project.id}
@@ -568,7 +681,7 @@ export default function ProjectBoard({
           canManage={canManage}
         />
       )}
-      {canManage && (
+      {canManageWritable && (
         <>
           <MembersModal
             open={membersOpen}
@@ -580,6 +693,8 @@ export default function ProjectBoard({
             onChanged={setMembers}
           />
           <EditProjectModal
+            // Remount per opening so a cancelled change isn't resubmitted later.
+            key={editOpen ? "edit-open" : "edit-closed"}
             open={editOpen}
             onClose={() => setEditOpen(false)}
             project={project}
@@ -637,6 +752,8 @@ function ListView({
   const selectClass =
     "rounded-lg border border-slate-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none";
   const arrow = (k: string) => (sortKey === k ? (sortDir === "asc" ? " ▲" : " ▼") : "");
+  // Signed-off tasks are read-only, so they can't take part in bulk actions.
+  const selectable = tasks.filter((t) => !t.signed_off_at);
 
   function toggleSel(id: number) {
     setSelected((prev) => {
@@ -767,7 +884,7 @@ function ListView({
           </button>
           <button
             onClick={() => setSelected(new Set())}
-            className="text-xs text-slate-500 hover:text-slate-700"
+            className="text-xs text-slate-600 hover:text-slate-700"
           >
             Clear
           </button>
@@ -775,16 +892,17 @@ function ListView({
       )}
 
       <table className="w-full text-left text-sm">
-        <thead className="text-xs uppercase tracking-wide text-slate-400">
+        <thead className="text-xs uppercase tracking-wide text-slate-500">
           <tr>
             {canManage && (
               <th className="w-8 px-3 py-2">
                 <input
                   type="checkbox"
-                  checked={tasks.length > 0 && selected.size === tasks.length}
+                  aria-label="Select all open tasks"
+                  checked={selectable.length > 0 && selected.size === selectable.length}
                   onChange={(e) =>
                     setSelected(
-                      e.target.checked ? new Set(tasks.map((t) => t.id)) : new Set()
+                      e.target.checked ? new Set(selectable.map((t) => t.id)) : new Set()
                     )
                   }
                 />
@@ -808,7 +926,7 @@ function ListView({
         <tbody className="divide-y divide-slate-100">
           {tasks.length === 0 ? (
             <tr>
-              <td colSpan={canManage ? 6 : 5} className="px-4 py-8 text-center text-slate-400">
+              <td colSpan={canManage ? 6 : 5} className="px-4 py-8 text-center text-slate-500">
                 No tasks match these filters.
               </td>
             </tr>
@@ -819,6 +937,8 @@ function ListView({
                   <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"
+                      aria-label={`Select ${t.title}`}
+                      disabled={Boolean(t.signed_off_at)}
                       checked={selected.has(t.id)}
                       onChange={() => toggleSel(t.id)}
                     />
@@ -834,7 +954,12 @@ function ListView({
                     </div>
                   )}
                 </td>
-                <td className="px-4 py-2 text-slate-600">{TASK_STATUS_LABELS[t.status]}</td>
+                <td className="px-4 py-2 text-slate-600">
+                  {TASK_STATUS_LABELS[t.status]}
+                  {t.signed_off_at && (
+                    <span className="ml-1.5 text-xs font-medium text-emerald-700">🔒 Signed off</span>
+                  )}
+                </td>
                 <td className="px-4 py-2 capitalize text-slate-600">{t.priority}</td>
                 <td className="px-4 py-2 text-slate-600">
                   {t.assignee_name ? (

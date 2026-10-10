@@ -3,14 +3,17 @@
 export default function ExportButton({
   href,
   children = "Export CSV",
+  tone = "band-out",
 }: {
   href: string;
   children?: React.ReactNode;
+  /** Which colour it carries on the band. */
+  tone?: string;
 }) {
   return (
     <a
       href={href}
-      className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+      className={`on-band ${tone} rounded-lg border px-3 py-1.5 text-sm font-medium`}
     >
       {children}
     </a>

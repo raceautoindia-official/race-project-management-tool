@@ -8,10 +8,13 @@ import { LABEL_COLORS, labelChipClass, labelSwatchClass } from "@/lib/colors";
 import type {
   Label,
   ProjectMember,
+  SpecColumns,
   Task,
   TaskPriority,
   TaskStatus,
+  WorkType,
 } from "@/lib/types";
+import { pickSpec, specPayload, WorkSpecFields } from "./WorkSpec";
 
 const inputClass =
   "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
@@ -24,6 +27,7 @@ export default function TaskFormModal({
   labels,
   task,
   parentTask,
+  currentUserId,
   onSaved,
   onLabelCreated,
 }: {
@@ -34,6 +38,7 @@ export default function TaskFormModal({
   labels: Label[];
   task?: Task | null;
   parentTask?: Task | null;
+  currentUserId: number;
   onSaved: (task: Task) => void;
   onLabelCreated: (label: Label) => void;
 }) {
@@ -45,6 +50,16 @@ export default function TaskFormModal({
   // each time it opens — no state-syncing effect needed.
   const [title, setTitle] = useState(task?.title ?? "");
   const [description, setDescription] = useState(task?.description ?? "");
+  const [type, setType] = useState<WorkType>(
+    task?.task_type ?? (isEdit ? "general" : "correction")
+  );
+  const [spec, setSpec] = useState<SpecColumns>(pickSpec(task));
+  // Editing keeps the recorded requester (blank if unknown, so it must be
+  // chosen); a follow-up defaults to the parent's requester; new work to you.
+  const [requestedById, setRequestedById] = useState<string>(() => {
+    if (task) return task.requested_by ? String(task.requested_by) : "";
+    return String(parentTask?.requested_by ?? currentUserId);
+  });
   const [status, setStatus] = useState<TaskStatus>(
     (task?.status as TaskStatus) ?? "todo"
   );
@@ -66,6 +81,25 @@ export default function TaskFormModal({
   const [newColor, setNewColor] = useState<string>("indigo");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+
+  const typed = type !== "general";
+  // Legacy notes stay editable after a task is converted to a typed task.
+  const showNotes = typed && Boolean(task?.description);
+  // The requester may be someone outside the member list (e.g. an admin).
+  const requesterOptions =
+    requestedById === "" || members.some((m) => String(m.user_id) === requestedById)
+      ? members
+      : [
+          ...members,
+          {
+            user_id: Number(requestedById),
+            name:
+              task?.requester_name ??
+              (Number(requestedById) === currentUserId
+                ? "You"
+                : parentTask?.requester_name ?? "Requester"),
+          } as ProjectMember,
+        ];
 
   function toggleLabel(id: number) {
     setLabelIds((prev) =>
@@ -97,7 +131,11 @@ export default function TaskFormModal({
     setBusy(true);
     const payload = {
       title,
-      description,
+      // Typed tasks are described by their spec; description stays for legacy ones.
+      ...(typed
+        ? { taskType: type, ...specPayload(type, spec), ...(showNotes ? { description } : {}) }
+        : { description }),
+      requestedById: requestedById === "" ? null : Number(requestedById),
       status,
       priority,
       estimatedHours: estimatedHours === "" ? null : Number(estimatedHours),
@@ -132,10 +170,11 @@ export default function TaskFormModal({
       open={open}
       onClose={onClose}
       title={isEdit ? "Edit task" : parentTask ? "Add follow-up work" : "New task"}
+      widthClass="max-w-2xl"
     >
       <form onSubmit={submit} className="space-y-4">
         {error && (
-          <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+          <div role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}
           </div>
         )}
@@ -145,30 +184,96 @@ export default function TaskFormModal({
             flagged as additional work.
           </div>
         )}
-        <div>
-          <label className="mb-1 block text-sm font-medium text-slate-700">Title</label>
-          <input
-            required
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className={inputClass}
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-sm font-medium text-slate-700">
-            Description
-          </label>
-          <textarea
-            rows={3}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            className={inputClass}
-          />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
+
+        <WorkSpecFields
+          type={type}
+          onTypeChange={setType}
+          spec={spec}
+          onSpecChange={setSpec}
+        >
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Status</label>
+            <label htmlFor="task-title" className="mb-1 block text-sm font-medium text-slate-700">
+              Title <span className="text-red-500">*</span>
+            </label>
+            <input
+              id="task-title"
+              required
+              maxLength={200}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className={inputClass}
+            />
+          </div>
+        </WorkSpecFields>
+        {(!typed || showNotes) && (
+          <div>
+            <label htmlFor="task-description" className="mb-1 block text-sm font-medium text-slate-700">
+              {typed ? (
+                <>
+                  Notes <span className="font-normal text-slate-500">(optional)</span>
+                </>
+              ) : (
+                "Description"
+              )}
+            </label>
+            <textarea
+              id="task-description"
+              rows={3}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className={inputClass}
+            />
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label htmlFor="task-requested-by" className="mb-1 block text-sm font-medium text-slate-700">
+              Requested by <span className="text-red-500">*</span>
+            </label>
             <select
+              id="task-requested-by"
+              required
+              // Part of the approval trail: fixed once the task is Done.
+              disabled={Boolean(task?.status === "done" && task.requested_by)}
+              value={requestedById}
+              onChange={(e) => setRequestedById(e.target.value)}
+              className={inputClass}
+            >
+              {requestedById === "" && <option value="">Choose who requested it…</option>}
+              {requesterOptions.map((m) => (
+                <option key={m.user_id} value={m.user_id}>
+                  {m.name}
+                  {m.user_id === currentUserId && m.name !== "You" ? " (you)" : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="task-assignee" className="mb-1 block text-sm font-medium text-slate-700">
+              Assigned owner {typed && <span className="text-red-500">*</span>}
+            </label>
+            <select
+              id="task-assignee"
+              required={typed}
+              value={assigneeId}
+              onChange={(e) => setAssigneeId(e.target.value)}
+              className={inputClass}
+            >
+              <option value="">{typed ? "Choose an owner…" : "Unassigned"}</option>
+              {members.map((m) => (
+                <option key={m.user_id} value={m.user_id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="task-status" className="mb-1 block text-sm font-medium text-slate-700">
+              Status
+            </label>
+            <select
+              id="task-status"
               value={status}
               onChange={(e) => setStatus(e.target.value as TaskStatus)}
               className={inputClass}
@@ -180,8 +285,11 @@ export default function TaskFormModal({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Priority</label>
+            <label htmlFor="task-priority" className="mb-1 block text-sm font-medium text-slate-700">
+              Priority
+            </label>
             <select
+              id="task-priority"
               value={priority}
               onChange={(e) => setPriority(e.target.value as TaskPriority)}
               className={inputClass}
@@ -193,23 +301,11 @@ export default function TaskFormModal({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Assignee</label>
-            <select
-              value={assigneeId}
-              onChange={(e) => setAssigneeId(e.target.value)}
-              className={inputClass}
-            >
-              <option value="">Unassigned</option>
-              {members.map((m) => (
-                <option key={m.user_id} value={m.user_id}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Start date</label>
+            <label htmlFor="task-start" className="mb-1 block text-sm font-medium text-slate-700">
+              Start date
+            </label>
             <input
+              id="task-start"
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
@@ -217,8 +313,11 @@ export default function TaskFormModal({
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Due date</label>
+            <label htmlFor="task-due" className="mb-1 block text-sm font-medium text-slate-700">
+              Due date
+            </label>
             <input
+              id="task-due"
               type="date"
               value={dueDate}
               onChange={(e) => setDueDate(e.target.value)}
@@ -226,10 +325,11 @@ export default function TaskFormModal({
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">
+            <label htmlFor="task-estimate" className="mb-1 block text-sm font-medium text-slate-700">
               Estimated hours
             </label>
             <input
+              id="task-estimate"
               type="number"
               min="0"
               step="0.5"
@@ -242,7 +342,7 @@ export default function TaskFormModal({
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-slate-700">Labels</label>
+          <span className="mb-1 block text-sm font-medium text-slate-700">Labels</span>
           {labels.length > 0 && (
             <div className="mb-2 flex flex-wrap gap-1.5">
               {labels.map((l) => {
@@ -251,6 +351,7 @@ export default function TaskFormModal({
                   <button
                     key={l.id}
                     type="button"
+                    aria-pressed={selected}
                     onClick={() => toggleLabel(l.id)}
                     className={`rounded px-2 py-0.5 text-xs font-medium ring-1 ring-inset transition ${labelChipClass(l.color)} ${
                       selected ? "" : "opacity-40 hover:opacity-80"
@@ -263,12 +364,13 @@ export default function TaskFormModal({
               })}
             </div>
           )}
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <input
               value={newLabel}
               onChange={(e) => setNewLabel(e.target.value)}
               placeholder="New label…"
-              className="flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+              aria-label="New label name"
+              className="min-w-32 flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
             />
             <div className="flex gap-1">
               {LABEL_COLORS.map((c) => (
@@ -276,7 +378,7 @@ export default function TaskFormModal({
                   key={c}
                   type="button"
                   onClick={() => setNewColor(c)}
-                  className={`h-5 w-5 rounded-full ${labelSwatchClass(c)} ${
+                  className={`h-6 w-6 rounded-full ${labelSwatchClass(c)} ${
                     newColor === c ? "ring-2 ring-slate-400 ring-offset-1" : ""
                   }`}
                   aria-label={c}

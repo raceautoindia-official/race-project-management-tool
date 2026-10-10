@@ -71,7 +71,7 @@ export default function ImportTasksModal({
             {error}
           </div>
         )}
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-slate-600">
           Upload an <strong>.xlsx</strong> file using the{" "}
           <a
             href={`/api/projects/${projectId}/tasks/template`}

@@ -1,13 +1,24 @@
 "use client";
 
-import { TaskPriorityBadge } from "@/components/Badge";
+import { ReadOnlyBadge, TaskPriorityBadge, WorkTypeBadge } from "@/components/Badge";
 import LabelChip from "@/components/LabelChip";
 import Avatar from "@/components/Avatar";
 import { ProgressBar } from "@/components/ProgressBar";
 import { taskProgress } from "@/lib/progress";
 import { formatDate, isOverdue } from "@/lib/format";
 import { formatHM } from "@/lib/tz";
-import type { Task } from "@/lib/types";
+import type { Task, TaskStatus } from "@/lib/types";
+
+/**
+ * A spine down the left in the colour of the state, so a column can be read
+ * without reading any of it. Overdue overrides: a flag outranks progress.
+ */
+const SPINE: Record<TaskStatus, string> = {
+  todo: "bg-slate-300",
+  in_progress: "bg-indigo-600",
+  review: "bg-amber-500",
+  done: "bg-green-600",
+};
 
 export default function TaskCard({
   task,
@@ -24,14 +35,29 @@ export default function TaskCard({
   const progress = taskProgress(task);
   const est = task.estimated_hours != null ? Number(task.estimated_hours) : null;
   const spentH = Number(task.spent_hours ?? 0);
+  const locked = Boolean(task.signed_off_at);
 
   return (
     <div
-      draggable
+      draggable={!locked}
       onDragStart={() => onDragStart(task.id)}
       onClick={() => onOpen(task)}
-      className="cursor-pointer rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition hover:border-indigo-300 hover:shadow"
+      className="relative cursor-pointer overflow-hidden rounded-lg border border-slate-200 bg-white p-3 pl-4 transition hover:border-indigo-400"
     >
+      <span
+        aria-hidden="true"
+        className={`absolute inset-y-0 left-0 w-[3px] ${
+          locked ? "bg-violet-500" : overdue ? "bg-red-500" : SPINE[task.status]
+        }`}
+      />
+      {(locked || (task.task_type && task.task_type !== "general")) && (
+        <div className="mb-2 flex flex-wrap items-center gap-1">
+          {task.task_type && task.task_type !== "general" && (
+            <WorkTypeBadge type={task.task_type} />
+          )}
+          {locked && <ReadOnlyBadge />}
+        </div>
+      )}
       {task.labels && task.labels.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-1">
           {task.labels.map((l) => (
@@ -44,7 +70,7 @@ export default function TaskCard({
         <p className="text-sm font-medium text-slate-800">
           {Boolean(task.is_additional) && (
             <span className="mr-1 rounded bg-violet-100 px-1 text-[10px] font-semibold text-violet-700">
-              +ADD
+              EXTRA
             </span>
           )}
           {task.title}
@@ -52,7 +78,7 @@ export default function TaskCard({
         <TaskPriorityBadge priority={task.priority} />
       </div>
 
-      <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+      <div className="mt-2 flex items-center justify-between text-xs text-slate-600">
         <div className="flex min-w-0 items-center gap-1.5">
           {task.assignee_name ? (
             <>
@@ -60,12 +86,12 @@ export default function TaskCard({
               <span className="truncate">{task.assignee_name}</span>
             </>
           ) : (
-            <span className="text-slate-400">Unassigned</span>
+            <span className="text-slate-500">Unassigned</span>
           )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {(est != null || spentH > 0) && (
-            <span className="text-slate-400" title="Logged / estimated time">
+            <span className="text-slate-500" title="Logged / estimated time">
               ⏱ {formatHM(spentH)}
               {est != null ? ` / ${formatHM(est)}` : ""}
             </span>
@@ -76,7 +102,7 @@ export default function TaskCard({
             </span>
           )}
           {(task.comment_count ?? 0) > 0 && (
-            <span className="text-slate-400">💬 {task.comment_count}</span>
+            <span className="text-slate-500">💬 {task.comment_count}</span>
           )}
           {task.due_date && (
             <span className={overdue ? "font-medium text-red-600" : ""}>
