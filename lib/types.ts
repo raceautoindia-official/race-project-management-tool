@@ -320,5 +320,9 @@ export interface ProjectTemplate {
   created_by: number | null;
   created_by_name?: string | null;
   task_count?: number;
+  label_count?: number;
+  milestone_count?: number;
+  /** The task titles, so a card can show what is actually in it. */
+  task_titles?: string[] | string | null;
   created_at?: string;
 }

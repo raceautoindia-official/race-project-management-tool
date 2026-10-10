@@ -6,6 +6,7 @@ import Modal from "./Modal";
 import { apiFetch } from "@/lib/api-client";
 import { useToast } from "./ToastProvider";
 import type { ProjectTemplate } from "@/lib/types";
+import TemplatePicker from "@/components/TemplatePicker";
 
 interface PickUser {
   id: number;
@@ -141,27 +142,16 @@ export default function NewProjectButton({
           )}
           {isAdmin && templates.length > 0 && (
             <div>
-              <label htmlFor="project-template" className="mb-1 block text-sm font-medium text-slate-700">
-                Start from
-              </label>
-              <select
-                id="project-template"
+              <TemplatePicker
+                templates={templates}
                 value={templateId}
-                onChange={(e) => setTemplateId(e.target.value)}
-                className={inputClass}
-              >
-                <option value="">Blank project</option>
-                {templates.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                    {t.task_count != null ? ` (${t.task_count} tasks)` : ""}
-                  </option>
-                ))}
-              </select>
+                onChange={setTemplateId}
+              />
               {usingTemplate && (
-                <p className="mt-1 text-xs text-slate-500">
-                  Labels, tasks and milestones from the template are copied into
-                  the new project.
+                <p className="mt-2 rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-900">
+                  Its labels, tasks and milestones are copied into the new project.
+                  Nothing is linked afterwards — change either without touching the
+                  other.
                 </p>
               )}
             </div>
