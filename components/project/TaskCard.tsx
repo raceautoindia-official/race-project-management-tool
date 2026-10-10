@@ -7,7 +7,18 @@ import { ProgressBar } from "@/components/ProgressBar";
 import { taskProgress } from "@/lib/progress";
 import { formatDate, isOverdue } from "@/lib/format";
 import { formatHM } from "@/lib/tz";
-import type { Task } from "@/lib/types";
+import type { Task, TaskStatus } from "@/lib/types";
+
+/**
+ * A spine down the left in the colour of the state, so a column can be read
+ * without reading any of it. Overdue overrides: a flag outranks progress.
+ */
+const SPINE: Record<TaskStatus, string> = {
+  todo: "bg-slate-300",
+  in_progress: "bg-indigo-600",
+  review: "bg-amber-500",
+  done: "bg-green-600",
+};
 
 export default function TaskCard({
   task,
@@ -31,8 +42,14 @@ export default function TaskCard({
       draggable={!locked}
       onDragStart={() => onDragStart(task.id)}
       onClick={() => onOpen(task)}
-      className="cursor-pointer rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition hover:border-indigo-300 hover:shadow"
+      className="relative cursor-pointer overflow-hidden rounded-lg border border-slate-200 bg-white p-3 pl-4 transition hover:border-indigo-400"
     >
+      <span
+        aria-hidden="true"
+        className={`absolute inset-y-0 left-0 w-[3px] ${
+          locked ? "bg-violet-500" : overdue ? "bg-red-500" : SPINE[task.status]
+        }`}
+      />
       {(locked || (task.task_type && task.task_type !== "general")) && (
         <div className="mb-2 flex flex-wrap items-center gap-1">
           {task.task_type && task.task_type !== "general" && (
@@ -53,7 +70,7 @@ export default function TaskCard({
         <p className="text-sm font-medium text-slate-800">
           {Boolean(task.is_additional) && (
             <span className="mr-1 rounded bg-violet-100 px-1 text-[10px] font-semibold text-violet-700">
-              +ADD
+              EXTRA
             </span>
           )}
           {task.title}

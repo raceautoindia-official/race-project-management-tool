@@ -339,28 +339,29 @@ export default function ProjectBoard({
         </Link>
       </div>
 
-      <div className="mb-6 rounded-xl border border-slate-200 bg-white p-5">
+      <div className="mb-6 overflow-hidden rounded-lg bg-slate-900 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800">
+        <div className="p-5 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold text-slate-900">{project.name}</h1>
+              <h1 className="text-2xl font-bold text-white sm:text-3xl">{project.name}</h1>
               <ProjectStatusBadge status={project.status} />
               {project.approval_status !== "approved" && (
                 <RequestStatusBadge status={project.approval_status} />
               )}
             </div>
-            <p className="mt-1 max-w-2xl text-sm text-slate-600">
+            <p className="mt-1 max-w-[65ch] text-sm text-slate-300">
               {project.description || "No description"}
             </p>
             {project.owner_name && (
-              <p className="mt-1 text-xs text-slate-500">Owner: {project.owner_name}</p>
+              <p className="mt-1 text-xs text-slate-400">Owner: {project.owner_name}</p>
             )}
           </div>
           <div className="flex flex-wrap gap-2">
             {canManageWritable && (
               <button
                 onClick={openCreate}
-                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
               >
                 + New task
               </button>
@@ -368,7 +369,7 @@ export default function ProjectBoard({
             {writable && !canManage && (
               <button
                 onClick={() => setRaiseOpen(true)}
-                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
               >
                 + Raise request
               </button>
@@ -376,7 +377,7 @@ export default function ProjectBoard({
             <ExportButton href={`/api/projects/${project.id}/tasks/export`} />
             <a
               href={`/api/projects/${project.id}/tasks/xlsx`}
-              className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+              className="on-band rounded-lg border px-3 py-1.5 text-sm font-medium band-sheet"
             >
               Export Excel
             </a>
@@ -384,31 +385,31 @@ export default function ProjectBoard({
               <>
                 <a
                   href={`/api/projects/${project.id}/tasks/template`}
-                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                  className="on-band rounded-lg border px-3 py-1.5 text-sm font-medium band-sheet"
                 >
                   Template
                 </a>
                 <button
                   onClick={() => setImportOpen(true)}
-                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                  className="on-band rounded-lg border px-3 py-1.5 text-sm font-medium band-in"
                 >
                   Import Excel
                 </button>
                 <button
                   onClick={() => setRecurringOpen(true)}
-                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                  className="on-band rounded-lg border px-3 py-1.5 text-sm font-medium band-set"
                 >
                   Recurring
                 </button>
                 <button
                   onClick={() => setMembersOpen(true)}
-                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                  className="on-band rounded-lg border px-3 py-1.5 text-sm font-medium band-people"
                 >
                   Members ({members.length})
                 </button>
                 <button
                   onClick={() => setEditOpen(true)}
-                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                  className="on-band rounded-lg border px-3 py-1.5 text-sm font-medium band-edit"
                 >
                   Edit project
                 </button>
@@ -418,7 +419,7 @@ export default function ProjectBoard({
               <button
                 onClick={saveAsTemplate}
                 disabled={savingTemplate}
-                className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                className="on-band rounded-lg border px-3 py-1.5 text-sm font-medium band-in disabled:opacity-40"
               >
                 Save as template
               </button>
@@ -427,18 +428,23 @@ export default function ProjectBoard({
         </div>
 
         <div className="mt-4">
-          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
+          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
             <span>
-              {done}/{total} tasks done ({pct}%)
+              <span className="figure text-sm font-semibold text-white">
+                {done}/{total}
+              </span>{" "}
+              tasks done ({pct}%)
             </span>
             {totalEst > 0 && (
-              <span>
+              <span className="figure">
                 {spentSum}h logged / {totalEst}h estimated
               </span>
             )}
           </div>
           <StatusBar counts={counts} />
         </div>
+        </div>
+        <div className="h-1 bg-indigo-600" />
       </div>
 
       <ProjectStatusBanner

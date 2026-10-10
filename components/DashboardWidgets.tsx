@@ -11,6 +11,14 @@ const TONE_INK: Record<Tone, string> = {
   good: "text-green-600",
 };
 
+/** The rule across the top of a tile, in the colour of what it is saying. */
+const TONE_RULE: Record<Tone, string> = {
+  default: "bg-slate-200",
+  warn: "bg-amber-500",
+  danger: "bg-red-500",
+  good: "bg-green-600",
+};
+
 /** A KPI stat tile, optionally a link, with a tone that only "lights up" a
  *  metric that needs attention (non-zero overdue/outstanding). */
 export function KpiTile({
@@ -27,10 +35,15 @@ export function KpiTile({
   tone?: Tone;
 }) {
   const inner = (
-    <div className="h-full rounded-xl border border-slate-200 bg-white p-5 transition hover:border-indigo-300 hover:shadow-sm">
-      <div className="text-sm font-medium text-slate-600">{label}</div>
-      <div className={`mt-2 text-3xl font-bold ${TONE_INK[tone]}`}>{value}</div>
-      {hint && <div className="mt-1 text-xs text-slate-500">{hint}</div>}
+    <div className="h-full overflow-hidden rounded-lg border border-slate-200 bg-white transition hover:border-indigo-400">
+      <div className={`h-1 ${TONE_RULE[tone]}`} />
+      <div className="p-5">
+        <div className="text-sm font-medium text-slate-600">{label}</div>
+        <div className={`figure mt-2 text-3xl font-semibold ${TONE_INK[tone]}`}>
+          {value}
+        </div>
+        {hint && <div className="mt-1 text-xs text-slate-500">{hint}</div>}
+      </div>
     </div>
   );
   return href ? (
