@@ -17,6 +17,8 @@ interface NavUser {
   role: Role;
 }
 
+import { sectionTheme } from "@/lib/section-theme";
+
 const MEMBER_LINKS = [
   { href: "/dashboard", label: "Dashboard", icon: "▦" },
   { href: "/projects", label: "Projects", icon: "▢" },
@@ -65,17 +67,24 @@ export default function AppShell({
 
   function NavLink({ href, label, icon }: { href: string; label: string; icon: string }) {
     const active = pathname === href || pathname.startsWith(href + "/");
+    const theme = sectionTheme(href);
     return (
       <Link
         href={href}
         onClick={() => setSidebarOpen(false)}
-        className={`relative flex items-center gap-3 rounded-r-lg py-2 pl-4 pr-3 text-sm font-medium transition before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:rounded-r before:content-[''] ${
+        className={`group relative flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition ${
           active
-            ? "bg-white/10 text-white before:bg-indigo-500"
-            : "text-slate-300 before:bg-transparent hover:bg-white/5 hover:text-white"
+            ? "bg-white/15 text-white shadow-sm"
+            : "text-slate-300 hover:bg-white/10 hover:text-white"
         }`}
       >
-        <span className="w-4 text-center">{icon}</span>
+        <span
+          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br text-[13px] text-white transition ${theme.band} ${
+            active ? "" : "opacity-85 group-hover:opacity-100"
+          }`}
+        >
+          {icon}
+        </span>
         {label}
       </Link>
     );
@@ -91,7 +100,7 @@ export default function AppShell({
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-60 shrink-0 flex-col bg-slate-900 transition-transform md:static md:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 flex w-64 shrink-0 flex-col bg-slate-900 bg-gradient-to-b from-slate-900 via-slate-900 to-indigo-950 transition-transform md:static md:translate-x-0 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -107,7 +116,7 @@ export default function AppShell({
             ✕
           </button>
         </div>
-        <nav className="flex flex-1 flex-col gap-1 px-3">
+        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 pb-4">
           {MEMBER_LINKS.map((l) => (
             <NavLink key={l.href} {...l} />
           ))}

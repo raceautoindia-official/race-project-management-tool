@@ -339,7 +339,7 @@ export default function ProjectBoard({
         </Link>
       </div>
 
-      <div className="mb-6 overflow-hidden rounded-lg bg-slate-900 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800">
+      <div className="mb-6 overflow-hidden rounded-2xl bg-gradient-to-br from-violet-600 via-violet-700 to-fuchsia-800 shadow-lg shadow-slate-900/10">
         <div className="p-5 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
@@ -444,7 +444,6 @@ export default function ProjectBoard({
           <StatusBar counts={counts} />
         </div>
         </div>
-        <div className="h-1 bg-indigo-600" />
       </div>
 
       <ProjectStatusBanner

@@ -11,12 +11,12 @@ const TONE_INK: Record<Tone, string> = {
   good: "text-green-600",
 };
 
-/** The rule across the top of a tile, in the colour of what it is saying. */
-const TONE_RULE: Record<Tone, string> = {
-  default: "bg-slate-200",
-  warn: "bg-amber-500",
-  danger: "bg-red-500",
-  good: "bg-green-600",
+/** A tile is washed in the colour of what it is saying. */
+const TONE_SURFACE: Record<Tone, string> = {
+  default: "bg-white ring-slate-200 hover:ring-indigo-300",
+  warn: "bg-amber-50 ring-amber-200 hover:ring-amber-400",
+  danger: "bg-rose-50 ring-rose-200 hover:ring-rose-400",
+  good: "bg-emerald-50 ring-emerald-200 hover:ring-emerald-400",
 };
 
 /** A KPI stat tile, optionally a link, with a tone that only "lights up" a
@@ -35,15 +35,14 @@ export function KpiTile({
   tone?: Tone;
 }) {
   const inner = (
-    <div className="h-full overflow-hidden rounded-lg border border-slate-200 bg-white transition hover:border-indigo-400">
-      <div className={`h-1 ${TONE_RULE[tone]}`} />
-      <div className="p-5">
-        <div className="text-sm font-medium text-slate-600">{label}</div>
-        <div className={`figure mt-2 text-3xl font-semibold ${TONE_INK[tone]}`}>
-          {value}
-        </div>
-        {hint && <div className="mt-1 text-xs text-slate-500">{hint}</div>}
+    <div
+      className={`h-full rounded-2xl p-5 ring-1 transition ${TONE_SURFACE[tone]}`}
+    >
+      <div className="text-sm font-medium text-slate-600">{label}</div>
+      <div className={`figure mt-2 text-3xl font-semibold ${TONE_INK[tone]}`}>
+        {value}
       </div>
+      {hint && <div className="mt-1 text-xs text-slate-500">{hint}</div>}
     </div>
   );
   return href ? (
