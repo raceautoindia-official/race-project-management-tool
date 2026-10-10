@@ -23,6 +23,7 @@ test("a member keeps their own, and the admin can see it", async ({ browser }) =
   await member.getByRole("button", { name: "+ Add login" }).click();
   const form = member.getByRole("dialog", { name: "Add a login" });
   await form.getByRole("textbox", { name: /^Name/ }).fill("My own webmail");
+  await form.getByLabel(/^Username/).fill("sam-webmail");
   await form.getByLabel(/^Password/).fill("mine-alone");
   await form.getByRole("button", { name: "Add login" }).click();
   await expect(form).toBeHidden();
@@ -55,6 +56,11 @@ test("an admin saves a login and reads it back", async () => {
   await form.getByLabel(/^Website/).fill("https://portal.example.com/login");
   await form.getByLabel(/^Username/).fill("race-admin");
   await form.getByLabel(/^Password/).fill(PASSWORD);
+  // Whatever else the site asks for, named here rather than squeezed into
+  // the notes.
+  await form.getByRole("button", { name: "+ Add a field" }).click();
+  await form.getByLabel("Field 1 name").fill("Account ID");
+  await form.getByLabel("Field 1 value").fill("RACE-10294");
   await form.getByLabel(/^Notes/).fill("Security question: first car");
   await form.getByRole("button", { name: "Add login" }).click();
   await expect(form).toBeHidden();
@@ -66,6 +72,7 @@ test("an admin saves a login and reads it back", async () => {
 
   await admin.getByRole("button", { name: "Show password" }).click();
   await expect(admin.getByText(PASSWORD)).toBeVisible();
+  await expect(admin.getByText("RACE-10294")).toBeVisible();
   await expect(admin.getByText("Security question: first car")).toBeVisible();
 
   await admin.getByRole("button", { name: "Hide" }).click();

@@ -45,7 +45,8 @@ export function canManageCredential(
 export async function listCredentials(user: User): Promise<DbRow[]> {
   return query<DbRow[]>(
     `SELECT c.id, c.name, c.url, c.username, c.project_id, c.visibility, c.updated_at,
-            c.created_by, p.name AS project_name, u.name AS updated_by_name,
+            c.created_by, (c.fields_cipher IS NOT NULL) AS has_fields,
+            p.name AS project_name, u.name AS updated_by_name,
             o.name AS owner_name,
             (SELECT COUNT(*) FROM credential_views v WHERE v.credential_id = c.id) AS views,
             (SELECT MAX(v.viewed_at) FROM credential_views v WHERE v.credential_id = c.id) AS last_viewed,
@@ -68,7 +69,8 @@ export async function findVisibleCredential(
   credentialId: number
 ): Promise<DbRow | null> {
   const rows = await query<DbRow[]>(
-    `SELECT c.id, c.name, c.username, c.password_cipher, c.notes_cipher, c.created_by
+    `SELECT c.id, c.name, c.username, c.password_cipher, c.notes_cipher,
+            c.fields_cipher, c.created_by
        FROM credentials c
       WHERE c.id = ? AND ${VISIBILITY_SQL}
       LIMIT 1`,

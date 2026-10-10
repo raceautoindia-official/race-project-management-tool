@@ -136,7 +136,7 @@ describe("the admin credentials vault", () => {
     actAs(admin);
     const made = await call<{ id: number }>(credentials.POST, {
       method: "POST",
-      body: { name: "Temporary", password: "short-lived" },
+      body: { name: "Temporary", username: "u", password: "short-lived" },
     });
     await call(reveal.POST, { method: "POST", id: made.body.id });
     await call(credential.DELETE, { method: "DELETE", id: made.body.id });
@@ -156,7 +156,7 @@ describe("the admin credentials vault", () => {
     actAs(admin);
     const res = await call<Json>(credentials.POST, {
       method: "POST",
-      body: { name: "Nowhere safe", password: "x" },
+      body: { name: "Nowhere safe", username: "u", password: "x" },
     });
     // Not a fallback to plaintext.
     expect(res.status).toBe(503);
@@ -172,7 +172,7 @@ describe("the admin credentials vault", () => {
     actAs(admin);
     const made = await call<{ id: number }>(credentials.POST, {
       method: "POST",
-      body: { name: "Saved under the old key", password: "unreadable-soon" },
+      body: { name: "Saved under the old key", username: "u", password: "unreadable-soon" },
     });
     process.env.CREDENTIALS_KEY = "b".repeat(64);
     const res = await call<Json>(reveal.POST, { method: "POST", id: made.body.id });
@@ -192,6 +192,7 @@ describe("sharing a login with the people who need it", () => {
       method: "POST",
       body: {
         name: "Project hosting",
+        username: "hosting-admin",
         password: "shared-with-the-project",
         projectId,
         visibility: "project",
@@ -220,7 +221,7 @@ describe("sharing a login with the people who need it", () => {
     actAs(admin);
     const res = await call<Json>(credentials.POST, {
       method: "POST",
-      body: { name: "Nobody", password: "x", visibility: "project" },
+      body: { name: "Nobody", username: "u", password: "x", visibility: "project" },
     });
     expect(res.status).toBe(400);
     expect(res.body.error).toContain("project");
@@ -232,6 +233,7 @@ describe("sharing a login with the people who need it", () => {
       method: "POST",
       body: {
         name: "Client webmail",
+        username: "webmail-user",
         password: "for-two-people",
         visibility: "people",
         userIds: [member.id],
@@ -288,7 +290,7 @@ describe("the vault is everyone's store, and the admin sees all of it", () => {
     actAs(member);
     const res = await call<{ id: number }>(credentials.POST, {
       method: "POST",
-      body: { name: "Member's webmail", password: "mine-alone" },
+      body: { name: "Members webmail", username: "sam", password: "mine-alone" },
     });
     expect(res.status).toBe(201);
     theirs = res.body.id;
@@ -348,6 +350,7 @@ describe("the vault is everyone's store, and the admin sees all of it", () => {
       method: "POST",
       body: {
         name: "Shared by a member",
+        username: "member",
         password: "for-the-lead",
         visibility: "people",
         userIds: [lead.id],
@@ -359,5 +362,94 @@ describe("the vault is everyone's store, and the admin sees all of it", () => {
       id: made.body.id,
     });
     expect(shown.body.password).toBe("for-the-lead");
+  });
+});
+
+describe("whatever else a login needs", () => {
+  let extraId: number;
+
+  it("keeps named fields, encrypted like the password", async () => {
+    actAs(admin);
+    const made = await call<{ id: number }>(credentials.POST, {
+      method: "POST",
+      body: {
+        name: "Dealer portal with an account",
+        username: "race-admin",
+        password: "hunter2",
+        fields: [
+          { label: "Account ID", value: "RACE-10294" },
+          { label: "Registered email", value: "ops@example.com" },
+        ],
+      },
+    });
+    expect(made.status).toBe(201);
+    extraId = made.body.id;
+
+    const [row] = await query<DbRow[]>(
+      `SELECT fields_cipher FROM credentials WHERE id = ?`,
+      [extraId]
+    );
+    // An account number is not a secret on its own; next to the password it
+    // is half of one.
+    expect(String(row.fields_cipher)).not.toContain("RACE-10294");
+    expect(String(row.fields_cipher).startsWith("v1:")).toBe(true);
+  });
+
+  it("hands them back with the password, and not before", async () => {
+    actAs(admin);
+    const listed = await call<{ credentials: Record<string, unknown>[] }>(
+      credentials.GET,
+      {}
+    );
+    const entry = listed.body.credentials.find((c) => c.id === extraId)!;
+    expect(JSON.stringify(entry)).not.toContain("RACE-10294");
+    // The listing says there are some, without saying what they are.
+    expect(Number(entry.has_fields)).toBe(1);
+
+    const shown = await call<{ fields: { label: string; value: string }[] }>(
+      reveal.POST,
+      { method: "POST", id: extraId }
+    );
+    expect(shown.body.fields).toEqual([
+      { label: "Account ID", value: "RACE-10294" },
+      { label: "Registered email", value: "ops@example.com" },
+    ]);
+  });
+
+  it("leaves them alone when an edit does not mention them", async () => {
+    actAs(admin);
+    await call(credential.PATCH, {
+      method: "PATCH",
+      id: extraId,
+      body: { name: "Dealer portal (renamed)" },
+    });
+    const shown = await call<{ fields: { label: string }[] }>(reveal.POST, {
+      method: "POST",
+      id: extraId,
+    });
+    expect(shown.body.fields).toHaveLength(2);
+  });
+
+  it("replaces them when an edit does", async () => {
+    actAs(admin);
+    await call(credential.PATCH, {
+      method: "PATCH",
+      id: extraId,
+      body: { fields: [{ label: "Customer number", value: "C-77" }] },
+    });
+    const shown = await call<{ fields: { label: string; value: string }[] }>(
+      reveal.POST,
+      { method: "POST", id: extraId }
+    );
+    expect(shown.body.fields).toEqual([{ label: "Customer number", value: "C-77" }]);
+  });
+
+  it("will not save a login with no username to go with the password", async () => {
+    actAs(admin);
+    const res = await call<Json>(credentials.POST, {
+      method: "POST",
+      body: { name: "Half an answer", password: "x" },
+    });
+    expect(res.status).toBe(400);
   });
 });

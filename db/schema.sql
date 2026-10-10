@@ -400,6 +400,7 @@ CREATE TABLE IF NOT EXISTS credentials (
   username         VARCHAR(255) NULL,
   password_cipher  TEXT NOT NULL,                    -- v1:iv:tag:ciphertext
   notes_cipher     TEXT NULL,                        -- notes hold secrets too
+  fields_cipher    TEXT NULL,                        -- extra named fields, JSON, encrypted
   -- Who can see it: admins only, everyone on its project, or named people.
   visibility       ENUM('admins','project','people') NOT NULL DEFAULT 'admins',
   project_id       INT NULL,                         -- for grouping only

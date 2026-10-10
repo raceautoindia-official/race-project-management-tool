@@ -46,9 +46,11 @@ export async function POST(_req: NextRequest, { params }: Params) {
 
     let password: string;
     let notes: string | null = null;
+    let fields: { label: string; value: string }[] = [];
     try {
       password = decryptSecret(String(row.password_cipher));
       if (row.notes_cipher) notes = decryptSecret(String(row.notes_cipher));
+      if (row.fields_cipher) fields = JSON.parse(decryptSecret(String(row.fields_cipher)));
     } catch {
       // A changed key, or a row that has been altered. Say which it looks
       // like rather than returning something that is not the password.
@@ -66,7 +68,7 @@ export async function POST(_req: NextRequest, { params }: Params) {
       [credentialId, row.name, user.id]
     );
 
-    return json({ username: row.username ?? null, password, notes });
+    return json({ username: row.username ?? null, password, notes, fields });
   } catch (err) {
     return errorResponse(err);
   }

@@ -393,10 +393,17 @@ export const instantiateTemplateSchema = z.object({
 });
 
 // ---- Admin credentials vault (website logins) ----
+/** A named field on a login: "Account ID", "Registered email". */
+const credentialExtraField = z.object({
+  label: z.string().min(1).max(60),
+  value: z.string().max(500),
+});
+
 const credentialFields = {
   name: z.string().min(1).max(200),
   url: z.string().max(500).optional().nullable(),
-  username: z.string().max(255).optional().nullable(),
+  // Required: a password with no user to go with it is half an answer.
+  username: z.string().min(1).max(255),
   /** Stored encrypted. Long enough for a generated passphrase. */
   password: z.string().min(1).max(500),
   notes: z.string().max(2000).optional().nullable(),
@@ -404,6 +411,8 @@ const credentialFields = {
   /** Who can see it: admins only, everyone on its project, or named people. */
   visibility: z.enum(["admins", "project", "people"]).optional(),
   userIds: z.array(z.coerce.number().int().positive()).max(200).optional(),
+  /** Anything else the site asks for, named by whoever saved it. */
+  fields: z.array(credentialExtraField).max(20).optional(),
 };
 
 export const credentialSchema = z.object(credentialFields);
@@ -415,10 +424,11 @@ export const credentialSchema = z.object(credentialFields);
 export const credentialUpdateSchema = z.object({
   name: credentialFields.name.optional(),
   url: credentialFields.url,
-  username: credentialFields.username,
+  username: credentialFields.username.optional(),
   password: z.string().max(500).optional(),
   notes: credentialFields.notes,
   projectId: optionalId.optional(),
   visibility: credentialFields.visibility,
   userIds: credentialFields.userIds,
+  fields: credentialFields.fields,
 });

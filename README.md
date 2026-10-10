@@ -366,6 +366,10 @@ CREDENTIALS_KEY=<the 64 hex characters>
   a project, or named people. Enforced on the server, not just hidden in the interface —
   and a login that is not in your list cannot be revealed to you, because the list and
   the reveal ask the database the same question.
+- **A name, a username and a password**, plus **as many named fields as the site asks
+  for** — an account ID, the email it is registered to, a customer number. Those are
+  encrypted too: an account number is not a secret on its own, but next to the password
+  it is half of one.
 - **The list never carries a secret.** Reading a password is a separate POST, and it is
   recorded: who read what, when, shown under *Recently read* on the same page.
 - **No plaintext fallback.** With no `CREDENTIALS_KEY`, the vault refuses to store

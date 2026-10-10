@@ -77,6 +77,13 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       sets.push("notes_cipher = ?");
       values.push(data.notes ? encryptSecret(data.notes) : null);
     }
+    if (data.fields !== undefined) {
+      if (data.fields.length && !secretsConfigured()) {
+        throw new ApiError(503, secretsProblem() ?? "Credentials storage is not configured");
+      }
+      sets.push("fields_cipher = ?");
+      values.push(data.fields.length ? encryptSecret(JSON.stringify(data.fields)) : null);
+    }
     // Changing only who it is shared with changes nothing on the row itself.
     const changingPeople = data.visibility === "people" || data.userIds !== undefined;
     if (!sets.length && !changingPeople) throw new ApiError(400, "Nothing to change");

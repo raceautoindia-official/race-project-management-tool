@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Modal from "@/components/Modal";
 import { apiFetch } from "@/lib/api-client";
 import { useToast } from "@/components/ToastProvider";
@@ -18,6 +18,8 @@ export interface VaultEntry {
   visibility: Visibility;
   /** Who saved it — theirs to change, and an admin's. */
   created_by: number | null;
+  /** Whether it has named fields, so editing knows to fetch them. */
+  has_fields?: boolean | number;
   owner_name: string | null;
   /** Names of the people it is shared with, when visibility is "people". */
   shared_with: string | null;
@@ -45,10 +47,17 @@ function whoCanSee(e: VaultEntry): string {
   return "Private — only you and admins";
 }
 
+interface ExtraField {
+  label: string;
+  value: string;
+}
+
 interface Revealed {
   username: string | null;
   password: string;
   notes: string | null;
+  /** Whatever else the site asks for, named by whoever saved it. */
+  fields: ExtraField[];
 }
 
 const inputClass =
@@ -279,6 +288,20 @@ export default function CredentialsVault({
                           Copy
                         </button>
                       </div>
+                      {open.fields?.map((f, i) => (
+                        <div key={i} className="flex items-center gap-2">
+                          <dt className="w-20 shrink-0 truncate text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            {f.label}
+                          </dt>
+                          <dd className="break-all font-mono text-slate-800">{f.value}</dd>
+                          <button
+                            onClick={() => copy(f.value, f.label)}
+                            className="ml-auto shrink-0 text-xs font-medium text-indigo-600 hover:underline"
+                          >
+                            Copy
+                          </button>
+                        </div>
+                      ))}
                       {open.notes && (
                         <div className="flex gap-2">
                           <dt className="w-20 shrink-0 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -334,6 +357,32 @@ function CredentialForm({
   const [name, setName] = useState(entry?.name ?? "");
   const [url, setUrl] = useState(entry?.url ?? "");
   const [username, setUsername] = useState(entry?.username ?? "");
+  // Anything else the site asks for: an account ID, the email it is under.
+  // Named by the person saving it, because every site asks for something
+  // different and columns would never keep up.
+  const [fields, setFields] = useState<ExtraField[]>([]);
+
+  // Editing has to start from what is stored, or saving would wipe it — and
+  // the only way to see it is to read it, which is recorded like any read.
+  useEffect(() => {
+    if (!entry?.has_fields) return;
+    let live = true;
+    void (async () => {
+      try {
+        const res = await apiFetch<{ fields: ExtraField[] }>(
+          `/api/credentials/${entry.id}/reveal`,
+          { method: "POST" }
+        );
+        if (live && res.fields?.length) setFields(res.fields);
+      } catch {
+        // Leaving them blank would quietly drop them, so say nothing and
+        // let the save be refused rather than silently lose them.
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [entry?.id, entry?.has_fields]);
   const [password, setPassword] = useState("");
   const [notes, setNotes] = useState("");
   const [projectId, setProjectId] = useState<string>(
@@ -354,6 +403,9 @@ function CredentialForm({
         url: url.trim() || null,
         username: username.trim() || null,
         notes: notes.trim() || null,
+        fields: fields
+          .map((f) => ({ label: f.label.trim(), value: f.value.trim() }))
+          .filter((f) => f.label && f.value),
         projectId: projectId ? Number(projectId) : null,
         visibility,
         userIds: visibility === "people" ? chosen : [],
@@ -421,13 +473,15 @@ function CredentialForm({
               htmlFor="cred-user"
               className="mb-1 block text-sm font-medium text-slate-700"
             >
-              Username <span className="font-normal text-slate-500">(optional)</span>
+              Username <span className="text-red-500">*</span>
             </label>
             <input
               id="cred-user"
+              required
               maxLength={255}
               value={username}
               onChange={(ev) => setUsername(ev.target.value)}
+              placeholder="The user ID you sign in with"
               className={inputClass}
             />
           </div>
@@ -468,6 +522,65 @@ function CredentialForm({
             ))}
           </select>
         </div>
+        <fieldset className="rounded-xl border border-slate-200 p-3">
+          <legend className="px-1 text-sm font-medium text-slate-700">
+            Anything else it needs{" "}
+            <span className="font-normal text-slate-500">(optional)</span>
+          </legend>
+          <p className="mb-2 text-xs text-slate-500">
+            An account ID, the email it is registered to, a customer number — name it
+            yourself. Encrypted like the password.
+            {entry?.has_fields ? " Opening this counted as a read, as it does anywhere else." : ""}
+          </p>
+          {fields.length > 0 && (
+            <div className="mb-2 space-y-1.5">
+              {fields.map((f, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input
+                    value={f.label}
+                    maxLength={60}
+                    aria-label={`Field ${i + 1} name`}
+                    placeholder="Account ID"
+                    onChange={(ev) =>
+                      setFields((prev) =>
+                        prev.map((x, n) => (n === i ? { ...x, label: ev.target.value } : x))
+                      )
+                    }
+                    className="w-1/3 rounded-lg border border-slate-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+                  />
+                  <input
+                    value={f.value}
+                    maxLength={500}
+                    aria-label={`Field ${i + 1} value`}
+                    placeholder="RACE-10294"
+                    onChange={(ev) =>
+                      setFields((prev) =>
+                        prev.map((x, n) => (n === i ? { ...x, value: ev.target.value } : x))
+                      )
+                    }
+                    className="flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setFields((prev) => prev.filter((_, n) => n !== i))}
+                    aria-label={`Remove field ${i + 1}`}
+                    className="text-slate-400 hover:text-red-500"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => setFields((prev) => [...prev, { label: "", value: "" }])}
+            className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+          >
+            + Add a field
+          </button>
+        </fieldset>
+
         <fieldset className="rounded-xl border border-slate-200 p-3">
           <legend className="px-1 text-sm font-medium text-slate-700">Who can see it</legend>
           <div className="space-y-1.5">

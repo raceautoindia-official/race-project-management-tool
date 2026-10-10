@@ -20,6 +20,7 @@ const LATER_MIGRATIONS = [
   "2026-10-08_credential_sharing.sql",
   "2026-10-08_personal_documents.sql",
   "2026-10-08_planner.sql",
+  "2026-10-10_credential_fields.sql",
 ].map((f) =>
   readFileSync(new URL(`../../db/migrations/${f}`, import.meta.url), "utf8")
 );

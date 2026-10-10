@@ -54,15 +54,18 @@ export async function POST(req: NextRequest) {
 
     const result = (await query<DbResult>(
       `INSERT INTO credentials
-         (name, url, username, password_cipher, notes_cipher, visibility,
-          project_id, created_by, updated_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (name, url, username, password_cipher, notes_cipher, fields_cipher,
+          visibility, project_id, created_by, updated_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         data.name,
         data.url ?? null,
-        data.username ?? null,
+        data.username,
         encryptSecret(data.password),
         data.notes ? encryptSecret(data.notes) : null,
+        // An account number is not a secret on its own; next to the password
+        // it is half of one.
+        data.fields?.length ? encryptSecret(JSON.stringify(data.fields)) : null,
         data.visibility ?? "admins",
         data.projectId ?? null,
         user.id,
