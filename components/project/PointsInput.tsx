@@ -131,7 +131,7 @@ export default function PointsInput({
                   commit(next.length ? next : [""]);
                 }}
                 aria-label={`Remove point ${i + 1}`}
-                className="text-slate-300 hover:text-red-500"
+                className="rounded px-1 text-slate-500 hover:bg-red-50 hover:text-red-600"
               >
                 ✕
               </button>

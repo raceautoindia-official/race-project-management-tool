@@ -564,7 +564,7 @@ function CredentialForm({
                     type="button"
                     onClick={() => setFields((prev) => prev.filter((_, n) => n !== i))}
                     aria-label={`Remove field ${i + 1}`}
-                    className="text-slate-400 hover:text-red-500"
+                    className="rounded px-1 text-slate-500 hover:bg-red-50 hover:text-red-600"
                   >
                     ✕
                   </button>

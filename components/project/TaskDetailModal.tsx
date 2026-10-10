@@ -1014,7 +1014,7 @@ export default function TaskDetailModal({
                     {!readOnly && (canManage || l.user_id === currentUser.id) && (
                       <button
                         onClick={() => deleteLog(l.id)}
-                        className="text-slate-300 hover:text-red-500"
+                        className="rounded px-1 text-slate-500 hover:bg-red-50 hover:text-red-600"
                         aria-label="Remove entry"
                       >
                         ✕
@@ -1075,7 +1075,7 @@ export default function TaskDetailModal({
                       {(canManageTask || (pending && mine)) && (
                         <button
                           onClick={() => removeDependency(d.id)}
-                          className="ml-auto text-xs text-slate-400 hover:text-red-500"
+                          className="ml-auto text-xs rounded px-1 text-slate-500 hover:bg-red-50 hover:text-red-600"
                           aria-label={pending && mine && !canManageTask ? "Withdraw blocker" : "Remove blocker"}
                         >
                           {pending && mine && !canManageTask ? "Withdraw" : "✕"}
@@ -1294,7 +1294,7 @@ export default function TaskDetailModal({
                   {canEditExecution && (
                     <button
                       onClick={() => deleteSubtask(s.id)}
-                      className="text-xs text-slate-300 hover:text-red-500"
+                      className="text-xs rounded px-1 text-slate-500 hover:bg-red-50 hover:text-red-600"
                       aria-label="Delete subtask"
                     >
                       ✕
@@ -1346,7 +1346,7 @@ export default function TaskDetailModal({
                 {!readOnly && (canManage || a.uploaded_by === currentUser.id) && (
                   <button
                     onClick={() => deleteAttachment(a.id)}
-                    className="ml-auto text-xs text-slate-300 hover:text-red-500"
+                    className="ml-auto text-xs rounded px-1 text-slate-500 hover:bg-red-50 hover:text-red-600"
                     aria-label="Remove attachment"
                   >
                     ✕
