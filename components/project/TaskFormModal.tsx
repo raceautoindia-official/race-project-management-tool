@@ -14,6 +14,7 @@ import type {
   TaskStatus,
   WorkType,
 } from "@/lib/types";
+import MoreFields from "@/components/MoreFields";
 import { pickSpec, specPayload, WorkSpecFields } from "./WorkSpec";
 
 const inputClass =
@@ -50,9 +51,9 @@ export default function TaskFormModal({
   // each time it opens — no state-syncing effect needed.
   const [title, setTitle] = useState(task?.title ?? "");
   const [description, setDescription] = useState(task?.description ?? "");
-  const [type, setType] = useState<WorkType>(
-    task?.task_type ?? (isEdit ? "general" : "correction")
-  );
+  // A new task is a plain task. A specification is something you choose to
+  // write, not a toll gate in front of "Fix the contact form".
+  const [type, setType] = useState<WorkType>(task?.task_type ?? "general");
   const [spec, setSpec] = useState<SpecColumns>(pickSpec(task));
   // Editing keeps the recorded requester (blank if unknown, so it must be
   // chosen); a follow-up defaults to the parent's requester; new work to you.
@@ -85,6 +86,12 @@ export default function TaskFormModal({
   const typed = type !== "general";
   // Legacy notes stay editable after a task is converted to a typed task.
   const showNotes = typed && Boolean(task?.description);
+  // Nothing is hidden from someone who already filled it in: a section that
+  // holds something opens with the form.
+  const specOpen = typed || Object.values(spec).some((v) => (v ?? "").trim() !== "");
+  const detailsOpen =
+    requestedById === "" ||
+    Boolean(description || startDate || estimatedHours || labelIds.length);
   // The requester may be someone outside the member list (e.g. an admin).
   const requesterOptions =
     requestedById === "" || members.some((m) => String(m.user_id) === requestedById)
@@ -185,26 +192,93 @@ export default function TaskFormModal({
           </div>
         )}
 
-        <WorkSpecFields
-          type={type}
-          onTypeChange={setType}
-          spec={spec}
-          onSpecChange={setSpec}
-        >
+        {/* What every task has, whatever else it has. */}
+        <div>
+          <label htmlFor="task-title" className="mb-1 block text-sm font-medium text-slate-700">
+            Title <span className="text-red-500">*</span>
+          </label>
+          <input
+            id="task-title"
+            required
+            maxLength={200}
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Fix the contact form"
+            className={inputClass}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div>
-            <label htmlFor="task-title" className="mb-1 block text-sm font-medium text-slate-700">
-              Title <span className="text-red-500">*</span>
+            <label htmlFor="task-assignee" className="mb-1 block text-sm font-medium text-slate-700">
+              Assigned owner {typed && <span className="text-red-500">*</span>}
+            </label>
+            <select
+              id="task-assignee"
+              required={typed}
+              value={assigneeId}
+              onChange={(e) => setAssigneeId(e.target.value)}
+              className={inputClass}
+            >
+              <option value="">{typed ? "Choose an owner…" : "Unassigned"}</option>
+              {members.map((m) => (
+                <option key={m.user_id} value={m.user_id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="task-due" className="mb-1 block text-sm font-medium text-slate-700">
+              Due date
             </label>
             <input
-              id="task-title"
-              required
-              maxLength={200}
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              id="task-due"
+              type="date"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
               className={inputClass}
             />
           </div>
-        </WorkSpecFields>
+          <div>
+            <label htmlFor="task-priority" className="mb-1 block text-sm font-medium text-slate-700">
+              Priority
+            </label>
+            <select
+              id="task-priority"
+              value={priority}
+              onChange={(e) => setPriority(e.target.value as TaskPriority)}
+              className={inputClass}
+            >
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="urgent">Urgent</option>
+            </select>
+          </div>
+        </div>
+
+        {/* A specification is worth writing for work that needs checking off.
+            It is not worth demanding for "order new bearings". */}
+        <MoreFields
+          label="Add a specification"
+          hint="Becomes the task's checklist"
+          summary={typed ? (type === "correction" ? "Correction" : "Feature") : undefined}
+          defaultOpen={specOpen}
+        >
+          <WorkSpecFields
+            type={type}
+            onTypeChange={setType}
+            spec={spec}
+            onSpecChange={setSpec}
+          />
+        </MoreFields>
+
+        <MoreFields
+          label="More details"
+          hint="Who asked, status, start date, hours, labels"
+          defaultOpen={detailsOpen}
+        >
         {(!typed || showNotes) && (
           <div>
             <label htmlFor="task-description" className="mb-1 block text-sm font-medium text-slate-700">
@@ -250,25 +324,6 @@ export default function TaskFormModal({
             </select>
           </div>
           <div>
-            <label htmlFor="task-assignee" className="mb-1 block text-sm font-medium text-slate-700">
-              Assigned owner {typed && <span className="text-red-500">*</span>}
-            </label>
-            <select
-              id="task-assignee"
-              required={typed}
-              value={assigneeId}
-              onChange={(e) => setAssigneeId(e.target.value)}
-              className={inputClass}
-            >
-              <option value="">{typed ? "Choose an owner…" : "Unassigned"}</option>
-              {members.map((m) => (
-                <option key={m.user_id} value={m.user_id}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
             <label htmlFor="task-status" className="mb-1 block text-sm font-medium text-slate-700">
               Status
             </label>
@@ -285,22 +340,6 @@ export default function TaskFormModal({
             </select>
           </div>
           <div>
-            <label htmlFor="task-priority" className="mb-1 block text-sm font-medium text-slate-700">
-              Priority
-            </label>
-            <select
-              id="task-priority"
-              value={priority}
-              onChange={(e) => setPriority(e.target.value as TaskPriority)}
-              className={inputClass}
-            >
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-              <option value="urgent">Urgent</option>
-            </select>
-          </div>
-          <div>
             <label htmlFor="task-start" className="mb-1 block text-sm font-medium text-slate-700">
               Start date
             </label>
@@ -309,18 +348,6 @@ export default function TaskFormModal({
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className={inputClass}
-            />
-          </div>
-          <div>
-            <label htmlFor="task-due" className="mb-1 block text-sm font-medium text-slate-700">
-              Due date
-            </label>
-            <input
-              id="task-due"
-              type="date"
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
               className={inputClass}
             />
           </div>
@@ -395,6 +422,7 @@ export default function TaskFormModal({
             </button>
           </div>
         </div>
+        </MoreFields>
 
         <div className="flex justify-end gap-2">
           <button

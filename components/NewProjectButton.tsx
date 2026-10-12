@@ -6,6 +6,7 @@ import Modal from "./Modal";
 import { apiFetch } from "@/lib/api-client";
 import { useToast } from "./ToastProvider";
 import type { ProjectTemplate } from "@/lib/types";
+import MoreFields from "@/components/MoreFields";
 import TemplatePicker from "@/components/TemplatePicker";
 
 interface PickUser {
@@ -37,7 +38,6 @@ export default function NewProjectButton({
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [status, setStatus] = useState("active");
   const [memberIds, setMemberIds] = useState<number[]>([]);
   const [leadId, setLeadId] = useState("");
   const [templates, setTemplates] = useState<ProjectTemplate[]>([]);
@@ -56,7 +56,6 @@ export default function NewProjectButton({
   function reset() {
     setName("");
     setDescription("");
-    setStatus("active");
     setMemberIds([]);
     setLeadId("");
     setTemplateId("");
@@ -99,7 +98,7 @@ export default function NewProjectButton({
       }
       await apiFetch("/api/projects", {
         method: "POST",
-        body: JSON.stringify({ name, description, status, memberIds }),
+        body: JSON.stringify({ name, description, memberIds }),
       });
       setOpen(false);
       reset();
@@ -140,22 +139,7 @@ export default function NewProjectButton({
               {error}
             </div>
           )}
-          {isAdmin && templates.length > 0 && (
-            <div>
-              <TemplatePicker
-                templates={templates}
-                value={templateId}
-                onChange={setTemplateId}
-              />
-              {usingTemplate && (
-                <p className="mt-2 rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-900">
-                  Its labels, tasks and milestones are copied into the new project.
-                  Nothing is linked afterwards — change either without touching the
-                  other.
-                </p>
-              )}
-            </div>
-          )}
+          {/* The name is the only thing a project cannot be created without. */}
           <div>
             <label htmlFor="project-name" className="mb-1 block text-sm font-medium text-slate-700">
               Name <span className="text-red-500">*</span>
@@ -166,23 +150,37 @@ export default function NewProjectButton({
               maxLength={150}
               value={name}
               onChange={(e) => setName(e.target.value)}
+              placeholder="Dealer portal refresh"
               className={inputClass}
             />
           </div>
+          {isAdmin && templates.length > 0 && (
+            <MoreFields
+              label="Start from a template"
+              hint="Blank project"
+              summary={
+                usingTemplate
+                  ? templates.find((t) => String(t.id) === templateId)?.name
+                  : undefined
+              }
+              defaultOpen={usingTemplate}
+            >
+              <TemplatePicker
+                templates={templates}
+                value={templateId}
+                onChange={setTemplateId}
+              />
+              {usingTemplate && (
+                <p className="rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-900">
+                  Its labels, tasks and milestones are copied into the new project.
+                  Nothing is linked afterwards — change either without touching the
+                  other.
+                </p>
+              )}
+            </MoreFields>
+          )}
           {!usingTemplate && (
             <>
-              <div>
-                <label htmlFor="project-description" className="mb-1 block text-sm font-medium text-slate-700">
-                  Description
-                </label>
-                <textarea
-                  id="project-description"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  rows={3}
-                  className={inputClass}
-                />
-              </div>
               {!isAdmin && (
                 <div>
                   <label htmlFor="project-lead" className="mb-1 block text-sm font-medium text-slate-700">
@@ -209,20 +207,26 @@ export default function NewProjectButton({
                 </div>
               )}
               {isAdmin && (
-                <>
+                <MoreFields
+                  label="Description and members"
+                  hint="You lead it; add people later"
+                  summary={
+                    memberIds.length
+                      ? `${memberIds.length} ${memberIds.length === 1 ? "person" : "people"}`
+                      : undefined
+                  }
+                >
                   <div>
-                    <label htmlFor="project-status" className="mb-1 block text-sm font-medium text-slate-700">
-                      Status
+                    <label htmlFor="project-description" className="mb-1 block text-sm font-medium text-slate-700">
+                      Description
                     </label>
-                    <select
-                      id="project-status"
-                      value={status}
-                      onChange={(e) => setStatus(e.target.value)}
+                    <textarea
+                      id="project-description"
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      rows={3}
                       className={inputClass}
-                    >
-                      <option value="active">Active</option>
-                      <option value="archived">Archived</option>
-                    </select>
+                    />
                   </div>
                   <div>
                     <span className="mb-1 block text-sm font-medium text-slate-700">
@@ -252,7 +256,21 @@ export default function NewProjectButton({
                       You are automatically added as the project lead.
                     </p>
                   </div>
-                </>
+                </MoreFields>
+              )}
+              {!isAdmin && (
+                <div>
+                  <label htmlFor="project-description" className="mb-1 block text-sm font-medium text-slate-700">
+                    Description
+                  </label>
+                  <textarea
+                    id="project-description"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    rows={3}
+                    className={inputClass}
+                  />
+                </div>
               )}
             </>
           )}

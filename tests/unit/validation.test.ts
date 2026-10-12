@@ -29,13 +29,32 @@ describe("createTaskSchema", () => {
     expect(d.existingBehavior).toBe("Totals are truncated");
   });
 
-  it("requires one of the two types", () => {
-    expect(issues(createTaskSchema.safeParse({ title: "x", assigneeId: 4 }))).toContain(
-      "Choose a type: existing work correction or new feature"
-    );
+  it("takes a plain task with nothing but a title", () => {
+    // "Order new bearings" has no existing behaviour and no acceptance
+    // criteria. Demanding them turned one line of work into a form.
+    const res = createTaskSchema.safeParse({ title: "Order new bearings" });
+    expect(issues(res)).toEqual([]);
+    expect(res.success && res.data.taskType).toBe("general");
     expect(
-      createTaskSchema.safeParse({ taskType: "general", title: "x", assigneeId: 4 }).success
-    ).toBe(false);
+      createTaskSchema.safeParse({ taskType: "general", title: "x" }).success
+    ).toBe(true);
+  });
+
+  it("still wants an owner once the work is specified", () => {
+    // A correction is a promise that someone will do it.
+    expect(
+      issues(
+        createTaskSchema.safeParse({
+          taskType: "correction",
+          title: "x",
+          existingBehavior: "a",
+          expectedBehavior: "b",
+          acceptanceCriteria: "c",
+        })
+      )
+    ).toContain("An assigned owner is required");
+    // A plain one may sit unassigned until someone picks it up.
+    expect(createTaskSchema.safeParse({ title: "x" }).success).toBe(true);
   });
 
   it("requires the type's mandatory fields", () => {

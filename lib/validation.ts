@@ -45,13 +45,6 @@ export const optionalText = z
   .optional()
   .nullable();
 
-// Coerce "" / whitespace / null / undefined to null, otherwise a positive int
-// id; a missing value fails with `message`.
-const requiredId = (message: string) =>
-  z.preprocess(
-    (v) => (v === "" || v === undefined || v === null ? undefined : v),
-    z.coerce.number({ error: message }).int().positive(message)
-  );
 
 // Spec text: blank → null, otherwise trimmed text.
 const specText = z
@@ -152,7 +145,11 @@ export const optionalHours = z.preprocess(
 // requester and assigned owner mandatory (the creator is the approver).
 export const createTaskSchema = z
   .object({
-    taskType: specTypeField,
+    // A plain task is a plain task. "Order new bearings" has no existing
+    // behaviour to correct and no acceptance criteria to meet, and demanding
+    // them was turning one line of work into a form. A correction or a
+    // feature still owes its specification — see the refinement below.
+    taskType: z.enum(["general", "correction", "feature"]).optional().default("general"),
     title: z.string().trim().min(1, "Title is required").max(200),
     description: optionalText,
     ...specShape,
@@ -160,7 +157,7 @@ export const createTaskSchema = z
     status: z.enum(["todo", "in_progress", "review", "done"]).optional(),
     priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
     estimatedHours: optionalHours.optional(),
-    assigneeId: requiredId("An assigned owner is required"),
+    assigneeId: optionalId.optional(),
     dueDate: optionalDate.optional(),
     startDate: optionalDate.optional(),
     labelIds: labelIdsField,
@@ -170,6 +167,15 @@ export const createTaskSchema = z
   })
   .superRefine((d, ctx) => {
     specIssues(d).forEach((i) => ctx.addIssue(i));
+    // Specified work is work someone has agreed to do: a correction or a
+    // feature names its owner. A plain task may wait to be picked up.
+    if (d.taskType !== "general" && d.assigneeId == null) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["assigneeId"],
+        message: "An assigned owner is required",
+      });
+    }
     checkDateOrder(d, ctx);
   });
 

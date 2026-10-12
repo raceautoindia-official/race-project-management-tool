@@ -82,7 +82,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const body = await req.json().catch(() => ({}));
     const data = createTaskSchema.parse(body);
 
-    if (!(await isProjectMember(projectId, data.assigneeId))) {
+    if (data.assigneeId != null && !(await isProjectMember(projectId, data.assigneeId))) {
       throw new ApiError(400, "Assignee must be a member of the project");
     }
     const requestedBy = data.requestedById ?? user.id;
@@ -121,7 +121,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         data.status ?? "todo",
         data.priority ?? "medium",
         data.estimatedHours ?? null,
-        data.assigneeId,
+        data.assigneeId ?? null,
         user.id,
         data.dueDate ?? null,
         data.startDate ?? null,
@@ -147,7 +147,8 @@ export async function POST(req: NextRequest, { params }: Params) {
       entityId: result.insertId,
       metadata: { projectId, title: data.title, type: data.taskType },
     });
-    if (data.assigneeId !== user.id) {
+    // Nobody to tell when nobody owns it yet.
+    if (data.assigneeId != null && data.assigneeId !== user.id) {
       await notify(
         data.assigneeId,
         "task_assigned",

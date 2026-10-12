@@ -192,15 +192,28 @@ describe("project request → lead approval", () => {
     let taskA: Task; // correction created by the lead, requested by Alice
     let taskB: Task; // feature raised by Sam and approved by the lead
 
-    it("lead-created tasks need a type, its required fields and an owner", async () => {
+    it("takes a plain task with nothing but a title", async () => {
       actAs(lead);
-      const noType = await call<Json>(projectTasks.POST, {
+      const plain = await call<{ task: Task }>(projectTasks.POST, {
         method: "POST",
         id: projectId,
-        body: { title: "x", assigneeId: sam.id },
+        body: { title: "Order new bearings" },
       });
-      expect(noType.status).toBe(400);
+      expect(plain.status).toBe(201);
+      expect(plain.body.task.task_type).toBe("general");
+      expect(plain.body.task.assignee_id).toBeNull();
 
+      // Put the project back as it was: a later test counts what is left
+      // unsigned, and this one is not part of that story.
+      const gone = await call<Json>(task.DELETE, {
+        method: "DELETE",
+        id: plain.body.task.id,
+      });
+      expect(gone.status).toBe(200);
+    });
+
+    it("a specified task still needs its required fields and an owner", async () => {
+      actAs(lead);
       const { acceptanceCriteria: _omit, ...partial } = correction;
       void _omit;
       const missing = await call<Json>(projectTasks.POST, {

@@ -175,16 +175,40 @@ test("the lead approves a request with an owner and the task records its trail",
   await closeDialog(opened);
 });
 
+test("a task can be created from a title alone", async () => {
+  const quick = "E2E Order new bearings";
+  await lead.getByRole("button", { name: "+ New task" }).click();
+  const dialog = lead.getByRole("dialog", { name: "New task" });
+  // Nothing but the title is asked for: no type, no specification, no
+  // requester. Work that needs none of that should cost one line.
+  await expect(dialog.getByLabel(/^Existing behavior/)).toHaveCount(0);
+  await expect(dialog.getByLabel(/^Requested by/)).toHaveCount(0);
+  await dialog.getByLabel(/^Title/).fill(quick);
+  await dialog.getByRole("button", { name: "Create task" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(taskCard(lead, quick)).toBeVisible();
+
+  // Put the board back as it was: a later test counts what is still
+  // unsigned, and this task is not part of that story.
+  await taskCard(lead, quick).click();
+  const card = lead.getByRole("dialog", { name: quick });
+  await card.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(taskCard(lead, quick)).toHaveCount(0);
+});
+
 test("the lead creates a new-feature task directly", async () => {
   await lead.getByRole("button", { name: "+ New task" }).click();
   const dialog = lead.getByRole("dialog", { name: "New task" });
+  await dialog.getByLabel(/^Title/).fill(FEATURE_TASK);
+  // The specification is opt-in, and generates the checklist once written.
+  await dialog.getByRole("button", { name: "Add a specification" }).click();
   await dialog.getByText("New feature", { exact: true }).click();
   await dialog.getByLabel(/^Features/).fill("Download the dealer list as a CSV file.");
   await dialog.getByLabel(/^Flow/).fill("Dealers → Export → file downloads");
   await dialog.getByLabel(/^Rules/).fill("Only leads can export.");
-  await dialog.getByLabel(/^Title/).fill(FEATURE_TASK);
-  await dialog.getByLabel(/^Requested by/).selectOption({ label: USERS.alice.name });
   await dialog.getByLabel(/^Assigned owner/).selectOption({ label: USERS.sam.name });
+  await dialog.getByRole("button", { name: "More details" }).click();
+  await dialog.getByLabel(/^Requested by/).selectOption({ label: USERS.alice.name });
   await dialog.getByRole("button", { name: "Create task" }).click();
   await expect(dialog).toBeHidden();
   await expect(taskCard(lead, FEATURE_TASK)).toContainText("New feature");
