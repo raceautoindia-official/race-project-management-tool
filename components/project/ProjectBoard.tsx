@@ -419,7 +419,9 @@ export default function ProjectBoard({
                 </button>
               </>
             )}
-            {isAdmin && project.approval_status === "approved" && (
+            {/* A department's lead knows what its standard job looks like;
+                an admin does not. Same tier as saving a task template. */}
+            {canManage && project.approval_status === "approved" && (
               <button
                 onClick={saveAsTemplate}
                 disabled={savingTemplate}
