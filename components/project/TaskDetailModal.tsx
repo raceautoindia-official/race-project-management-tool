@@ -843,15 +843,15 @@ export default function TaskDetailModal({
               Edit
             </button>
           )}
-          {canManageTask && (
-            <button
-              onClick={saveAsTemplate}
-              disabled={savingTemplate}
-              className="rounded-lg border border-violet-200 px-3 py-1.5 text-sm font-medium text-violet-700 hover:bg-violet-50 disabled:opacity-50"
-            >
-              {savingTemplate ? "Saving…" : "Save as template"}
-            </button>
-          )}
+          {/* Saving the shape of a task changes nothing about the task, so
+              a signed-off one is fair game — often the best example there is. */}
+          <button
+            onClick={saveAsTemplate}
+            disabled={savingTemplate}
+            className="rounded-lg border border-violet-200 px-3 py-1.5 text-sm font-medium text-violet-700 hover:bg-violet-50 disabled:opacity-50"
+          >
+            {savingTemplate ? "Saving…" : "Save as template"}
+          </button>
           {canDelete && (
             <button
               onClick={remove}

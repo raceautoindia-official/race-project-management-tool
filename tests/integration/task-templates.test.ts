@@ -11,9 +11,9 @@ type Json = Record<string, string>;
 /**
  * Task templates: the shape of a job a department does again and again.
  *
- * The interesting rules are who may make one, what a template keeps (the
- * form, never the task's own circumstances) and that a department tidies its
- * own shelf rather than everybody's.
+ * The interesting rules are that anyone may add to the shelf, that only an
+ * admin takes something off it, and that a template keeps the form and never
+ * the task's own circumstances.
  */
 describe("task templates", () => {
   let admin: User;
@@ -27,8 +27,10 @@ describe("task templates", () => {
     member = await createUser("TplMember");
     await query(`UPDATE users SET department = 'Production' WHERE id = ?`, [lead.id]);
     await query(`UPDATE users SET department = 'Design' WHERE id = ?`, [admin.id]);
+    await query(`UPDATE users SET department = 'Quality' WHERE id = ?`, [member.id]);
     lead.department = "Production";
     admin.department = "Design";
+    member.department = "Quality";
 
     const projectId = await createLedProject(lead, "Template source");
     const res = (await query<DbResult>(
@@ -42,14 +44,15 @@ describe("task templates", () => {
     taskId = res.insertId;
   });
 
-  it("a plain member cannot save one", async () => {
+  it("a plain member saves one, stamped with their own department", async () => {
     actAs(member);
-    const res = await call<Json>(taskTemplates.POST, {
-      method: "POST",
-      body: { name: "Batch inspection", taskId },
-    });
-    expect(res.status).toBe(403);
-    expect(res.body.error).toMatch(/admins and project leads/i);
+    const res = await call<{ template: { id: number; department: string | null } }>(
+      taskTemplates.POST,
+      { method: "POST", body: { name: "Member's shape", taskId } }
+    );
+    // The people doing the work are the ones who know its shape.
+    expect(res.status).toBe(201);
+    expect(res.body.template.department).toBe("Quality");
   });
 
   it("a project lead saves one for their own department", async () => {
@@ -95,7 +98,7 @@ describe("task templates", () => {
     expect(res.body.templates.map((t) => t.name)).toContain("Batch inspection");
   });
 
-  it("a lead cannot delete another department's template", async () => {
+  it("only an admin can delete one", async () => {
     actAs(admin);
     const mine = await call<{ template: { id: number } }>(taskTemplates.POST, {
       method: "POST",
@@ -103,15 +106,16 @@ describe("task templates", () => {
     });
     expect(mine.status).toBe(201);
 
-    // Lead is Production; that one is Design's.
-    actAs(lead);
-    const refused = await call<Json>(taskTemplate.DELETE, {
-      method: "DELETE",
-      id: mine.body.template.id,
-    });
-    expect(refused.status).toBe(403);
+    // Not the lead who could create it, and not its own department.
+    for (const who of [lead, member]) {
+      actAs(who);
+      const refused = await call<Json>(taskTemplate.DELETE, {
+        method: "DELETE",
+        id: mine.body.template.id,
+      });
+      expect(refused.status).toBe(403);
+    }
 
-    // An admin may.
     actAs(admin);
     const gone = await call<Json>(taskTemplate.DELETE, {
       method: "DELETE",

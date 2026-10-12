@@ -3,7 +3,6 @@ import { query, DbRow, DbResult } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { json, errorResponse, ApiError } from "@/lib/http";
 import { saveTaskTemplateSchema } from "@/lib/validation";
-import { requireTemplateAuthor } from "@/lib/template-access";
 import { SPEC_KEYS, specBodyKey } from "@/lib/workflow";
 import { logActivity } from "@/lib/activity";
 
@@ -40,7 +39,7 @@ export async function GET() {
 /** POST — save an existing task's shape as a template. */
 export async function POST(req: NextRequest) {
   try {
-    const author = await requireTemplateAuthor();
+    const author = await requireUser();
     const data = saveTaskTemplateSchema.parse(await req.json().catch(() => ({})));
 
     const [task] = await query<DbRow[]>(

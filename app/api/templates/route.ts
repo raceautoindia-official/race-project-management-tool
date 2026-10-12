@@ -1,7 +1,6 @@
 import { NextRequest } from "next/server";
 import { query, DbRow, DbResult } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
-import { requireTemplateAuthor } from "@/lib/template-access";
 import { json, errorResponse, ApiError } from "@/lib/http";
 import { saveTemplateSchema } from "@/lib/validation";
 import { logActivity } from "@/lib/activity";
@@ -33,7 +32,10 @@ export async function GET() {
 /** POST — save an existing project's structure as a reusable template (admin). */
 export async function POST(req: NextRequest) {
   try {
-    const admin = await requireTemplateAuthor();
+    // Anyone may write down the shape of work they know. A template is not
+    // dangerous: it fills a form in, and the next person edits every field
+    // before anything is created. Removing one is an admin's job.
+    const admin = await requireUser();
     const data = saveTemplateSchema.parse(await req.json().catch(() => ({})));
 
     const proj = await query<DbRow[]>(
