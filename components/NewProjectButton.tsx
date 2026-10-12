@@ -175,6 +175,7 @@ export default function NewProjectButton({
                 templates={templates}
                 value={templateId}
                 onChange={setTemplateId}
+                myDepartment={defaultDepartment}
               />
               {usingTemplate && (
                 <p className="rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-900">

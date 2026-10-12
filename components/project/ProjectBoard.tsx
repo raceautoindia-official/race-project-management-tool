@@ -96,7 +96,7 @@ export default function ProjectBoard({
   /** The part of that task the notification was about. */
   focus?: "blockers" | null;
   allUsers: PickUser[];
-  currentUser: { id: number; role: Role; name: string };
+  currentUser: { id: number; role: Role; name: string; department?: string | null };
   canManage: boolean;
 }) {
   const { toast } = useToast();
@@ -643,6 +643,7 @@ export default function ProjectBoard({
         task={editingTask}
         parentTask={followUpParent}
         currentUserId={currentUser.id}
+        myDepartment={currentUser.department}
         onSaved={upsertTask}
         onLabelCreated={(l) => setLabels((prev) => [...prev, l])}
       />

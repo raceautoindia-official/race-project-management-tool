@@ -401,7 +401,17 @@ export const createRecurringTaskSchema = z.object({
 export const saveTemplateSchema = z.object({
   name: z.string().min(1).max(200),
   description: optionalText,
+  /** Defaults to the author's own department. */
+  department: departmentField,
   projectId: z.coerce.number().int().positive(),
+});
+
+/** A task template: the New task form, saved with a name. */
+export const saveTaskTemplateSchema = z.object({
+  name: z.string().min(1).max(200),
+  department: departmentField,
+  /** The task it is copied from. */
+  taskId: z.coerce.number().int().positive(),
 });
 
 export const instantiateTemplateSchema = z.object({

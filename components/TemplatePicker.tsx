@@ -1,6 +1,7 @@
 "use client";
 
 import { formatRelative } from "@/lib/format";
+import { departmentTone } from "@/lib/department-colour";
 import type { ProjectTemplate } from "@/lib/types";
 
 /**
@@ -38,12 +39,22 @@ export default function TemplatePicker({
   templates,
   value,
   onChange,
+  myDepartment,
 }: {
   templates: ProjectTemplate[];
   /** "" for a blank project. */
   value: string;
   onChange: (id: string) => void;
+  /** Your own department's templates are listed first. */
+  myDepartment?: string | null;
 }) {
+  // Yours, then everyone else's. A department making its own templates
+  // should not have to hunt for them among another department's.
+  const ordered = [...templates].sort((a, b) => {
+    const mine = (t: ProjectTemplate) =>
+      myDepartment && t.department === myDepartment ? 0 : 1;
+    return mine(a) - mine(b) || (a.department ?? "").localeCompare(b.department ?? "");
+  });
   return (
     <fieldset>
       <legend className="mb-2 block text-sm font-medium text-slate-700">
@@ -63,7 +74,7 @@ export default function TemplatePicker({
           </p>
         </Option>
 
-        {templates.map((t) => {
+        {ordered.map((t) => {
           const titles = titlesOf(t.task_titles);
           return (
             <Option
@@ -74,6 +85,16 @@ export default function TemplatePicker({
               accent="from-violet-500 to-fuchsia-600"
               glyph="▦"
             >
+              {t.department && (
+                <span
+                  className={`mt-0.5 inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                    departmentTone(t.department).chip
+                  }`}
+                >
+                  {t.department}
+                  {myDepartment === t.department ? " · yours" : ""}
+                </span>
+              )}
               {t.description && (
                 <p className="line-clamp-2 text-xs text-slate-600">{t.description}</p>
               )}

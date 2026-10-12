@@ -323,6 +323,8 @@ export interface ProjectTemplate {
   id: number;
   name: string;
   description: string | null;
+  /** The department whose template it is. Everyone may still use it. */
+  department?: string | null;
   created_by: number | null;
   created_by_name?: string | null;
   task_count?: number;

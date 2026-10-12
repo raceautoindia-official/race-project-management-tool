@@ -133,7 +133,12 @@ export default async function ProjectDetailPage({
         openTaskId={Number.isInteger(openTaskId) ? openTaskId : null}
         focus={focus}
         allUsers={allUsers.map((u) => ({ id: u.id, name: u.name, email: u.email }))}
-        currentUser={{ id: user.id, role: user.role, name: user.name }}
+        currentUser={{
+          id: user.id,
+          role: user.role,
+          name: user.name,
+          department: user.department,
+        }}
         canManage={canManage}
       />
     </AppShell>

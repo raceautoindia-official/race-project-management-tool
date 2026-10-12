@@ -125,6 +125,7 @@ export default function TaskDetailModal({
   const [savingLog, setSavingLog] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [savingTemplate, setSavingTemplate] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editBody, setEditBody] = useState("");
   const [loading, setLoading] = useState(true);
@@ -212,6 +213,41 @@ export default function TaskDetailModal({
   // The owner reports blockers; a lead decides them. Not both.
   const mayReportBlocker = canEditExecution && !canManage;
   const canDelete = canManageTask;
+
+  /**
+   * This task's shape, kept for the next one like it.
+   *
+   * Departments repeat work — the same inspection, the same drawing release.
+   * Saving the shape means the next one starts from a dropdown instead of
+   * from memory. It saves the form, not the task: no owner, no dates, no
+   * status, nothing that belongs to this particular piece of work.
+   */
+  async function saveAsTemplate() {
+    const name = window.prompt(
+      "Template name — new tasks start with this title, and with this task's type, specification, priority, estimate and labels:",
+      currentTask.title
+    );
+    if (!name || !name.trim()) return;
+    setSavingTemplate(true);
+    try {
+      const res = await apiFetch<{ template: { department: string | null } }>(
+        "/api/task-templates",
+        {
+          method: "POST",
+          body: JSON.stringify({ name: name.trim(), taskId: currentTask.id }),
+        }
+      );
+      toast(
+        res.template.department
+          ? `Saved for ${res.template.department} — pick it under New task`
+          : "Saved — pick it under New task"
+      );
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not save template", "error");
+    } finally {
+      setSavingTemplate(false);
+    }
+  }
   const isTyped = specFieldsFor(currentTask.task_type).length > 0;
   const signOffMissing = signOffBlockers(currentTask, { signerIsManager: canManage });
   // Only an admin/lead can move a task out of Done (it's awaiting sign-off).
@@ -805,6 +841,15 @@ export default function TaskDetailModal({
               className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
             >
               Edit
+            </button>
+          )}
+          {canManageTask && (
+            <button
+              onClick={saveAsTemplate}
+              disabled={savingTemplate}
+              className="rounded-lg border border-violet-200 px-3 py-1.5 text-sm font-medium text-violet-700 hover:bg-violet-50 disabled:opacity-50"
+            >
+              {savingTemplate ? "Saving…" : "Save as template"}
             </button>
           )}
           {canDelete && (

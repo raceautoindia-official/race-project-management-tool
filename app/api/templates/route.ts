@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { query, DbRow, DbResult } from "@/lib/db";
-import { requireAdmin } from "@/lib/auth";
+import { requireUser } from "@/lib/auth";
+import { requireTemplateAuthor } from "@/lib/template-access";
 import { json, errorResponse, ApiError } from "@/lib/http";
 import { saveTemplateSchema } from "@/lib/validation";
 import { logActivity } from "@/lib/activity";
@@ -10,9 +11,12 @@ export const dynamic = "force-dynamic";
 /** GET — list project templates (admin). */
 export async function GET() {
   try {
-    await requireAdmin();
+    // Anyone may see what their department — and every other one — has
+    // made. Hiding a template helps nobody; making one is the restricted part.
+    await requireUser();
     const rows = await query<DbRow[]>(
-      `SELECT t.id, t.name, t.description, t.created_at, u.name AS created_by_name,
+      `SELECT t.id, t.name, t.description, t.department, t.created_at,
+              u.name AS created_by_name,
               JSON_LENGTH(t.data, '$.tasks') AS task_count,
               JSON_LENGTH(t.data, '$.labels') AS label_count,
               JSON_LENGTH(t.data, '$.milestones') AS milestone_count,
@@ -29,7 +33,7 @@ export async function GET() {
 /** POST — save an existing project's structure as a reusable template (admin). */
 export async function POST(req: NextRequest) {
   try {
-    const admin = await requireAdmin();
+    const admin = await requireTemplateAuthor();
     const data = saveTemplateSchema.parse(await req.json().catch(() => ({})));
 
     const proj = await query<DbRow[]>(
@@ -77,10 +81,19 @@ export async function POST(req: NextRequest) {
       milestones: milestones.map((m) => ({ name: m.name })),
     };
 
+    // A template belongs to the department that made it unless it says
+    // otherwise, which is almost always what was meant.
+    const department = data.department ?? admin.department ?? null;
     const result = (await query<DbResult>(
-      `INSERT INTO project_templates (name, description, data, created_by)
-       VALUES (?, ?, ?, ?)`,
-      [data.name, data.description ?? null, JSON.stringify(templateData), admin.id]
+      `INSERT INTO project_templates (name, description, department, data, created_by)
+       VALUES (?, ?, ?, ?, ?)`,
+      [
+        data.name,
+        data.description ?? null,
+        department,
+        JSON.stringify(templateData),
+        admin.id,
+      ]
     )) as unknown as DbResult;
 
     await logActivity({
@@ -88,7 +101,7 @@ export async function POST(req: NextRequest) {
       action: "template.created",
       entityType: "template",
       entityId: result.insertId,
-      metadata: { name: data.name, fromProject: data.projectId },
+      metadata: { name: data.name, fromProject: data.projectId, department },
     });
 
     return json(

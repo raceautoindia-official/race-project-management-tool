@@ -311,10 +311,26 @@ CREATE TABLE IF NOT EXISTS project_templates (
   id          INT AUTO_INCREMENT PRIMARY KEY,
   name        VARCHAR(200) NOT NULL,
   description TEXT NULL,
+  -- The department whose template this is. Everyone may still use it.
+  department  VARCHAR(100) NULL,
   data        JSON NOT NULL,
   created_by  INT NULL,
   created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT fk_tpl_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+  CONSTRAINT fk_tpl_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_ptpl_department (department)
+);
+
+-- A task template is the New task form already filled in, not a task.
+CREATE TABLE IF NOT EXISTS task_templates (
+  id          INT AUTO_INCREMENT PRIMARY KEY,
+  name        VARCHAR(200) NOT NULL,
+  department  VARCHAR(100) NULL,
+  data        JSON NOT NULL,
+  created_by  INT NULL,
+  created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_ttpl_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_ttpl_department (department),
+  INDEX idx_ttpl_name (name)
 );
 
 -- Project milestones  (Phase 3 · Wave 10)

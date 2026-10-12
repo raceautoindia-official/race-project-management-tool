@@ -15,7 +15,12 @@ import type {
   WorkType,
 } from "@/lib/types";
 import MoreFields from "@/components/MoreFields";
+import TaskTemplatePicker, {
+  templateData,
+  type TaskTemplate,
+} from "./TaskTemplatePicker";
 import { pickSpec, specPayload, WorkSpecFields } from "./WorkSpec";
+import { SPEC_KEYS, specBodyKey } from "@/lib/workflow";
 
 const inputClass =
   "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
@@ -29,6 +34,7 @@ export default function TaskFormModal({
   task,
   parentTask,
   currentUserId,
+  myDepartment,
   onSaved,
   onLabelCreated,
 }: {
@@ -40,6 +46,8 @@ export default function TaskFormModal({
   task?: Task | null;
   parentTask?: Task | null;
   currentUserId: number;
+  /** The signed-in person's department, so their templates come first. */
+  myDepartment?: string | null;
   onSaved: (task: Task) => void;
   onLabelCreated: (label: Label) => void;
 }) {
@@ -86,6 +94,30 @@ export default function TaskFormModal({
   const typed = type !== "general";
   // Legacy notes stay editable after a task is converted to a typed task.
   const showNotes = typed && Boolean(task?.description);
+  // Applying a template rewrites state the open sections seeded themselves
+  // from, so they are remounted around the new values.
+  const [templateSeed, setTemplateSeed] = useState(0);
+
+  function applyTemplate(t: TaskTemplate) {
+    const d = templateData(t);
+    const str = (k: string) => (typeof d[k] === "string" ? (d[k] as string) : "");
+    setTitle(str("title"));
+    setType((d.taskType as WorkType) ?? "general");
+    const next: SpecColumns = {};
+    for (const key of SPEC_KEYS) next[key] = str(specBodyKey(key));
+    setSpec(next);
+    setDescription(str("description"));
+    if (typeof d.priority === "string") setPriority(d.priority as TaskPriority);
+    setEstimatedHours(d.estimatedHours == null ? "" : String(d.estimatedHours));
+    // Labels travel by name: the same label in another project is a
+    // different row, and one this project has never heard of is dropped
+    // rather than invented.
+    const names = Array.isArray(d.labelNames) ? (d.labelNames as string[]) : [];
+    setLabelIds(labels.filter((l) => names.includes(l.name)).map((l) => l.id));
+    setTemplateSeed((n) => n + 1);
+    toast(`Filled in from "${t.name}" — change anything before creating it`);
+  }
+
   // Nothing is hidden from someone who already filled it in: a section that
   // holds something opens with the form.
   const specOpen = typed || Object.values(spec).some((v) => (v ?? "").trim() !== "");
@@ -192,6 +224,10 @@ export default function TaskFormModal({
           </div>
         )}
 
+        {!isEdit && !parentTask && (
+          <TaskTemplatePicker myDepartment={myDepartment} onApply={applyTemplate} />
+        )}
+
         {/* What every task has, whatever else it has. */}
         <div>
           <label htmlFor="task-title" className="mb-1 block text-sm font-medium text-slate-700">
@@ -261,6 +297,7 @@ export default function TaskFormModal({
         {/* A specification is worth writing for work that needs checking off.
             It is not worth demanding for "order new bearings". */}
         <MoreFields
+          key={`spec-${templateSeed}`}
           label="Add a specification"
           hint="Becomes the task's checklist"
           summary={typed ? (type === "correction" ? "Correction" : "Feature") : undefined}
@@ -275,6 +312,7 @@ export default function TaskFormModal({
         </MoreFields>
 
         <MoreFields
+          key={`details-${templateSeed}`}
           label="More details"
           hint="Who asked, status, start date, hours, labels"
           defaultOpen={detailsOpen}
