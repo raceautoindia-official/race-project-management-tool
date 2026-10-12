@@ -13,7 +13,7 @@ export default async function MyTasksPage() {
 
   const rows = await query<DbRow[]>(
     `SELECT t.id, t.project_id, t.title, t.status, t.priority, t.due_date,
-            p.name AS project_name
+            p.name AS project_name, p.department
      FROM tasks t
      JOIN projects p ON p.id = t.project_id
      WHERE t.assignee_id = ?
@@ -28,7 +28,7 @@ export default async function MyTasksPage() {
   // you, not everything in the company.
   const teamRows = await query<DbRow[]>(
     `SELECT t.id, t.project_id, t.title, t.status, t.priority, t.due_date,
-            p.name AS project_name, u.name AS assignee_name
+            p.name AS project_name, p.department, u.name AS assignee_name
        FROM tasks t
        JOIN projects p ON p.id = t.project_id
        LEFT JOIN users u ON u.id = t.assignee_id

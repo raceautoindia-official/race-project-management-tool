@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS users (
   emp_id               VARCHAR(20) NOT NULL UNIQUE,   -- attendance.employees.emp_id
   name                 VARCHAR(120) NOT NULL,
   email                VARCHAR(190) NULL,
+  -- Mirrored from attendance.employees.department; PM never writes it back.
+  department           VARCHAR(100) NULL,
   phone                VARCHAR(20) NULL,             -- E.164, for WhatsApp alerts
   whatsapp_opt_in      BOOLEAN NOT NULL DEFAULT FALSE,
   password_hash        VARCHAR(255) NULL,             -- unused (federated auth)
@@ -33,13 +35,16 @@ CREATE TABLE IF NOT EXISTS users (
   calendar_token       CHAR(32) NULL UNIQUE,           -- private .ics feed link
   calendar_feed_fetched_at DATETIME NULL,              -- last read by a calendar app
   created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  updated_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_users_department (department)
 );
 
 CREATE TABLE IF NOT EXISTS projects (
   id          INT AUTO_INCREMENT PRIMARY KEY,
   name        VARCHAR(150) NOT NULL,
   description TEXT,
+  -- Whose work this is. Its tasks count to the same department.
+  department  VARCHAR(100) NULL,
   status      ENUM('active','completed','archived') NOT NULL DEFAULT 'active',
   -- Members request projects; the nominated lead (owner) or an admin decides.
   approval_status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'approved',
@@ -54,7 +59,8 @@ CREATE TABLE IF NOT EXISTS projects (
   CONSTRAINT fk_projects_owner FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE SET NULL,
   CONSTRAINT fk_projects_requester FOREIGN KEY (requested_by) REFERENCES users(id) ON DELETE SET NULL,
   CONSTRAINT fk_projects_decider FOREIGN KEY (decided_by) REFERENCES users(id) ON DELETE SET NULL,
-  INDEX idx_projects_approval (approval_status)
+  INDEX idx_projects_approval (approval_status),
+  INDEX idx_projects_department (department)
 );
 
 -- Which users belong to which project

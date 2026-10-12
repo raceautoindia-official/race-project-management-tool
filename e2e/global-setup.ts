@@ -46,15 +46,26 @@ export default async function globalSetup(config: FullConfig) {
     CREATE DATABASE attendance;
     CREATE TABLE attendance.employees (
       id INT PRIMARY KEY, emp_id VARCHAR(20) NOT NULL UNIQUE, name VARCHAR(120) NOT NULL,
-      email VARCHAR(190) NULL, pin_hash VARCHAR(255) NOT NULL,
+      email VARCHAR(190) NULL, department VARCHAR(100) NULL,
+      pin_hash VARCHAR(255) NOT NULL,
       role ENUM('employee','manager','super_admin') NOT NULL DEFAULT 'employee',
       is_active TINYINT(1) NOT NULL DEFAULT 1
     );`);
   for (const u of Object.values(USERS)) {
     await conn.query(
-      `INSERT INTO attendance.employees (id, emp_id, name, email, pin_hash, role, is_active)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [u.id, u.empId, u.name, u.email, pinHash, u.role, u.active ? 1 : 0]
+      `INSERT INTO attendance.employees
+         (id, emp_id, name, email, department, pin_hash, role, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        u.id,
+        u.empId,
+        u.name,
+        u.email,
+        u.department ?? null,
+        pinHash,
+        u.role,
+        u.active ? 1 : 0,
+      ]
     );
   }
   await conn.end();

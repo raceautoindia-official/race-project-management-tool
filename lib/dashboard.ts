@@ -23,6 +23,15 @@ export interface ProjectProgress {
   done_count: number;
 }
 
+/** One department's share of the work, for the dashboard breakdown. */
+export interface DepartmentLoad {
+  department: string;
+  projects: number;
+  open_tasks: number;
+  overdue: number;
+  people: number;
+}
+
 export interface AdminDashboard {
   totals: { users: number; projects: number; tasks: number; activeProjects: number };
   tasksByStatus: Record<TaskStatus, number>;
@@ -31,6 +40,7 @@ export interface AdminDashboard {
   hours: HoursTotals;
   overdue: DbRow[];
   projectProgress: ProjectProgress[];
+  byDepartment: DepartmentLoad[];
   upcomingMeetings: DbRow[];
   recentActivity: DbRow[];
 }
@@ -100,6 +110,36 @@ export async function getAdminDashboard(): Promise<AdminDashboard> {
      LIMIT 10`
   );
 
+  // The company's work split by the department that owns it. A project's
+  // department is its tasks' department, so one join answers both.
+  const departmentRows = await query<DbRow[]>(
+    `SELECT COALESCE(NULLIF(p.department, ''), '') AS department,
+            COUNT(DISTINCT p.id) AS projects,
+            COUNT(CASE WHEN t.status <> 'done' THEN t.id END) AS open_tasks,
+            COUNT(CASE WHEN t.status <> 'done' AND t.due_date < UTC_DATE()
+                       THEN t.id END) AS overdue
+       FROM projects p
+       LEFT JOIN tasks t ON t.project_id = p.id
+      WHERE p.status <> 'archived' AND p.approval_status = 'approved'
+      GROUP BY COALESCE(NULLIF(p.department, ''), '')
+      ORDER BY open_tasks DESC, projects DESC`
+  );
+  const peopleRows = await query<DbRow[]>(
+    `SELECT COALESCE(NULLIF(department, ''), '') AS department, COUNT(*) AS c
+       FROM users WHERE is_active = 1
+      GROUP BY COALESCE(NULLIF(department, ''), '')`
+  );
+  const peopleBy = new Map(
+    peopleRows.map((r) => [String(r.department), Number(r.c)])
+  );
+  const byDepartment: DepartmentLoad[] = departmentRows.map((r) => ({
+    department: String(r.department),
+    projects: Number(r.projects),
+    open_tasks: Number(r.open_tasks),
+    overdue: Number(r.overdue),
+    people: peopleBy.get(String(r.department)) ?? 0,
+  }));
+
   return {
     totals: {
       users: Number(users.c),
@@ -113,6 +153,7 @@ export async function getAdminDashboard(): Promise<AdminDashboard> {
     hours: { estimated: Number(hours.est), spent: Number(hours.spent) },
     overdue,
     projectProgress: projectProgress as unknown as ProjectProgress[],
+    byDepartment,
     upcomingMeetings,
     recentActivity,
   };

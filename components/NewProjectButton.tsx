@@ -7,6 +7,7 @@ import { apiFetch } from "@/lib/api-client";
 import { useToast } from "./ToastProvider";
 import type { ProjectTemplate } from "@/lib/types";
 import MoreFields from "@/components/MoreFields";
+import { DepartmentSelect } from "@/components/DepartmentField";
 import TemplatePicker from "@/components/TemplatePicker";
 
 interface PickUser {
@@ -28,16 +29,20 @@ export default function NewProjectButton({
   users,
   isAdmin,
   currentUserId,
+  defaultDepartment,
 }: {
   users: PickUser[];
   isAdmin: boolean;
   currentUserId: number;
+  /** The creator's own department — where their work normally belongs. */
+  defaultDepartment?: string | null;
 }) {
   const router = useRouter();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [department, setDepartment] = useState(defaultDepartment ?? "");
   const [memberIds, setMemberIds] = useState<number[]>([]);
   const [leadId, setLeadId] = useState("");
   const [templates, setTemplates] = useState<ProjectTemplate[]>([]);
@@ -56,6 +61,7 @@ export default function NewProjectButton({
   function reset() {
     setName("");
     setDescription("");
+    setDepartment(defaultDepartment ?? "");
     setMemberIds([]);
     setLeadId("");
     setTemplateId("");
@@ -98,7 +104,7 @@ export default function NewProjectButton({
       }
       await apiFetch("/api/projects", {
         method: "POST",
-        body: JSON.stringify({ name, description, memberIds }),
+        body: JSON.stringify({ name, description, department, memberIds }),
       });
       setOpen(false);
       reset();
@@ -208,14 +214,25 @@ export default function NewProjectButton({
               )}
               {isAdmin && (
                 <MoreFields
-                  label="Description and members"
+                  label="Department, description and members"
                   hint="You lead it; add people later"
                   summary={
-                    memberIds.length
-                      ? `${memberIds.length} ${memberIds.length === 1 ? "person" : "people"}`
-                      : undefined
+                    [
+                      department || null,
+                      memberIds.length
+                        ? `${memberIds.length} ${memberIds.length === 1 ? "person" : "people"}`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ") || undefined
                   }
                 >
+                  <DepartmentSelect
+                    id="project-department"
+                    value={department}
+                    onChange={setDepartment}
+                    hint="Its tasks count to this department too."
+                  />
                   <div>
                     <label htmlFor="project-description" className="mb-1 block text-sm font-medium text-slate-700">
                       Description

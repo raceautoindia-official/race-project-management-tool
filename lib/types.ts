@@ -41,6 +41,8 @@ export interface User {
   /** Mobile number for WhatsApp alerts (E.164-ish, as typed). */
   phone?: string | null;
   whatsapp_opt_in?: boolean;
+  /** Mirrored from the Attendance app; PM never sets it. */
+  department?: string | null;
   role: Role;
   is_active: boolean;
   must_change_password: boolean;
@@ -59,6 +61,8 @@ export interface Project {
   id: number;
   name: string;
   description: string | null;
+  /** Whose work this is. Its tasks count to the same department. */
+  department?: string | null;
   status: ProjectStatus;
   owner_id: number | null;
   owner_name?: string | null;
@@ -106,6 +110,8 @@ export interface Task extends SpecColumns {
   id: number;
   project_id: number;
   project_name?: string;
+  /** Its project's department. Tasks do not have one of their own. */
+  department?: string | null;
   title: string;
   description: string | null;
   task_type?: WorkType;

@@ -9,8 +9,26 @@ import ExportButton from "@/components/ExportButton";
 import { ProgressBar } from "@/components/ProgressBar";
 import { formatHM } from "@/lib/tz";
 import { formatRelative } from "@/lib/format";
+import { DepartmentBadge } from "@/components/DepartmentField";
+import type { MemberStats } from "@/lib/performance";
 
 export const dynamic = "force-dynamic";
+
+/** People under the department they belong to, biggest team first. */
+function groupByDepartment(members: MemberStats[]): [string, MemberStats[]][] {
+  const groups = new Map<string, MemberStats[]>();
+  for (const m of members) {
+    const key = m.department || "No department";
+    const list = groups.get(key);
+    if (list) list.push(m);
+    else groups.set(key, [m]);
+  }
+  return [...groups.entries()].sort((a, b) => {
+    if (a[0] === "No department") return 1;
+    if (b[0] === "No department") return -1;
+    return b[1].length - a[1].length || a[0].localeCompare(b[0]);
+  });
+}
 
 const SUBTITLES = {
   all: "Individual status and 30-day performance for every member.",
@@ -34,8 +52,18 @@ export default async function TeamPage() {
         action={showExport ? <ExportButton href="/api/team/export" /> : undefined}
       />
 
-      <div className="space-y-4">
-        {members.map((m) => {
+      <div className="space-y-8">
+        {groupByDepartment(members).map(([dept, people]) => (
+          <section key={dept}>
+            <h2 className="mb-3 flex items-baseline gap-2">
+              <span className="text-lg font-semibold text-slate-900">{dept}</span>
+              <span className="figure text-sm text-slate-600">{people.length}</span>
+              <span className="text-sm text-slate-600">
+                {people.length === 1 ? "person" : "people"}
+              </span>
+            </h2>
+            <div className="space-y-4">
+        {people.map((m) => {
           const otp = ontimePct(m);
           const eff = effortPct(m);
           return (
@@ -56,6 +84,7 @@ export default async function TeamPage() {
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-slate-900">{m.name}</span>
                       <RoleBadge role={m.role} />
+                      <DepartmentBadge name={m.department} />
                     </div>
                     <div className="text-xs text-slate-500">
                       {m.emp_id} ·{" "}
@@ -134,6 +163,9 @@ export default async function TeamPage() {
             </div>
           );
         })}
+            </div>
+          </section>
+        ))}
         {members.length === 0 && (
           <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-slate-500">
             No members in scope.

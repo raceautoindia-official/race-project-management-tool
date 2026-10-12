@@ -34,7 +34,7 @@ export default async function ProjectDetailPage({
   if (!Number.isInteger(projectId)) notFound();
 
   const projectRows = await query<DbRow[]>(
-    `SELECT p.id, p.name, p.description, p.status, p.approval_status, p.owner_id,
+    `SELECT p.id, p.name, p.description, p.department, p.status, p.approval_status, p.owner_id,
             p.requested_by, p.requested_at, p.decided_at, p.decision_note,
             u.name AS owner_name, rq.name AS requester_name, dc.name AS decider_name
      FROM projects p
@@ -113,6 +113,7 @@ export default async function ProjectDetailPage({
           id: project.id,
           name: project.name,
           description: project.description,
+          department: (project.department as string | null) ?? null,
           status: project.status,
           owner_id: project.owner_id,
           owner_name: project.owner_name,

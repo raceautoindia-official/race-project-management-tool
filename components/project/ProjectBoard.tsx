@@ -31,6 +31,7 @@ import TaskCard from "./TaskCard";
 import TaskFormModal from "./TaskFormModal";
 import TaskDetailModal from "./TaskDetailModal";
 import MembersModal from "./MembersModal";
+import { DepartmentBadge } from "@/components/DepartmentField";
 import EditProjectModal from "./EditProjectModal";
 import ImportTasksModal from "./ImportTasksModal";
 import TimelineView from "./TimelineView";
@@ -48,6 +49,8 @@ interface ProjectInfo {
   id: number;
   name: string;
   description: string | null;
+  /** Whose work this is; every task in here counts to it. */
+  department: string | null;
   status: ProjectStatus;
   owner_id: number | null;
   owner_name: string | null;
@@ -345,6 +348,7 @@ export default function ProjectBoard({
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold text-white sm:text-3xl">{project.name}</h1>
+              <DepartmentBadge name={project.department} />
               <ProjectStatusBadge status={project.status} />
               {project.approval_status !== "approved" && (
                 <RequestStatusBadge status={project.approval_status} />

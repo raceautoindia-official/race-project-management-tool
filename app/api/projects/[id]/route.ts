@@ -17,7 +17,7 @@ type Params = { params: Promise<{ id: string }> };
 
 async function projectDetail(projectId: number) {
   const rows = await query<DbRow[]>(
-    `SELECT p.id, p.name, p.description, p.status, p.approval_status, p.owner_id,
+    `SELECT p.id, p.name, p.description, p.department, p.status, p.approval_status, p.owner_id,
             p.requested_by, p.requested_at, p.decided_by, p.decided_at, p.decision_note,
             p.created_at, p.updated_at, u.name AS owner_name,
             rq.name AS requester_name, dc.name AS decider_name
@@ -122,6 +122,10 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     if (data.name !== undefined) {
       sets.push("name = ?");
       values.push(data.name);
+    }
+    if (data.department !== undefined) {
+      sets.push("department = ?");
+      values.push(data.department ?? null);
     }
     if (data.description !== undefined) {
       sets.push("description = ?");

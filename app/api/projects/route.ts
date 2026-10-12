@@ -9,7 +9,7 @@ import { sendEmail, emailLayout, appBaseUrl, escapeHtml } from "@/lib/mailer";
 export const dynamic = "force-dynamic";
 
 const PROJECT_SELECT = `
-  p.id, p.name, p.description, p.status, p.approval_status, p.owner_id,
+  p.id, p.name, p.description, p.department, p.status, p.approval_status, p.owner_id,
   p.requested_by, p.requested_at, p.decided_by, p.decided_at, p.decision_note,
   p.created_at, p.updated_at,
   u.name AS owner_name, rq.name AS requester_name,
@@ -24,6 +24,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const search = (searchParams.get("search") ?? "").trim();
     const status = searchParams.get("status") ?? "";
+    const department = (searchParams.get("department") ?? "").trim();
     const { page, pageSize, offset } = getPagination(searchParams);
 
     const where: string[] = [];
@@ -39,6 +40,14 @@ export async function GET(req: NextRequest) {
     if (search) {
       where.push("p.name LIKE ?");
       params.push(`%${search}%`);
+    }
+    // "none" is a real answer, not a missing one: the projects nobody has
+    // placed in a department yet are the ones worth finding.
+    if (department === "none") {
+      where.push("(p.department IS NULL OR p.department = '')");
+    } else if (department) {
+      where.push("p.department = ?");
+      params.push(department);
     }
     if (["active", "completed", "archived"].includes(status)) {
       where.push("p.status = ?");
@@ -122,6 +131,10 @@ export async function POST(req: NextRequest) {
       ownerId = data.leadId;
     }
 
+    // Work belongs to the department of whoever raised it, unless they say
+    // otherwise. Nobody has to answer a question they already know.
+    const department = data.department ?? user.department ?? null;
+
     const conn = await pool.getConnection();
     let projectId: number;
     try {
@@ -129,16 +142,24 @@ export async function POST(req: NextRequest) {
       const [res] = await conn.execute(
         isAdmin
           ? `INSERT INTO projects
-               (name, description, status, approval_status, owner_id,
+               (name, description, department, status, approval_status, owner_id,
                 requested_by, requested_at, decided_by, decided_at)
-             VALUES (?, ?, ?, 'approved', ?, ?, UTC_TIMESTAMP(), ?, UTC_TIMESTAMP())`
+             VALUES (?, ?, ?, ?, 'approved', ?, ?, UTC_TIMESTAMP(), ?, UTC_TIMESTAMP())`
           : `INSERT INTO projects
-               (name, description, status, approval_status, owner_id,
+               (name, description, department, status, approval_status, owner_id,
                 requested_by, requested_at)
-             VALUES (?, ?, 'active', 'pending', ?, ?, UTC_TIMESTAMP())`,
+             VALUES (?, ?, ?, 'active', 'pending', ?, ?, UTC_TIMESTAMP())`,
         isAdmin
-          ? [data.name, data.description ?? null, data.status ?? "active", ownerId, user.id, user.id]
-          : [data.name, data.description ?? null, ownerId, user.id]
+          ? [
+              data.name,
+              data.description ?? null,
+              department,
+              data.status ?? "active",
+              ownerId,
+              user.id,
+              user.id,
+            ]
+          : [data.name, data.description ?? null, department, ownerId, user.id]
       );
       projectId = (res as DbResult).insertId;
 
@@ -215,6 +236,7 @@ export async function POST(req: NextRequest) {
           id: projectId,
           name: data.name,
           description: data.description ?? null,
+          department,
           owner_id: ownerId,
           approval_status: isAdmin ? "approved" : "pending",
         },

@@ -16,7 +16,8 @@
     "smoke": "node scripts/smoke.mjs",
     "flow": "node scripts/flow-test.mjs",
     "a11y": "node scripts/a11y-audit.mjs",
-    "backfill:checklists": "node scripts/backfill-checklists.mjs"
+    "backfill:checklists": "node scripts/backfill-checklists.mjs",
+    "sync:departments": "node scripts/sync-departments.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-sesv2": "^3.1081.0",

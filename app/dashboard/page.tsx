@@ -5,6 +5,7 @@ import { getAdminDashboard, getMemberDashboard } from "@/lib/dashboard";
 import AppShell from "@/components/AppShell";
 import { SectionCard, PageHeader } from "@/components/Cards";
 import StatusChart from "@/components/StatusChart";
+import DepartmentLoadPanel from "@/components/DepartmentLoadPanel";
 import {
   KpiTile,
   ProjectProgressList,
@@ -158,6 +159,7 @@ async function AdminDashboard() {
         <SectionCard title="Tasks by status">
           <StatusChart data={statusChartData(data.tasksByStatus)} />
         </SectionCard>
+        <DepartmentLoadPanel rows={data.byDepartment} />
         <SectionCard title="Active project completion">
           <ProjectProgressList projects={data.projectProgress} />
         </SectionCard>

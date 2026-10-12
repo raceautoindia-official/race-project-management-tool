@@ -150,24 +150,32 @@ export async function findEmployeeByEmpId(
  */
 export async function syncEmployeeStatus(
   employeeId: number,
-  current: { role: Role; is_active: boolean }
-): Promise<{ role: Role; is_active: boolean } | null> {
+  current: { role: Role; is_active: boolean; department: string | null }
+): Promise<{ role: Role; is_active: boolean; department: string | null } | null> {
   try {
     const [rows] = await attendancePool.execute(
       `SELECT role, is_active FROM employees WHERE id = ? LIMIT 1`,
       [employeeId]
     );
     const emp = (rows as Pick<AttendanceEmployee, "role" | "is_active">[])[0];
+    // A transfer between departments reaches PM on the same heartbeat as a
+    // change of role — but asked for separately, so an Attendance without the
+    // column keeps the rest of this working.
+    const department = await fetchEmployeeDepartment(employeeId);
     const fresh = {
       role: emp ? mapAttendanceRole(emp.role) : current.role,
       is_active: Boolean(emp?.is_active),
+      department: department === undefined ? current.department : department,
     };
-    if (fresh.role !== current.role || fresh.is_active !== current.is_active) {
-      await query(`UPDATE users SET role = ?, is_active = ? WHERE employee_id = ?`, [
-        fresh.role,
-        fresh.is_active ? 1 : 0,
-        employeeId,
-      ]);
+    if (
+      fresh.role !== current.role ||
+      fresh.is_active !== current.is_active ||
+      fresh.department !== current.department
+    ) {
+      await query(
+        `UPDATE users SET role = ?, is_active = ?, department = ? WHERE employee_id = ?`,
+        [fresh.role, fresh.is_active ? 1 : 0, fresh.department, employeeId]
+      );
     }
     return fresh;
   } catch (err) {
@@ -182,6 +190,31 @@ export async function verifyEmployeePin(
   pinHash: string
 ): Promise<boolean> {
   return bcrypt.compare(pin, pinHash);
+}
+
+/**
+ * One employee's department, read on its own and never fatally.
+ *
+ * It is deliberately not part of the login query. Attendance is a database
+ * this app does not own and cannot migrate, so a column it may not have must
+ * never be able to stop anyone signing in. `undefined` means "could not find
+ * out" — an outage, or an older Attendance without the column — and the
+ * caller leaves whatever PM already recorded alone. `null` means Attendance
+ * says the person has no department.
+ */
+export async function fetchEmployeeDepartment(
+  employeeId: number
+): Promise<string | null | undefined> {
+  try {
+    const [rows] = await attendancePool.execute(
+      `SELECT department FROM employees WHERE id = ? LIMIT 1`,
+      [employeeId]
+    );
+    const row = (rows as { department: string | null }[])[0];
+    return row ? (row.department ?? null) : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** A dummy bcrypt hash so a missing employee still costs one bcrypt compare
@@ -210,6 +243,15 @@ export async function provisionPmUser(
        is_active = VALUES(is_active)`,
     [emp.id, emp.emp_id, emp.name, emp.email, role, emp.is_active ? 1 : 0]
   );
+  // Separately, and after the fact: a department PM cannot read is a
+  // department PM does not update. Signing in still works either way.
+  const department = await fetchEmployeeDepartment(emp.id);
+  if (department !== undefined) {
+    await query(`UPDATE users SET department = ? WHERE employee_id = ?`, [
+      department,
+      emp.id,
+    ]);
+  }
   const rows = await query<DbRow[]>(
     `SELECT id FROM users WHERE employee_id = ? LIMIT 1`,
     [emp.id]

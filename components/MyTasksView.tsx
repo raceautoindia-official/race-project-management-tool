@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { TaskPriorityBadge } from "@/components/Badge";
+import { DepartmentBadge } from "@/components/DepartmentField";
 import LabelChip from "@/components/LabelChip";
 import Calendar from "@/components/Calendar";
 import { SectionCard } from "@/components/Cards";
@@ -96,6 +97,7 @@ export default function MyTasksView({
                         </Link>
                         <div className="flex items-center gap-2 text-xs text-slate-500">
                           <span>{t.project_name}</span>
+                          <DepartmentBadge name={t.department} />
                           {t.labels?.map((l) => (
                             <LabelChip key={l.id} name={l.name} color={l.color} />
                           ))}
@@ -141,6 +143,7 @@ export default function MyTasksView({
                     </Link>
                     <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
                       <span>{t.project_name}</span>
+                      <DepartmentBadge name={t.department} />
                       <span aria-hidden="true">·</span>
                       <span>
                         {t.assignee_name ? `Owner: ${t.assignee_name}` : "No owner yet"}

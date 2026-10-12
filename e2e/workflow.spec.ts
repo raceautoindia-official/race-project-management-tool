@@ -46,6 +46,9 @@ test("a member requests a project and nominates a lead", async () => {
 
   await expect(alice).toHaveURL(/\/projects\/\d+$/);
   projectPath = new URL(alice.url()).pathname;
+  // Alice is in Production in Attendance, so her project is Production's —
+  // mirrored on login, never typed in here.
+  await expect(alice.getByText("Production", { exact: true }).first()).toBeVisible();
   await expect(alice.getByRole("heading", { name: PROJECT })).toBeVisible();
   await expect(alice.getByText("Awaiting lead approval")).toBeVisible();
   await expect(alice.getByText(`Nominated lead: ${USERS.lead.name}`)).toBeVisible();

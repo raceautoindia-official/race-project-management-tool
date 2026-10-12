@@ -17,6 +17,8 @@ export interface MemberStats {
   id: number;
   emp_id: string;
   name: string;
+  /** Mirrored from the Attendance app. */
+  department: string | null;
   role: "admin" | "member";
   online: boolean;
   last_seen_at: string | null;
@@ -83,7 +85,7 @@ export async function getTeamPerformance(user: User): Promise<TeamPerformance> {
   const params = ids ?? [];
 
   const rows = await query<DbRow[]>(
-    `SELECT u.id, u.emp_id, u.name, u.role, u.last_seen_at,
+    `SELECT u.id, u.emp_id, u.name, u.department, u.role, u.last_seen_at,
             (u.last_seen_at IS NOT NULL
               AND u.last_seen_at >= UTC_TIMESTAMP() - INTERVAL 5 MINUTE) AS online,
             (SELECT COUNT(*) FROM tasks t WHERE t.assignee_id = u.id
@@ -154,6 +156,7 @@ export async function getTeamPerformance(user: User): Promise<TeamPerformance> {
     id: r.id,
     emp_id: r.emp_id,
     name: r.name,
+    department: (r.department as string | null) ?? null,
     role: r.role,
     online: Boolean(Number(r.online)),
     last_seen_at: r.last_seen_at,

@@ -90,9 +90,18 @@ export const loginSchema = z.object({
 // password schemas of its own.
 
 // ---- Projects ----
+/** Free text, because the list of departments belongs to Attendance. */
+const departmentField = z
+  .string()
+  .trim()
+  .max(100)
+  .nullish()
+  .transform((v) => (v ? v : null));
+
 export const createProjectSchema = z.object({
   name: z.string().min(1).max(150),
   description: optionalText,
+  department: departmentField,
   status: z.enum(["active", "completed", "archived"]).optional(),
   ownerId: optionalId.optional(),
   memberIds: z.array(z.coerce.number().int().positive()).optional(),
@@ -120,6 +129,7 @@ export const updateProjectSchema = z
   .object({
     name: z.string().min(1).max(150).optional(),
     description: optionalText,
+    department: departmentField,
     status: z.enum(["active", "completed", "archived"]).optional(),
     ownerId: optionalId.optional(),
   })

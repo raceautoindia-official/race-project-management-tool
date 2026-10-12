@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { DepartmentSelect } from "@/components/DepartmentField";
 import { useRouter } from "next/navigation";
 import Modal from "@/components/Modal";
 import { apiFetch } from "@/lib/api-client";
@@ -19,14 +20,22 @@ export default function EditProjectModal({
 }: {
   open: boolean;
   onClose: () => void;
-  project: Pick<Project, "id" | "name" | "description" | "status">;
+  project: Pick<Project, "id" | "name" | "description" | "status"> & {
+    department?: string | null;
+  };
   canDelete: boolean;
-  onSaved: (p: { name: string; description: string | null; status: ProjectStatus }) => void;
+  onSaved: (p: {
+    name: string;
+    description: string | null;
+    department: string | null;
+    status: ProjectStatus;
+  }) => void;
 }) {
   const router = useRouter();
   const { toast } = useToast();
   const [name, setName] = useState(project.name);
   const [description, setDescription] = useState(project.description ?? "");
+  const [department, setDepartment] = useState(project.department ?? "");
   const [status, setStatus] = useState<ProjectStatus>(project.status);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -38,9 +47,9 @@ export default function EditProjectModal({
     try {
       await apiFetch(`/api/projects/${project.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ name, description, status }),
+        body: JSON.stringify({ name, description, department, status }),
       });
-      onSaved({ name, description, status });
+      onSaved({ name, description, department: department || null, status });
       toast("Project updated");
       onClose();
     } catch (err) {
@@ -96,6 +105,12 @@ export default function EditProjectModal({
             className={inputClass}
           />
         </div>
+        <DepartmentSelect
+          id="edit-project-department"
+          value={department}
+          onChange={setDepartment}
+          hint="Every task in this project counts to this department."
+        />
         <div>
           <label htmlFor="edit-project-status" className="mb-1 block text-sm font-medium text-slate-700">Status</label>
           <select

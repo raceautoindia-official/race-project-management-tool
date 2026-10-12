@@ -5,6 +5,7 @@ import Link from "next/link";
 import { apiFetch } from "@/lib/api-client";
 import { useToast } from "@/components/ToastProvider";
 import { formatDate } from "@/lib/format";
+import { DepartmentBadge } from "@/components/DepartmentField";
 import type { ApprovalStatus } from "@/lib/types";
 
 export interface OutstandingTask {
@@ -12,6 +13,8 @@ export interface OutstandingTask {
   project_id: number;
   title: string;
   project_name: string;
+  /** Its project's department. */
+  department: string | null;
   assignee_name: string | null;
   due_date: string | null;
   status: string;
@@ -29,6 +32,17 @@ export default function OutstandingView({
   const { toast } = useToast();
   const [tasks, setTasks] = useState<OutstandingTask[]>(initial);
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [department, setDepartment] = useState("");
+
+  // Only the departments actually represented here: offering a filter that
+  // can only ever return nothing is worse than not offering it.
+  const departments = [...new Set(tasks.map((t) => t.department).filter(Boolean))]
+    .sort() as string[];
+  const shown = department
+    ? tasks.filter((t) =>
+        department === "none" ? !t.department : t.department === department
+      )
+    : tasks;
 
   async function decide(id: number, decision: "approve" | "reject") {
     setBusyId(id);
@@ -59,7 +73,33 @@ export default function OutstandingView({
   }
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+    <div>
+      {departments.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <label htmlFor="outstanding-department" className="text-sm text-slate-600">
+            Department
+          </label>
+          <select
+            id="outstanding-department"
+            value={department}
+            onChange={(e) => setDepartment(e.target.value)}
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+          >
+            <option value="">All departments ({tasks.length})</option>
+            {departments.map((d) => (
+              <option key={d} value={d}>
+                {d} ({tasks.filter((t) => t.department === d).length})
+              </option>
+            ))}
+            {tasks.some((t) => !t.department) && (
+              <option value="none">
+                No department ({tasks.filter((t) => !t.department).length})
+              </option>
+            )}
+          </select>
+        </div>
+      )}
+      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
       <table className="w-full text-left text-sm">
         <thead className="text-xs uppercase tracking-wide text-slate-500">
           <tr>
@@ -72,7 +112,7 @@ export default function OutstandingView({
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
-          {tasks.map((t) => {
+          {shown.map((t) => {
             const inReview = t.status === "review";
             return (
               <tr key={t.id} className="hover:bg-slate-50">
@@ -84,6 +124,7 @@ export default function OutstandingView({
                   >
                     {t.project_name}
                   </Link>
+                  <DepartmentBadge name={t.department} />
                 </td>
                 <td className="px-4 py-2 text-slate-600">
                   {t.assignee_name ?? "—"}
@@ -141,6 +182,7 @@ export default function OutstandingView({
           })}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

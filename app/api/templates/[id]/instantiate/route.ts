@@ -45,9 +45,11 @@ export async function POST(req: NextRequest, { params }: Params) {
     try {
       await conn.beginTransaction();
       const [pRes] = await conn.execute(
-        `INSERT INTO projects (name, description, status, owner_id)
-         VALUES (?, NULL, 'active', ?)`,
-        [name, admin.id]
+        // A template carries no department: it is a shape of work, not a
+        // team's work. The project lands where whoever created it belongs.
+        `INSERT INTO projects (name, description, department, status, owner_id)
+         VALUES (?, NULL, ?, 'active', ?)`,
+        [name, admin.department ?? null, admin.id]
       );
       const projectId = (pRes as DbResult).insertId;
       await conn.execute(

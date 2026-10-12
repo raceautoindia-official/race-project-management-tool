@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ProjectStatusBadge, RequestStatusBadge, RoleBadge } from "./Badge";
+import { DepartmentBadge } from "./DepartmentField";
 import type { Project } from "@/lib/types";
 
 export default function ProjectCard({ project }: { project: Project }) {
@@ -15,6 +16,7 @@ export default function ProjectCard({ project }: { project: Project }) {
       <div className="flex items-start justify-between gap-2">
         <h3 className="font-semibold text-slate-900">{project.name}</h3>
         <div className="flex shrink-0 flex-wrap justify-end gap-1">
+          <DepartmentBadge name={project.department} />
           {project.approval_status && project.approval_status !== "approved" ? (
             <RequestStatusBadge status={project.approval_status} />
           ) : (
