@@ -12,6 +12,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Playwright's own output. Both are gitignored, but a flat config does
+    // not read .gitignore, so without this one e2e run buries `npm run lint`
+    // in thousands of findings about bundled report JavaScript.
+    "test-results/**",
+    "playwright-report/**",
   ]),
 ]);
 

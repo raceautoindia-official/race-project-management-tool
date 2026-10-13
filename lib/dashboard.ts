@@ -1,6 +1,7 @@
 import "server-only";
 import { query, DbRow } from "./db";
 import type { TaskStatus } from "./types";
+import { PROJECT_UNITS_SQL, PROJECT_CREDITED_SQL } from "./progress";
 
 export interface StatusCount {
   status: TaskStatus;
@@ -21,6 +22,18 @@ export interface ProjectProgress {
   name: string;
   task_count: number;
   done_count: number;
+  /** Checklist items across the project, and how many are ticked. */
+  progress_units: number;
+  progress_done: number;
+}
+
+/** One department's share of the work, for the dashboard breakdown. */
+export interface DepartmentLoad {
+  department: string;
+  projects: number;
+  open_tasks: number;
+  overdue: number;
+  people: number;
 }
 
 export interface AdminDashboard {
@@ -31,6 +44,7 @@ export interface AdminDashboard {
   hours: HoursTotals;
   overdue: DbRow[];
   projectProgress: ProjectProgress[];
+  byDepartment: DepartmentLoad[];
   upcomingMeetings: DbRow[];
   recentActivity: DbRow[];
 }
@@ -39,7 +53,8 @@ export async function getAdminDashboard(): Promise<AdminDashboard> {
   const [users] = await query<DbRow[]>(`SELECT COUNT(*) AS c FROM users`);
   const [projects] = await query<DbRow[]>(`SELECT COUNT(*) AS c FROM projects`);
   const [activeProjects] = await query<DbRow[]>(
-    `SELECT COUNT(*) AS c FROM projects WHERE status = 'active'`
+    `SELECT COUNT(*) AS c FROM projects
+      WHERE status = 'active' AND approval_status = 'approved'`
   );
   const [tasks] = await query<DbRow[]>(`SELECT COUNT(*) AS c FROM tasks`);
 
@@ -76,9 +91,11 @@ export async function getAdminDashboard(): Promise<AdminDashboard> {
   const projectProgress = await query<DbRow[]>(
     `SELECT p.id, p.name,
             (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id) AS task_count,
-            (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'done') AS done_count
+            (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'done') AS done_count,
+            ${PROJECT_UNITS_SQL} AS progress_units,
+            ${PROJECT_CREDITED_SQL} AS progress_done
      FROM projects p
-     WHERE p.status = 'active'
+     WHERE p.status = 'active' AND p.approval_status = 'approved'
      ORDER BY task_count DESC, p.updated_at DESC
      LIMIT 6`
   );
@@ -99,6 +116,36 @@ export async function getAdminDashboard(): Promise<AdminDashboard> {
      LIMIT 10`
   );
 
+  // The company's work split by the department that owns it. A project's
+  // department is its tasks' department, so one join answers both.
+  const departmentRows = await query<DbRow[]>(
+    `SELECT COALESCE(NULLIF(p.department, ''), '') AS department,
+            COUNT(DISTINCT p.id) AS projects,
+            COUNT(CASE WHEN t.status <> 'done' THEN t.id END) AS open_tasks,
+            COUNT(CASE WHEN t.status <> 'done' AND t.due_date < UTC_DATE()
+                       THEN t.id END) AS overdue
+       FROM projects p
+       LEFT JOIN tasks t ON t.project_id = p.id
+      WHERE p.status <> 'archived' AND p.approval_status = 'approved'
+      GROUP BY COALESCE(NULLIF(p.department, ''), '')
+      ORDER BY open_tasks DESC, projects DESC`
+  );
+  const peopleRows = await query<DbRow[]>(
+    `SELECT COALESCE(NULLIF(department, ''), '') AS department, COUNT(*) AS c
+       FROM users WHERE is_active = 1
+      GROUP BY COALESCE(NULLIF(department, ''), '')`
+  );
+  const peopleBy = new Map(
+    peopleRows.map((r) => [String(r.department), Number(r.c)])
+  );
+  const byDepartment: DepartmentLoad[] = departmentRows.map((r) => ({
+    department: String(r.department),
+    projects: Number(r.projects),
+    open_tasks: Number(r.open_tasks),
+    overdue: Number(r.overdue),
+    people: peopleBy.get(String(r.department)) ?? 0,
+  }));
+
   return {
     totals: {
       users: Number(users.c),
@@ -112,6 +159,7 @@ export async function getAdminDashboard(): Promise<AdminDashboard> {
     hours: { estimated: Number(hours.est), spent: Number(hours.spent) },
     overdue,
     projectProgress: projectProgress as unknown as ProjectProgress[],
+    byDepartment,
     upcomingMeetings,
     recentActivity,
   };
@@ -188,7 +236,9 @@ export async function getMemberDashboard(
   const projects = await query<DbRow[]>(
     `SELECT p.id, p.name, p.status, pm.role_in_project,
             (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id) AS task_count,
-            (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'done') AS done_count
+            (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'done') AS done_count,
+            ${PROJECT_UNITS_SQL} AS progress_units,
+            ${PROJECT_CREDITED_SQL} AS progress_done
      FROM projects p
      JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = ?
      ORDER BY p.updated_at DESC`,

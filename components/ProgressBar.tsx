@@ -5,10 +5,13 @@ export function ProgressBar({
   value,
   tone = "indigo",
   className = "",
+  label = "Progress",
 }: {
   value: number;
   tone?: "indigo" | "green";
   className?: string;
+  /** What the bar measures — read out instead of a bare percentage. */
+  label?: string;
 }) {
   const pct = Math.max(0, Math.min(100, Math.round(value)));
   const bar = tone === "green" ? "bg-green-500" : "bg-indigo-500";
@@ -16,6 +19,7 @@ export function ProgressBar({
     <div
       className={`h-2 w-full overflow-hidden rounded-full bg-slate-100 ${className}`}
       role="progressbar"
+      aria-label={label}
       aria-valuenow={pct}
       aria-valuemin={0}
       aria-valuemax={100}
@@ -46,7 +50,11 @@ export function StatusBar({
   const total = SEGMENTS.reduce((sum, s) => sum + (counts[s.key] ?? 0), 0);
   return (
     <div>
-      <div className="flex h-2 w-full overflow-hidden rounded-full bg-slate-100">
+      <div
+        role="img"
+        aria-label={`${counts.done ?? 0} of ${total} tasks done`}
+        className="flex h-2 w-full overflow-hidden rounded-full bg-slate-100"
+      >
         {total > 0 &&
           SEGMENTS.map((s) => {
             const w = ((counts[s.key] ?? 0) / total) * 100;
@@ -61,7 +69,7 @@ export function StatusBar({
           })}
       </div>
       {showLegend && (
-        <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+        <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-600">
           {SEGMENTS.map((s) => (
             <span key={s.key} className="flex items-center gap-1">
               <span className={`inline-block h-2 w-2 rounded-sm ${s.color}`} />

@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { query, DbRow } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { json, errorResponse, ApiError } from "@/lib/http";
-import { assertProjectManage } from "@/lib/rbac";
+import { assertProjectManage, assertTaskWritable } from "@/lib/rbac";
 import { approvalSchema } from "@/lib/validation";
 import { logActivity, notify } from "@/lib/activity";
 
@@ -32,6 +32,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     // Only an admin or the project lead may decide.
     await assertProjectManage(user, task.project_id);
+    await assertTaskWritable(taskId);
 
     if (task.approval_status !== "pending") {
       throw new ApiError(409, "This task is not awaiting approval");

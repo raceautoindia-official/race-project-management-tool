@@ -2,7 +2,11 @@ import { NextRequest } from "next/server";
 import { query, DbRow, DbResult } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { json, errorResponse, ApiError } from "@/lib/http";
-import { assertProjectAccess, assertProjectManage } from "@/lib/rbac";
+import {
+  assertProjectAccess,
+  assertProjectManage,
+  assertProjectWritable,
+} from "@/lib/rbac";
 import { createLabelSchema } from "@/lib/validation";
 import { LABEL_COLORS } from "@/lib/colors";
 
@@ -32,7 +36,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const { id } = await params;
     const projectId = Number(id);
     if (!Number.isInteger(projectId)) throw new ApiError(400, "Invalid id");
-    await assertProjectManage(user, projectId);
+    assertProjectWritable(await assertProjectManage(user, projectId));
 
     const body = await req.json().catch(() => ({}));
     const data = createLabelSchema.parse(body);
@@ -70,10 +74,20 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     const { id } = await params;
     const projectId = Number(id);
     if (!Number.isInteger(projectId)) throw new ApiError(400, "Invalid id");
-    await assertProjectManage(user, projectId);
+    assertProjectWritable(await assertProjectManage(user, projectId));
 
     const labelId = Number(new URL(req.url).searchParams.get("labelId"));
     if (!Number.isInteger(labelId)) throw new ApiError(400, "Invalid labelId");
+
+    // Removing the label would silently change signed-off (read-only) tasks.
+    const [used] = await query<DbRow[]>(
+      `SELECT COUNT(*) AS n FROM task_labels tl JOIN tasks t ON t.id = tl.task_id
+        WHERE tl.label_id = ? AND t.signed_off_at IS NOT NULL`,
+      [labelId]
+    );
+    if (Number(used.n) > 0) {
+      throw new ApiError(409, "This label is on a signed-off task and can't be deleted.");
+    }
 
     await query(`DELETE FROM labels WHERE id = ? AND project_id = ?`, [
       labelId,

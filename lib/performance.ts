@@ -17,6 +17,12 @@ export interface MemberStats {
   id: number;
   emp_id: string;
   name: string;
+  /** Mirrored from the Attendance app. */
+  department: string | null;
+  /** Their job title. PM's own — Attendance has no such field. */
+  designation: string | null;
+  /** "pm" when an admin set the department here rather than Attendance. */
+  department_source: "attendance" | "pm";
   role: "admin" | "member";
   online: boolean;
   last_seen_at: string | null;
@@ -34,22 +40,47 @@ export interface MemberStats {
 }
 
 export interface TeamPerformance {
-  scope: "all" | "led" | "self";
+  scope: "all" | "led" | "shared" | "self";
   members: MemberStats[];
 }
 
+/**
+ * Who someone sees on the Team page.
+ *
+ *   admin  → everyone
+ *   lead   → the members of the projects they lead
+ *   anyone → the people they share a project with
+ *   alone  → just themselves, when they are on no project yet
+ *
+ * Only **approved** projects count, in every case. A nominated lead of a
+ * project request that is still pending or rejected must not gain visibility
+ * into anyone's work by having been nominated.
+ */
 async function scopedUserIds(user: User): Promise<{ scope: TeamPerformance["scope"]; ids: number[] | null }> {
   if (user.role === "admin") return { scope: "all", ids: null };
-  const led = await query<DbRow[]>(
+
+  // Everyone on a project this person is also on — the people they work with.
+  const shared = await query<DbRow[]>(
     `SELECT DISTINCT pm2.user_id
        FROM project_members pm
+       JOIN projects p ON p.id = pm.project_id AND p.approval_status = 'approved'
        JOIN project_members pm2 ON pm2.project_id = pm.project_id
+      WHERE pm.user_id = ?`,
+    [user.id]
+  );
+  const [leads] = await query<DbRow[]>(
+    `SELECT COUNT(*) AS n
+       FROM project_members pm
+       JOIN projects p ON p.id = pm.project_id AND p.approval_status = 'approved'
       WHERE pm.user_id = ? AND pm.role_in_project = 'lead'`,
     [user.id]
   );
-  const ids = new Set<number>(led.map((r) => r.user_id as number));
+
+  const ids = new Set<number>(shared.map((r) => r.user_id as number));
   ids.add(user.id);
-  return { scope: led.length > 0 ? "led" : "self", ids: [...ids] };
+  const scope: TeamPerformance["scope"] =
+    Number(leads?.n ?? 0) > 0 ? "led" : ids.size > 1 ? "shared" : "self";
+  return { scope, ids: [...ids] };
 }
 
 export async function getTeamPerformance(user: User): Promise<TeamPerformance> {
@@ -58,7 +89,8 @@ export async function getTeamPerformance(user: User): Promise<TeamPerformance> {
   const params = ids ?? [];
 
   const rows = await query<DbRow[]>(
-    `SELECT u.id, u.emp_id, u.name, u.role, u.last_seen_at,
+    `SELECT u.id, u.emp_id, u.name, u.department, u.department_source,
+            u.designation, u.role, u.last_seen_at,
             (u.last_seen_at IS NOT NULL
               AND u.last_seen_at >= UTC_TIMESTAMP() - INTERVAL 5 MINUTE) AS online,
             (SELECT COUNT(*) FROM tasks t WHERE t.assignee_id = u.id
@@ -129,6 +161,9 @@ export async function getTeamPerformance(user: User): Promise<TeamPerformance> {
     id: r.id,
     emp_id: r.emp_id,
     name: r.name,
+    department: (r.department as string | null) ?? null,
+    designation: (r.designation as string | null) ?? null,
+    department_source: r.department_source === "pm" ? "pm" : "attendance",
     role: r.role,
     online: Boolean(Number(r.online)),
     last_seen_at: r.last_seen_at,

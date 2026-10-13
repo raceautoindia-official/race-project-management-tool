@@ -16,6 +16,8 @@ export const unauthorized = (msg = "Not authenticated") =>
 export const forbidden = (msg = "Forbidden") => new ApiError(403, msg);
 export const notFound = (msg = "Not found") => new ApiError(404, msg);
 export const badRequest = (msg = "Bad request") => new ApiError(400, msg);
+/** The resource is in a state that forbids this change (e.g. read-only). */
+export const conflict = (msg = "Conflict") => new ApiError(409, msg);
 
 export function json<T>(data: T, status = 200) {
   return NextResponse.json(data, { status });
@@ -27,9 +29,12 @@ export function errorResponse(error: unknown) {
     return NextResponse.json({ error: error.message }, { status: error.status });
   }
   if (error instanceof ZodError) {
+    // Surface the first issue in `error` — clients show that string directly.
     return NextResponse.json(
       {
-        error: "Validation failed",
+        error: error.issues[0]?.message
+          ? `Validation failed: ${error.issues[0].message}`
+          : "Validation failed",
         details: error.issues.map((i) => ({
           path: i.path.join("."),
           message: i.message,

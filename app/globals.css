@@ -1,15 +1,55 @@
 @import "tailwindcss";
 
-:root {
-  --background: #f1f5f9;
-  --foreground: #0f172a;
+/**
+ * The palette is a timing board: every colour here stands for a state the
+ * work can be in, and nothing is coloured to be decorative. Overriding
+ * Tailwind's own scales rather than adding new names means the whole app
+ * moves together — a button that was indigo-600 is now signal blue without
+ * being touched.
+ */
+@theme {
+  /* Neutrals: cooler and deeper than Tailwind's slate, so the rail reads as
+     ink rather than grey. */
+  --color-slate-50: #f4f6fa;
+  --color-slate-100: #e8ecf4;
+  --color-slate-200: #d6dcea;
+  --color-slate-300: #b4bed3;
+  --color-slate-400: #8793ac;
+  --color-slate-500: #5f6b84;
+  --color-slate-600: #475266;
+  --color-slate-700: #333c4d;
+  --color-slate-800: #1c2534;
+  --color-slate-900: #0b1220;
+  --color-slate-950: #060a13;
+
+  /* Signal: the colour of something running, and of the thing to press. */
+  --color-indigo-50: #eef4ff;
+  --color-indigo-100: #dce8ff;
+  --color-indigo-200: #bbd2ff;
+  --color-indigo-300: #8fb4ff;
+  --color-indigo-400: #5b90ff;
+  --color-indigo-500: #2e74ff;
+  --color-indigo-600: #0b5cff;
+  --color-indigo-700: #0a4bd0;
+  --color-indigo-800: #0b3f9f;
+
+  /* Flag: overdue, blocked, destructive. Darker than Tailwind's red so white
+     on it clears the contrast floor. */
+  --color-red-500: #e11d48;
+  --color-red-600: #c81240;
+
+  /* Sector: signed off — the end of the lap. */
+  --color-violet-500: #7c3aed;
+  --color-violet-600: #6d28d9;
+
+  --font-sans: var(--font-plex-sans), system-ui, sans-serif;
+  --font-display: var(--font-archivo), var(--font-plex-sans), sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), monospace;
+:root {
+  --background: #f4f6fa;
+  --foreground: #0b1220;
 }
 
 html,
@@ -21,4 +61,102 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
+}
+
+/* Headings carry the personality: set tight, and never stretched out. */
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}
+
+/**
+ * Figures line up down a column; words do not. Anything countable — hours,
+ * totals, dates in a table — gets this, and nothing else does.
+ */
+.figure {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* Keyboard focus is visible everywhere, on the signal colour. */
+:focus-visible {
+  outline: 2px solid var(--color-indigo-600);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/**
+ * A button sitting on the dark header band. The band is the one dark surface
+ * in the page, so its controls need their own treatment rather than the
+ * light-background one they would otherwise inherit.
+ */
+.on-band {
+  border-color: color-mix(in srgb, white 25%, transparent);
+  background: transparent;
+  color: #e8ecf4;
+}
+.on-band:hover {
+  background: color-mix(in srgb, white 10%, transparent);
+  color: #fff;
+}
+
+/* Each action on the band carries its own hue. */
+.band-out {
+  border-color: color-mix(in srgb, #34d399 45%, transparent);
+  color: #a7f3d0;
+}
+.band-out:hover {
+  background: color-mix(in srgb, #34d399 14%, transparent);
+  color: #d1fae5;
+}
+.band-sheet {
+  border-color: color-mix(in srgb, #22d3ee 45%, transparent);
+  color: #a5f3fc;
+}
+.band-sheet:hover {
+  background: color-mix(in srgb, #22d3ee 14%, transparent);
+  color: #cffafe;
+}
+.band-in {
+  border-color: color-mix(in srgb, #a78bfa 45%, transparent);
+  color: #ddd6fe;
+}
+.band-in:hover {
+  background: color-mix(in srgb, #a78bfa 16%, transparent);
+  color: #ede9fe;
+}
+.band-set {
+  border-color: color-mix(in srgb, #fbbf24 45%, transparent);
+  color: #fde68a;
+}
+.band-set:hover {
+  background: color-mix(in srgb, #fbbf24 14%, transparent);
+  color: #fef3c7;
+}
+.band-people {
+  border-color: color-mix(in srgb, #38bdf8 45%, transparent);
+  color: #bae6fd;
+}
+.band-people:hover {
+  background: color-mix(in srgb, #38bdf8 14%, transparent);
+  color: #e0f2fe;
+}
+.band-edit {
+  border-color: color-mix(in srgb, #f472b6 45%, transparent);
+  color: #fbcfe8;
+}
+.band-edit:hover {
+  background: color-mix(in srgb, #f472b6 14%, transparent);
+  color: #fce7f3;
 }

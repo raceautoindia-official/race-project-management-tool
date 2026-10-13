@@ -13,7 +13,11 @@ export default async function OutstandingPage() {
   const isAdmin = user.role === "admin";
 
   // "Needs attention": overdue tasks + tasks submitted for review.
-  const where = ["(t.outstanding = 1 OR t.status = 'review')"];
+  const where = [
+    "(t.outstanding = 1 OR t.status = 'review')",
+    // Read-only projects (pending/rejected requests, completed) need no action.
+    "p.approval_status = 'approved' AND p.status <> 'completed'",
+  ];
   const params: unknown[] = [];
   if (!isAdmin) {
     where.push(`(
@@ -29,7 +33,7 @@ export default async function OutstandingPage() {
   const rows = await query<DbRow[]>(
     `SELECT t.id, t.project_id, t.title, t.status, t.outstanding,
             t.approval_status, t.due_date, t.assignee_id,
-            p.name AS project_name, a.name AS assignee_name,
+            p.name AS project_name, p.department, a.name AS assignee_name,
             DATEDIFF(UTC_DATE(), t.due_date) AS days_overdue
        FROM tasks t
        JOIN projects p ON p.id = t.project_id
@@ -55,6 +59,7 @@ export default async function OutstandingPage() {
     project_id: t.project_id,
     title: t.title,
     project_name: t.project_name,
+    department: (t.department as string | null) ?? null,
     assignee_name: t.assignee_name,
     due_date: t.due_date,
     status: t.status,

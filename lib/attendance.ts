@@ -20,7 +20,6 @@ import type { Role } from "./types";
  */
 
 declare global {
-  // eslint-disable-next-line no-var
   var __attendancePool: mysql.Pool | undefined;
 }
 
@@ -70,6 +69,63 @@ export function mapAttendanceRole(role: string): Role {
   return role === "super_admin" || role === "manager" ? "admin" : "member";
 }
 
+/** One employee's recorded day, as the Attendance app keeps it. */
+export interface AttendanceDay {
+  employee_id: number;
+  /** Local (IST) calendar date, "YYYY-MM-DD". */
+  work_date: string;
+  status: "present" | "late" | "early_departure" | "absent" | "leave" | "holiday";
+  /** Minutes between clock-in and clock-out; null when they never clocked in. */
+  total_minutes: number | null;
+}
+
+/**
+ * Recorded days for these employees over a date range.
+ *
+ * Read-only, like everything else here: the Attendance app owns this data and
+ * PM never writes to it. Rows only exist for days that have happened — there
+ * is nothing scheduled ahead — so this answers "what happened" and can never
+ * answer "will they be in on Thursday".
+ */
+export async function fetchAttendanceDays(
+  employeeIds: number[],
+  fromDate: string,
+  toDate: string
+): Promise<AttendanceDay[]> {
+  if (!employeeIds.length) return [];
+  const holes = employeeIds.map(() => "?").join(",");
+  const [rows] = await attendancePool.query(
+    `SELECT employee_id, work_date, status, total_minutes
+       FROM attendance
+      WHERE employee_id IN (${holes}) AND work_date BETWEEN ? AND ?
+      ORDER BY work_date`,
+    [...employeeIds, fromDate, toDate]
+  );
+  return (Array.isArray(rows) ? rows : []) as AttendanceDay[];
+}
+
+/** Who reports to whom, plus the details PM has no column for. */
+export interface EmployeeProfile {
+  id: number;
+  emp_id: string;
+  name: string;
+  department: string | null;
+  manager_id: number | null;
+  phone: string | null;
+  is_active: number;
+}
+
+/** The employee directory, optionally narrowed to some ids. */
+export async function fetchEmployeeProfiles(ids?: number[]): Promise<EmployeeProfile[]> {
+  const where = ids?.length ? ` WHERE id IN (${ids.map(() => "?").join(",")})` : "";
+  const [rows] = await attendancePool.query(
+    `SELECT id, emp_id, name, department, manager_id, phone, is_active
+       FROM employees${where} ORDER BY name`,
+    ids?.length ? ids : []
+  );
+  return (Array.isArray(rows) ? rows : []) as EmployeeProfile[];
+}
+
 /** Look up an active-or-inactive employee by their emp_id (e.g. "RACE005"). */
 export async function findEmployeeByEmpId(
   empId: string
@@ -85,12 +141,145 @@ export async function findEmployeeByEmpId(
   return list[0] ?? null;
 }
 
+/**
+ * Re-read an employee's active flag and role from Attendance and mirror any
+ * change into pm_app.users, so a deactivation or demotion takes effect on an
+ * existing session. An employee missing from Attendance counts as inactive.
+ * Returns null (and changes nothing) if Attendance can't be reached, so an
+ * Attendance outage doesn't lock everyone out.
+ */
+export async function syncEmployeeStatus(
+  employeeId: number,
+  current: {
+    role: Role;
+    is_active: boolean;
+    department: string | null;
+    designation: string | null;
+    /** "pm" when an admin set the department here, so the mirror stands off. */
+    departmentSource: "attendance" | "pm";
+  }
+): Promise<{
+  role: Role;
+  is_active: boolean;
+  department: string | null;
+  designation: string | null;
+} | null> {
+  try {
+    const [rows] = await attendancePool.execute(
+      `SELECT role, is_active FROM employees WHERE id = ? LIMIT 1`,
+      [employeeId]
+    );
+    const emp = (rows as Pick<AttendanceEmployee, "role" | "is_active">[])[0];
+    // A transfer reaches PM on the same heartbeat as a change of role — but
+    // asked for separately, so an Attendance without the column keeps the
+    // rest of this working.
+    //
+    // Unless an admin has set the department here on purpose. Attendance's
+    // own data has gaps and mistakes, and overwriting a deliberate answer
+    // with a blank one every minute would be worse than useless.
+    const mirrored = current.departmentSource !== "pm";
+    const extras = mirrored ? await fetchEmployeeExtras(employeeId) : {};
+    const fresh = {
+      role: emp ? mapAttendanceRole(emp.role) : current.role,
+      is_active: Boolean(emp?.is_active),
+      department:
+        extras.department === undefined ? current.department : extras.department,
+      // Never mirrored: Attendance has no job title to give.
+      designation: current.designation,
+    };
+    if (
+      fresh.role !== current.role ||
+      fresh.is_active !== current.is_active ||
+      fresh.department !== current.department
+    ) {
+      await query(
+        `UPDATE users SET role = ?, is_active = ?, department = ?
+          WHERE employee_id = ?`,
+        [fresh.role, fresh.is_active ? 1 : 0, fresh.department, employeeId]
+      );
+    }
+    return fresh;
+  } catch (err) {
+    console.error("[attendance] status sync failed:", (err as Error).message);
+    return null;
+  }
+}
+
 /** Constant-time-ish PIN check (bcrypt). */
 export async function verifyEmployeePin(
   pin: string,
   pinHash: string
 ): Promise<boolean> {
   return bcrypt.compare(pin, pinHash);
+}
+
+/**
+ * What PM mirrors from Attendance beyond name, role and active flag.
+ *
+ * Only the department. attendance_db.employees has no job-title column —
+ * it records a department and a role, and nothing else about what someone
+ * does — so users.designation is PM's own and nothing here touches it.
+ */
+export interface EmployeeExtras {
+  department?: string | null;
+}
+
+const EXTRA_COLUMNS = ["department"] as const;
+
+/** Which of those columns this Attendance actually has. Asked once. */
+let knownColumns: Set<string> | null = null;
+
+async function employeeColumns(): Promise<Set<string>> {
+  if (knownColumns) return knownColumns;
+  try {
+    const [rows] = await attendancePool.query(
+      `SELECT column_name AS c FROM information_schema.columns
+        WHERE table_schema = DATABASE() AND table_name = 'employees'`
+    );
+    const found = new Set(
+      (rows as { c: string }[]).map((r) => String(r.c).toLowerCase())
+    );
+    // Only remember a real answer: a transient outage must not disable this
+    // until the process restarts.
+    knownColumns = found;
+    return found;
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * An employee's department, read on its own and never fatally.
+ *
+ * Deliberately not part of the login query. Attendance is a database this app
+ * does not own and cannot migrate, so a column it may not have must never be
+ * able to stop anyone signing in. So PM asks what exists first, then asks
+ * only for that — which also means a column added to Attendance later is
+ * picked up on the next restart without a code change.
+ *
+ * A key that is absent means "could not find out", and the caller leaves
+ * whatever PM already recorded alone. `null` means Attendance says the person
+ * has none.
+ */
+export async function fetchEmployeeExtras(
+  employeeId: number
+): Promise<EmployeeExtras> {
+  const columns = await employeeColumns();
+  const wanted = EXTRA_COLUMNS.filter((c) => columns.has(c));
+  if (!wanted.length) return {};
+  try {
+    const [rows] = await attendancePool.execute(
+      `SELECT ${wanted.join(", ")} FROM employees WHERE id = ? LIMIT 1`,
+      [employeeId]
+    );
+    const row = (rows as Record<string, string | null>[])[0];
+    if (!row) return {};
+    const out: EmployeeExtras = {};
+    for (const c of wanted) out[c] = row[c] ?? null;
+    return out;
+  } catch {
+    return {};
+  }
 }
 
 /** A dummy bcrypt hash so a missing employee still costs one bcrypt compare
@@ -119,6 +308,17 @@ export async function provisionPmUser(
        is_active = VALUES(is_active)`,
     [emp.id, emp.emp_id, emp.name, emp.email, role, emp.is_active ? 1 : 0]
   );
+  // Separately, and after the fact: what PM cannot read is what PM does not
+  // update. Signing in still works either way.
+  const extras = await fetchEmployeeExtras(emp.id);
+  if (extras.department !== undefined) {
+    // Left alone for anyone whose department an admin set here on purpose.
+    await query(
+      `UPDATE users SET department = ?
+        WHERE employee_id = ? AND department_source = 'attendance'`,
+      [extras.department, emp.id]
+    );
+  }
   const rows = await query<DbRow[]>(
     `SELECT id FROM users WHERE employee_id = ? LIMIT 1`,
     [emp.id]
