@@ -103,7 +103,7 @@ export default async function NotificationsPage({
                 Previous
               </Link>
             ) : (
-              <span className="rounded-lg border border-slate-200 px-3 py-1.5 text-slate-300">
+              <span className="rounded-lg border border-slate-200 px-3 py-1.5 text-slate-500">
                 Previous
               </span>
             )}
@@ -115,7 +115,7 @@ export default async function NotificationsPage({
                 Next
               </Link>
             ) : (
-              <span className="rounded-lg border border-slate-200 px-3 py-1.5 text-slate-300">
+              <span className="rounded-lg border border-slate-200 px-3 py-1.5 text-slate-500">
                 Next
               </span>
             )}

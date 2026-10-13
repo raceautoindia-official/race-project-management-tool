@@ -97,8 +97,8 @@ try {
     await member.goto(`${BASE}/projects`);
     await member.getByRole("button", { name: "+ Create project" }).click();
     const d = member.getByRole("dialog", { name: "Create a project" });
-    await d.getByLabel("Name").fill(P1);
-    await d.getByLabel("Lead (approver)").selectOption({ index: 1 });
+    await d.getByLabel("Project name").fill(P1);
+    await d.getByLabel("Project manager").selectOption({ index: 1 });
     await d.getByRole("button", { name: "Create project" }).click();
     await member.waitForURL(/\/projects\/\d+$/, { timeout: 30000 });
     const id = new URL(member.url()).pathname.split("/").pop();
@@ -122,8 +122,8 @@ try {
   await step("2a member creates the main project; lead approves and adds people", async () => {
     await member.getByRole("button", { name: "+ Create project" }).click();
     const d = member.getByRole("dialog", { name: "Create a project" });
-    await d.getByLabel("Name").fill(P2);
-    await d.getByLabel("Lead (approver)").selectOption({ index: 1 });
+    await d.getByLabel("Project name").fill(P2);
+    await d.getByLabel("Project manager").selectOption({ index: 1 });
     await d.getByRole("button", { name: "Create project" }).click();
     await member.waitForURL(/\/projects\/\d+$/, { timeout: 30000 });
     p2Id = Number(new URL(member.url()).pathname.split("/").pop());
@@ -141,12 +141,16 @@ try {
   await step("2b the lead creates a new-feature task directly", async () => {
     await admin.getByRole("button", { name: "+ New task" }).click();
     const d = admin.getByRole("dialog", { name: "New task" });
-    await d.getByText("New feature", { exact: true }).click();
     await d.getByLabel(/^Title/).fill(FEATURE);
+    // The specification and the rest are a click away now; a plain task
+    // needs neither.
+    await d.getByRole("button", { name: "Add a specification" }).click();
+    await d.getByText("New feature", { exact: true }).click();
     await d.getByLabel(/^Features/).fill("Download the dealer list as CSV.");
     await d.getByLabel(/^Rules/).fill("Only leads can export.");
-    await pick(d.getByLabel(/^Requested by/), "Arun");
     await pick(d.getByLabel(/^Assigned owner/), "Test Employee One");
+    await d.getByRole("button", { name: "More details" }).click();
+    await pick(d.getByLabel(/^Requested by/), "Arun");
     await d.getByRole("button", { name: "Create task" }).click();
     await d.waitFor({ state: "hidden", timeout: 20000 });
     await admin.locator("[draggable]", { hasText: FEATURE }).first().waitFor({ timeout: 20000 });
@@ -348,6 +352,8 @@ try {
     await task.getByRole("button", { name: "+ Follow-up work" }).click();
     const d = admin.getByRole("dialog", { name: "Add follow-up work" });
     await d.getByLabel(/^Title/).fill(`Flow follow-up ${STAMP}`);
+    await d.getByRole("button", { name: "Add a specification" }).click();
+    await d.getByText("Existing work correction", { exact: true }).click();
     await d.getByLabel(/^Existing behavior/).fill("Still slow on large lists.");
     await d.getByLabel(/^Expected behavior/).fill("Returns within a second.");
     await d.getByLabel(/^Acceptance criteria/).fill("1000 dealers load in under a second.");
@@ -430,8 +436,9 @@ try {
     await admin.goto(`${BASE}/projects`);
     await admin.getByRole("button", { name: "+ New project" }).click();
     const d = admin.getByRole("dialog", { name: "Create project" });
-    await pick(d.getByLabel("Start from"), TEMPLATE.slice(0, 18));
-    await d.getByLabel("Name").fill(P3);
+    await d.getByLabel("Project name").fill(P3);
+    await d.getByRole("button", { name: "Start from a template" }).click();
+    await d.getByText(TEMPLATE.slice(0, 18), { exact: false }).first().click();
     await d.getByRole("button", { name: /Create from template/ }).click();
     await admin.waitForURL(/\/projects\/\d+$/, { timeout: 30000 });
     p3Id = Number(new URL(admin.url()).pathname.split("/").pop());

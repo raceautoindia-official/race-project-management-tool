@@ -16,6 +16,8 @@ interface PickUser {
   email: string;
   /** Their job title, from Attendance — who you are picking, not just a name. */
   designation?: string | null;
+  /** Their department, so the lists read like the organisation does. */
+  department?: string | null;
   /** Admin, or lead of an approved project — the only people who can approve. */
   canLead?: boolean;
 }
@@ -191,14 +193,33 @@ export default function NewProjectButton({
   const managerOptions = isAdmin
     ? users
     : users.filter((u) => u.id !== currentUserId && u.canLead);
+  /** People grouped under their department, the unplaced ones last. */
+  function byDepartment(list: PickUser[]): [string, PickUser[]][] {
+    const groups = new Map<string, PickUser[]>();
+    for (const u of list) {
+      const key = u.department || "No department";
+      const arr = groups.get(key);
+      if (arr) arr.push(u);
+      else groups.set(key, [u]);
+    }
+    return [...groups.entries()].sort((a, b) => {
+      if (a[0] === "No department") return 1;
+      if (b[0] === "No department") return -1;
+      // Your own department first: it is who you pick from most days.
+      const mine = (n: string) => (defaultDepartment && n === defaultDepartment ? 0 : 1);
+      return mine(a[0]) - mine(b[0]) || a[0].localeCompare(b[0]);
+    });
+  }
+
   const team = users.filter(
     (u) =>
       String(u.id) !== managerId &&
       (peopleQuery.trim() === "" ||
         u.name.toLowerCase().includes(peopleQuery.trim().toLowerCase()) ||
         (u.email ?? "").toLowerCase().includes(peopleQuery.trim().toLowerCase()) ||
-        // Searching "engineer" should find the engineers.
-        (u.designation ?? "").toLowerCase().includes(peopleQuery.trim().toLowerCase()))
+        // Searching "engineer" finds the engineers, "design" the department.
+        (u.designation ?? "").toLowerCase().includes(peopleQuery.trim().toLowerCase()) ||
+        (u.department ?? "").toLowerCase().includes(peopleQuery.trim().toLowerCase()))
   );
 
   return (
@@ -256,12 +277,16 @@ export default function NewProjectButton({
                 className={inputClass}
               >
                 <option value="">Choose a manager…</option>
-                {managerOptions.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name}
-                    {u.id === currentUserId ? " (you)" : ""}
-                    {u.designation ? ` — ${u.designation}` : ""}
-                  </option>
+                {byDepartment(managerOptions).map(([dept, people]) => (
+                  <optgroup key={dept} label={dept}>
+                    {people.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name}
+                        {u.id === currentUserId ? " (you)" : ""}
+                        {u.designation ? ` — ${u.designation}` : ""}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
               <p className="mt-1 text-xs text-slate-600">
@@ -305,21 +330,28 @@ export default function NewProjectButton({
                   {peopleQuery ? "Nobody matches that." : "No other users yet."}
                 </p>
               ) : (
-                team.map((u) => (
-                  <label
-                    key={u.id}
-                    className="flex cursor-pointer items-center gap-2 rounded px-1 py-1.5 text-sm hover:bg-slate-50"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={memberIds.includes(u.id)}
-                      onChange={() => toggleMember(u.id)}
-                    />
-                    <span className="text-slate-700">{u.name}</span>
-                    <span className="truncate text-xs text-slate-500">
-                      {u.designation || u.email}
-                    </span>
-                  </label>
+                byDepartment(team).map(([dept, people]) => (
+                  <div key={dept}>
+                    <p className="px-1 pb-0.5 pt-1.5 text-xs font-semibold text-slate-500">
+                      {dept}
+                    </p>
+                    {people.map((u) => (
+                      <label
+                        key={u.id}
+                        className="flex cursor-pointer items-center gap-2 rounded px-1 py-1.5 text-sm hover:bg-slate-50"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={memberIds.includes(u.id)}
+                          onChange={() => toggleMember(u.id)}
+                        />
+                        <span className="text-slate-700">{u.name}</span>
+                        <span className="truncate text-xs text-slate-500">
+                          {u.designation || u.email}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
                 ))
               )}
             </div>

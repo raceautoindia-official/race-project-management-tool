@@ -75,9 +75,9 @@ try {
     await member.goto(`${BASE}/projects`);
     await member.getByRole("button", { name: "+ Create project" }).click();
     const dialog = member.getByRole("dialog", { name: "Create a project" });
-    await dialog.getByLabel("Name").fill(PROJECT);
+    await dialog.getByLabel("Project name").fill(PROJECT);
     await dialog.getByLabel("Description").fill("Created by the smoke test — safe to delete");
-    await dialog.getByLabel("Lead (approver)").selectOption({ index: 1 });
+    await dialog.getByLabel("Project manager").selectOption({ index: 1 });
     await dialog.getByRole("button", { name: "Create project" }).click();
     await member.waitForURL(/\/projects\/\d+$/, { timeout: 30000 });
     projectId = Number(new URL(member.url()).pathname.split("/").pop());
