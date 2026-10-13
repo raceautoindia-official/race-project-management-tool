@@ -86,6 +86,9 @@ export default async function TeamPage() {
                       <RoleBadge role={m.role} />
                       <DepartmentBadge name={m.department} />
                     </div>
+                    {m.designation && (
+                      <div className="text-sm text-slate-700">{m.designation}</div>
+                    )}
                     <div className="text-xs text-slate-500">
                       {m.emp_id} ·{" "}
                       {m.online

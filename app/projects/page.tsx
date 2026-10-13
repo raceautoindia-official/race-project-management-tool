@@ -105,7 +105,7 @@ export default async function ProjectsPage({
 
   // Admins pick members; everyone else picks the lead who approves a request.
   const users = await query<DbRow[]>(
-    `SELECT u.id, u.name, u.email,
+    `SELECT u.id, u.name, u.email, u.designation,
             (u.role = 'admin' OR EXISTS (
               SELECT 1 FROM project_members pm
                 JOIN projects p ON p.id = pm.project_id AND p.approval_status = 'approved'
@@ -134,6 +134,7 @@ export default async function ProjectsPage({
               id: u.id,
               name: u.name,
               email: u.email,
+              designation: (u.designation as string | null) ?? null,
               canLead: Boolean(Number(u.can_lead)),
             }))}
           />

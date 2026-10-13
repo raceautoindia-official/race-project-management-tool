@@ -150,31 +150,52 @@ export async function findEmployeeByEmpId(
  */
 export async function syncEmployeeStatus(
   employeeId: number,
-  current: { role: Role; is_active: boolean; department: string | null }
-): Promise<{ role: Role; is_active: boolean; department: string | null } | null> {
+  current: {
+    role: Role;
+    is_active: boolean;
+    department: string | null;
+    designation: string | null;
+  }
+): Promise<{
+  role: Role;
+  is_active: boolean;
+  department: string | null;
+  designation: string | null;
+} | null> {
   try {
     const [rows] = await attendancePool.execute(
       `SELECT role, is_active FROM employees WHERE id = ? LIMIT 1`,
       [employeeId]
     );
     const emp = (rows as Pick<AttendanceEmployee, "role" | "is_active">[])[0];
-    // A transfer between departments reaches PM on the same heartbeat as a
-    // change of role — but asked for separately, so an Attendance without the
-    // column keeps the rest of this working.
-    const department = await fetchEmployeeDepartment(employeeId);
+    // A transfer or a promotion reaches PM on the same heartbeat as a change
+    // of role — but asked for separately, so an Attendance without those
+    // columns keeps the rest of this working.
+    const extras = await fetchEmployeeExtras(employeeId);
     const fresh = {
       role: emp ? mapAttendanceRole(emp.role) : current.role,
       is_active: Boolean(emp?.is_active),
-      department: department === undefined ? current.department : department,
+      department:
+        extras.department === undefined ? current.department : extras.department,
+      designation:
+        extras.designation === undefined ? current.designation : extras.designation,
     };
     if (
       fresh.role !== current.role ||
       fresh.is_active !== current.is_active ||
-      fresh.department !== current.department
+      fresh.department !== current.department ||
+      fresh.designation !== current.designation
     ) {
       await query(
-        `UPDATE users SET role = ?, is_active = ?, department = ? WHERE employee_id = ?`,
-        [fresh.role, fresh.is_active ? 1 : 0, fresh.department, employeeId]
+        `UPDATE users SET role = ?, is_active = ?, department = ?, designation = ?
+          WHERE employee_id = ?`,
+        [
+          fresh.role,
+          fresh.is_active ? 1 : 0,
+          fresh.department,
+          fresh.designation,
+          employeeId,
+        ]
       );
     }
     return fresh;
@@ -192,28 +213,67 @@ export async function verifyEmployeePin(
   return bcrypt.compare(pin, pinHash);
 }
 
+/** What PM mirrors from Attendance beyond name, role and active flag. */
+export interface EmployeeExtras {
+  department?: string | null;
+  designation?: string | null;
+}
+
+const EXTRA_COLUMNS = ["department", "designation"] as const;
+
+/** Which of those columns this Attendance actually has. Asked once. */
+let knownColumns: Set<string> | null = null;
+
+async function employeeColumns(): Promise<Set<string>> {
+  if (knownColumns) return knownColumns;
+  try {
+    const [rows] = await attendancePool.query(
+      `SELECT column_name AS c FROM information_schema.columns
+        WHERE table_schema = DATABASE() AND table_name = 'employees'`
+    );
+    const found = new Set(
+      (rows as { c: string }[]).map((r) => String(r.c).toLowerCase())
+    );
+    // Only remember a real answer: a transient outage must not disable this
+    // until the process restarts.
+    knownColumns = found;
+    return found;
+  } catch {
+    return new Set();
+  }
+}
+
 /**
- * One employee's department, read on its own and never fatally.
+ * An employee's department and job title, read on their own and never fatally.
  *
- * It is deliberately not part of the login query. Attendance is a database
- * this app does not own and cannot migrate, so a column it may not have must
- * never be able to stop anyone signing in. `undefined` means "could not find
- * out" — an outage, or an older Attendance without the column — and the
- * caller leaves whatever PM already recorded alone. `null` means Attendance
- * says the person has no department.
+ * Deliberately not part of the login query. Attendance is a database this app
+ * does not own and cannot migrate, so a column it may not have must never be
+ * able to stop anyone signing in — and asking for two columns at once would
+ * mean a missing `designation` also cost us `department`. So PM asks what
+ * exists first, then asks only for that.
+ *
+ * A key that is absent means "could not find out", and the caller leaves
+ * whatever PM already recorded alone. `null` means Attendance says the person
+ * has none.
  */
-export async function fetchEmployeeDepartment(
+export async function fetchEmployeeExtras(
   employeeId: number
-): Promise<string | null | undefined> {
+): Promise<EmployeeExtras> {
+  const columns = await employeeColumns();
+  const wanted = EXTRA_COLUMNS.filter((c) => columns.has(c));
+  if (!wanted.length) return {};
   try {
     const [rows] = await attendancePool.execute(
-      `SELECT department FROM employees WHERE id = ? LIMIT 1`,
+      `SELECT ${wanted.join(", ")} FROM employees WHERE id = ? LIMIT 1`,
       [employeeId]
     );
-    const row = (rows as { department: string | null }[])[0];
-    return row ? (row.department ?? null) : undefined;
+    const row = (rows as Record<string, string | null>[])[0];
+    if (!row) return {};
+    const out: EmployeeExtras = {};
+    for (const c of wanted) out[c] = row[c] ?? null;
+    return out;
   } catch {
-    return undefined;
+    return {};
   }
 }
 
@@ -243,12 +303,22 @@ export async function provisionPmUser(
        is_active = VALUES(is_active)`,
     [emp.id, emp.emp_id, emp.name, emp.email, role, emp.is_active ? 1 : 0]
   );
-  // Separately, and after the fact: a department PM cannot read is a
-  // department PM does not update. Signing in still works either way.
-  const department = await fetchEmployeeDepartment(emp.id);
-  if (department !== undefined) {
-    await query(`UPDATE users SET department = ? WHERE employee_id = ?`, [
-      department,
+  // Separately, and after the fact: what PM cannot read is what PM does not
+  // update. Signing in still works either way.
+  const extras = await fetchEmployeeExtras(emp.id);
+  const sets: string[] = [];
+  const values: unknown[] = [];
+  if (extras.department !== undefined) {
+    sets.push("department = ?");
+    values.push(extras.department);
+  }
+  if (extras.designation !== undefined) {
+    sets.push("designation = ?");
+    values.push(extras.designation);
+  }
+  if (sets.length) {
+    await query(`UPDATE users SET ${sets.join(", ")} WHERE employee_id = ?`, [
+      ...values,
       emp.id,
     ]);
   }

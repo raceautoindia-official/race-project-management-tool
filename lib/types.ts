@@ -43,6 +43,8 @@ export interface User {
   whatsapp_opt_in?: boolean;
   /** Mirrored from the Attendance app; PM never sets it. */
   department?: string | null;
+  /** Their job title, likewise from Attendance. */
+  designation?: string | null;
   role: Role;
   is_active: boolean;
   must_change_password: boolean;

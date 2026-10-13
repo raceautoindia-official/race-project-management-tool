@@ -93,7 +93,7 @@ export async function getCurrentUser(): Promise<User | null> {
   const session = await getSessionUser();
   if (!session) return null;
   const rows = await query<DbRow[]>(
-    `SELECT id, employee_id, name, email, department, role, is_active,
+    `SELECT id, employee_id, name, email, department, designation, role, is_active,
             must_change_password, last_seen_at, created_at, updated_at
      FROM users WHERE id = ? LIMIT 1`,
     [session.userId]
@@ -117,11 +117,13 @@ export async function getCurrentUser(): Promise<User | null> {
       role: row.role,
       is_active: Boolean(row.is_active),
       department: (row.department as string | null) ?? null,
+      designation: (row.designation as string | null) ?? null,
     });
     if (fresh) {
       if (!fresh.is_active) return null;
       row.role = fresh.role;
       row.department = fresh.department;
+      row.designation = fresh.designation;
     }
   }
 
@@ -130,6 +132,7 @@ export async function getCurrentUser(): Promise<User | null> {
     name: row.name,
     email: row.email,
     department: (row.department as string | null) ?? null,
+    designation: (row.designation as string | null) ?? null,
     role: row.role,
     is_active: Boolean(row.is_active),
     must_change_password: Boolean(row.must_change_password),

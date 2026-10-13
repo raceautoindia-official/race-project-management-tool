@@ -14,6 +14,8 @@ interface PickUser {
   id: number;
   name: string;
   email: string;
+  /** Their job title, from Attendance — who you are picking, not just a name. */
+  designation?: string | null;
   /** Admin, or lead of an approved project — the only people who can approve. */
   canLead?: boolean;
 }
@@ -194,7 +196,9 @@ export default function NewProjectButton({
       String(u.id) !== managerId &&
       (peopleQuery.trim() === "" ||
         u.name.toLowerCase().includes(peopleQuery.trim().toLowerCase()) ||
-        (u.email ?? "").toLowerCase().includes(peopleQuery.trim().toLowerCase()))
+        (u.email ?? "").toLowerCase().includes(peopleQuery.trim().toLowerCase()) ||
+        // Searching "engineer" should find the engineers.
+        (u.designation ?? "").toLowerCase().includes(peopleQuery.trim().toLowerCase()))
   );
 
   return (
@@ -256,6 +260,7 @@ export default function NewProjectButton({
                   <option key={u.id} value={u.id}>
                     {u.name}
                     {u.id === currentUserId ? " (you)" : ""}
+                    {u.designation ? ` — ${u.designation}` : ""}
                   </option>
                 ))}
               </select>
@@ -311,7 +316,9 @@ export default function NewProjectButton({
                       onChange={() => toggleMember(u.id)}
                     />
                     <span className="text-slate-700">{u.name}</span>
-                    <span className="truncate text-xs text-slate-500">{u.email}</span>
+                    <span className="truncate text-xs text-slate-500">
+                      {u.designation || u.email}
+                    </span>
                   </label>
                 ))
               )}

@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { closeDialog, openTask, requestRow, signIn, taskCard } from "./helpers";
 import { USERS } from "./users";
 
@@ -31,6 +31,14 @@ test.afterAll(async () => {
   for (const page of [admin, lead, alice, sam, olivia]) await page?.context().close();
 });
 
+async function chooseManager(select: Locator, name: string) {
+  const value = await select
+    .locator("option", { hasText: name })
+    .first()
+    .getAttribute("value");
+  await select.selectOption(value!);
+}
+
 test("a member requests a project and nominates a lead", async () => {
   await alice.goto("/projects");
   await alice.getByRole("button", { name: "+ Create project" }).click();
@@ -41,7 +49,7 @@ test("a member requests a project and nominates a lead", async () => {
   // Only admins and existing leads are offered — not yourself or plain members.
   await expect(leadSelect.locator("option", { hasText: USERS.alice.name })).toHaveCount(0);
   await expect(leadSelect.locator("option", { hasText: USERS.sam.name })).toHaveCount(0);
-  await leadSelect.selectOption({ label: USERS.lead.name });
+  await chooseManager(leadSelect, USERS.lead.name);
   await dialog.getByRole("button", { name: "Create project" }).click();
 
   await expect(alice).toHaveURL(/\/projects\/\d+$/);
@@ -456,7 +464,7 @@ test("a rejected project request shows the reason and can be deleted", async () 
   await alice.getByRole("button", { name: "+ Create project" }).click();
   const dialog = alice.getByRole("dialog", { name: "Create a project" });
   await dialog.getByLabel("Project name").fill(side);
-  await dialog.getByLabel("Project manager").selectOption({ label: USERS.lead.name });
+  await chooseManager(dialog.getByLabel("Project manager"), USERS.lead.name);
   await dialog.getByRole("button", { name: "Create project" }).click();
   await expect(alice.getByRole("heading", { name: side })).toBeVisible();
   const sidePath = new URL(alice.url()).pathname;
