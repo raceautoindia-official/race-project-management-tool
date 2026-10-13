@@ -73,6 +73,9 @@ export interface Project {
   member_count?: number;
   task_count?: number;
   done_count?: number;
+  /** Checklist items across the project, and how many are ticked. */
+  progress_units?: number;
+  progress_done?: number;
   role_in_project?: ProjectRole;
   // Project request → lead approval.
   approval_status?: RequestStatus;

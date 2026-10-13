@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { json, errorResponse, getPagination, badRequest } from "@/lib/http";
 import { createProjectSchema } from "@/lib/validation";
 import { logActivity, notify } from "@/lib/activity";
+import { PROJECT_UNITS_SQL, PROJECT_CREDITED_SQL } from "@/lib/progress";
 import { sendEmail, emailLayout, appBaseUrl, escapeHtml } from "@/lib/mailer";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +16,9 @@ const PROJECT_SELECT = `
   u.name AS owner_name, rq.name AS requester_name,
   (SELECT COUNT(*) FROM project_members pm WHERE pm.project_id = p.id) AS member_count,
   (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id) AS task_count,
-  (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'done') AS done_count
+  (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'done') AS done_count,
+  ${PROJECT_UNITS_SQL} AS progress_units,
+  ${PROJECT_CREDITED_SQL} AS progress_done
 `;
 
 export async function GET(req: NextRequest) {
@@ -80,6 +83,8 @@ export async function GET(req: NextRequest) {
         member_count: Number(r.member_count),
         task_count: Number(r.task_count),
         done_count: Number(r.done_count),
+        progress_units: Number(r.progress_units),
+        progress_done: Number(r.progress_done),
       })),
       total: Number(countRows[0]?.total ?? 0),
       page,

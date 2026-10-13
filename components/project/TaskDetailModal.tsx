@@ -1327,6 +1327,9 @@ export default function TaskDetailModal({
                     checked={s.is_done}
                     disabled={!canEditExecution}
                     onChange={() => toggleSubtask(s)}
+                    // The text beside it is a span, not a label, because the
+                    // row has its own controls — so the box says what it is.
+                    aria-label={s.title}
                     className="h-4 w-4 rounded border-slate-300 disabled:opacity-60"
                   />
                   <span

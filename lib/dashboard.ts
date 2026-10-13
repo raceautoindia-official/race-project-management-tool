@@ -1,6 +1,7 @@
 import "server-only";
 import { query, DbRow } from "./db";
 import type { TaskStatus } from "./types";
+import { PROJECT_UNITS_SQL, PROJECT_CREDITED_SQL } from "./progress";
 
 export interface StatusCount {
   status: TaskStatus;
@@ -21,6 +22,9 @@ export interface ProjectProgress {
   name: string;
   task_count: number;
   done_count: number;
+  /** Checklist items across the project, and how many are ticked. */
+  progress_units: number;
+  progress_done: number;
 }
 
 /** One department's share of the work, for the dashboard breakdown. */
@@ -87,7 +91,9 @@ export async function getAdminDashboard(): Promise<AdminDashboard> {
   const projectProgress = await query<DbRow[]>(
     `SELECT p.id, p.name,
             (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id) AS task_count,
-            (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'done') AS done_count
+            (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'done') AS done_count,
+            ${PROJECT_UNITS_SQL} AS progress_units,
+            ${PROJECT_CREDITED_SQL} AS progress_done
      FROM projects p
      WHERE p.status = 'active' AND p.approval_status = 'approved'
      ORDER BY task_count DESC, p.updated_at DESC
@@ -230,7 +236,9 @@ export async function getMemberDashboard(
   const projects = await query<DbRow[]>(
     `SELECT p.id, p.name, p.status, pm.role_in_project,
             (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id) AS task_count,
-            (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'done') AS done_count
+            (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'done') AS done_count,
+            ${PROJECT_UNITS_SQL} AS progress_units,
+            ${PROJECT_CREDITED_SQL} AS progress_done
      FROM projects p
      JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = ?
      ORDER BY p.updated_at DESC`,

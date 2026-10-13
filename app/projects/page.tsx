@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/Cards";
 import ProjectCard from "@/components/ProjectCard";
 import NewProjectButton from "@/components/NewProjectButton";
 import type { Project } from "@/lib/types";
+import { PROJECT_UNITS_SQL, PROJECT_CREDITED_SQL } from "@/lib/progress";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +34,9 @@ const PROJECT_SELECT = `
   pm_self.role_in_project AS role_in_project,
   (SELECT COUNT(*) FROM project_members pm WHERE pm.project_id = p.id) AS member_count,
   (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id) AS task_count,
-  (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'done') AS done_count
+  (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'done') AS done_count,
+  ${PROJECT_UNITS_SQL} AS progress_units,
+  ${PROJECT_CREDITED_SQL} AS progress_done
 `;
 
 export default async function ProjectsPage({

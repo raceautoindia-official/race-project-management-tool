@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ProgressBar } from "@/components/ProgressBar";
+import { projectPercent } from "@/lib/progress";
 import type { ProjectProgress } from "@/lib/dashboard";
 
 type Tone = "default" | "warn" | "danger" | "good";
@@ -68,7 +69,10 @@ export function ProjectProgressList({
       {projects.map((p) => {
         const total = Number(p.task_count);
         const done = Number(p.done_count);
-        const pct = total ? Math.round((done / total) * 100) : 0;
+        const pct = projectPercent({
+          units: p.progress_units,
+          credited: p.progress_done,
+        });
         return (
           <li key={p.id}>
             <div className="mb-1 flex items-center justify-between gap-2 text-sm">

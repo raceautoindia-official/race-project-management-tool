@@ -10,7 +10,7 @@ import ExportButton from "@/components/ExportButton";
 import { StatusBar } from "@/components/ProgressBar";
 import { apiFetch, isConflict } from "@/lib/api-client";
 import { useToast } from "@/components/ToastProvider";
-import { statusCounts } from "@/lib/progress";
+import { projectPercent, projectUnitsOf, statusCounts } from "@/lib/progress";
 import { formatDate, isOverdue } from "@/lib/format";
 import { projectLockReason } from "@/lib/workflow";
 import {
@@ -138,7 +138,10 @@ export default function ProjectBoard({
 
   const total = tasks.length;
   const done = tasks.filter((t) => t.status === "done").length;
-  const pct = total ? Math.round((done / total) * 100) : 0;
+  // Checklist items, not whole tasks: a task that is nearly finished shows
+  // as nearly finished rather than as nothing at all.
+  const units = projectUnitsOf(tasks);
+  const pct = projectPercent(units);
   const counts = statusCounts(tasks);
   const totalEst = tasks.reduce((s, t) => s + Number(t.estimated_hours ?? 0), 0);
   const spentSum = tasks.reduce((s, t) => s + Number(t.spent_hours ?? 0), 0);
@@ -436,11 +439,9 @@ export default function ProjectBoard({
 
         <div className="mt-4">
           <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
-            <span>
-              <span className="figure text-sm font-semibold text-white">
-                {done}/{total}
-              </span>{" "}
-              tasks done ({pct}%)
+            <span title={`${units.credited} of ${units.units} checklist items`}>
+              <span className="figure text-sm font-semibold text-white">{pct}%</span>{" "}
+              complete · {done}/{total} tasks done
             </span>
             {totalEst > 0 && (
               <span className="figure">
