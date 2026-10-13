@@ -363,6 +363,21 @@ CREATE TABLE IF NOT EXISTS task_attachments (
   INDEX idx_att_task (task_id)
 );
 
+-- Files that belong to a project rather than to one of its tasks.
+CREATE TABLE IF NOT EXISTS project_attachments (
+  id          INT AUTO_INCREMENT PRIMARY KEY,
+  project_id  INT NOT NULL,
+  uploaded_by INT NULL,
+  filename    VARCHAR(255) NOT NULL,
+  mime_type   VARCHAR(120) NULL,
+  size_bytes  INT NOT NULL,
+  data        LONGBLOB NOT NULL,
+  created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_patt_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  CONSTRAINT fk_patt_user FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_patt_project (project_id)
+);
+
 -- One-off data corrections that have been applied (see db/migrations).
 CREATE TABLE IF NOT EXISTS applied_data_fixes (
   name       VARCHAR(190) PRIMARY KEY,

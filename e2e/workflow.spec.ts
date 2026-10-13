@@ -35,9 +35,9 @@ test("a member requests a project and nominates a lead", async () => {
   await alice.goto("/projects");
   await alice.getByRole("button", { name: "+ Create project" }).click();
   const dialog = alice.getByRole("dialog", { name: "Create a project" });
-  await dialog.getByLabel("Name").fill(PROJECT);
+  await dialog.getByLabel("Project name").fill(PROJECT);
   await dialog.getByLabel("Description").fill("Self-service portal for dealers");
-  const leadSelect = dialog.getByLabel("Lead (approver)");
+  const leadSelect = dialog.getByLabel("Project manager");
   // Only admins and existing leads are offered — not yourself or plain members.
   await expect(leadSelect.locator("option", { hasText: USERS.alice.name })).toHaveCount(0);
   await expect(leadSelect.locator("option", { hasText: USERS.sam.name })).toHaveCount(0);
@@ -455,8 +455,8 @@ test("a rejected project request shows the reason and can be deleted", async () 
   await alice.goto("/projects");
   await alice.getByRole("button", { name: "+ Create project" }).click();
   const dialog = alice.getByRole("dialog", { name: "Create a project" });
-  await dialog.getByLabel("Name").fill(side);
-  await dialog.getByLabel("Lead (approver)").selectOption({ label: USERS.lead.name });
+  await dialog.getByLabel("Project name").fill(side);
+  await dialog.getByLabel("Project manager").selectOption({ label: USERS.lead.name });
   await dialog.getByRole("button", { name: "Create project" }).click();
   await expect(alice.getByRole("heading", { name: side })).toBeVisible();
   const sidePath = new URL(alice.url()).pathname;

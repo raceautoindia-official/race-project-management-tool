@@ -171,10 +171,13 @@ export async function POST(req: NextRequest) {
         [projectId, ownerId]
       );
 
-      // Admins pick members up front; a requester joins their own project.
-      const memberIds = isAdmin
-        ? (data.memberIds ?? []).filter((id) => id !== ownerId)
-        : [user.id];
+      // Whoever starts a project says who is working on it. A requester is
+      // always on their own project, and the owner is already its lead, so
+      // neither needs naming twice.
+      const proposed = data.memberIds ?? [];
+      const memberIds = [
+        ...new Set(isAdmin ? proposed : [user.id, ...proposed]),
+      ].filter((id) => id !== ownerId);
       for (const memberId of memberIds) {
         await conn.execute(
           `INSERT IGNORE INTO project_members (project_id, user_id, role_in_project)

@@ -36,6 +36,7 @@ import EditProjectModal from "./EditProjectModal";
 import ImportTasksModal from "./ImportTasksModal";
 import TimelineView from "./TimelineView";
 import RecurringTasksModal from "./RecurringTasksModal";
+import ProjectFiles from "./ProjectFiles";
 import TaskRequestsPanel from "./TaskRequestsPanel";
 import ProjectStatusBanner from "./ProjectStatusBanner";
 
@@ -459,6 +460,15 @@ export default function ProjectBoard({
         readyToComplete={readyToComplete}
         onProjectChange={(patch) => setProject((prev) => ({ ...prev, ...patch }))}
       />
+
+      <div className="mb-4">
+        <ProjectFiles
+          projectId={project.id}
+          currentUserId={currentUser.id}
+          canManage={canManage}
+          readOnly={!writable}
+        />
+      </div>
 
       <TaskRequestsPanel
         projectId={project.id}
