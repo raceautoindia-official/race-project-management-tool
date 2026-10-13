@@ -109,6 +109,25 @@ export const createProjectSchema = z.object({
   leadId: optionalId.optional(),
 });
 
+/**
+ * The two fields PM decides about a person. Everything else about who they
+ * are comes from Attendance and is read-only here.
+ *
+ * Blank is a real answer for both: it clears a job title, and it hands the
+ * department back to Attendance.
+ */
+export const updateUserProfileSchema = z
+  .object({
+    department: departmentField,
+    designation: z
+      .string()
+      .trim()
+      .max(120)
+      .nullish()
+      .transform((v) => (v ? v : null)),
+  })
+  .refine((d) => Object.keys(d).length > 0, { message: "Nothing to change" });
+
 /** Approve / reject a pending request. A rejection must say why. */
 export const decisionSchema = z
   .object({

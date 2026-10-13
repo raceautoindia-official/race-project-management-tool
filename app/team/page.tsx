@@ -10,6 +10,7 @@ import { ProgressBar } from "@/components/ProgressBar";
 import { formatHM } from "@/lib/tz";
 import { formatRelative } from "@/lib/format";
 import { DepartmentBadge } from "@/components/DepartmentField";
+import EditPersonButton from "@/components/EditPersonButton";
 import type { MemberStats } from "@/lib/performance";
 
 export const dynamic = "force-dynamic";
@@ -85,6 +86,15 @@ export default async function TeamPage() {
                       <span className="font-semibold text-slate-900">{m.name}</span>
                       <RoleBadge role={m.role} />
                       <DepartmentBadge name={m.department} />
+                      {user.role === "admin" && (
+                        <EditPersonButton
+                          userId={m.id}
+                          name={m.name}
+                          department={m.department}
+                          departmentSource={m.department_source}
+                          designation={m.designation}
+                        />
+                      )}
                     </div>
                     {m.designation && (
                       <div className="text-sm text-slate-700">{m.designation}</div>

@@ -93,8 +93,9 @@ export async function getCurrentUser(): Promise<User | null> {
   const session = await getSessionUser();
   if (!session) return null;
   const rows = await query<DbRow[]>(
-    `SELECT id, employee_id, name, email, department, designation, role, is_active,
-            must_change_password, last_seen_at, created_at, updated_at
+    `SELECT id, employee_id, name, email, department, department_source,
+            designation, role, is_active, must_change_password, last_seen_at,
+            created_at, updated_at
      FROM users WHERE id = ? LIMIT 1`,
     [session.userId]
   );
@@ -118,6 +119,8 @@ export async function getCurrentUser(): Promise<User | null> {
       is_active: Boolean(row.is_active),
       department: (row.department as string | null) ?? null,
       designation: (row.designation as string | null) ?? null,
+      departmentSource:
+        row.department_source === "pm" ? "pm" : "attendance",
     });
     if (fresh) {
       if (!fresh.is_active) return null;

@@ -25,7 +25,9 @@ CREATE TABLE IF NOT EXISTS users (
   email                VARCHAR(190) NULL,
   -- Mirrored from attendance.employees.department; PM never writes it back.
   department           VARCHAR(100) NULL,
-  -- Likewise their job title, from attendance.employees.designation.
+  -- 'attendance' means the mirror owns it; 'pm' means an admin set it here.
+  department_source    ENUM('attendance','pm') NOT NULL DEFAULT 'attendance',
+  -- PM's own: attendance_db.employees has no job-title column.
   designation          VARCHAR(120) NULL,
   phone                VARCHAR(20) NULL,             -- E.164, for WhatsApp alerts
   whatsapp_opt_in      BOOLEAN NOT NULL DEFAULT FALSE,

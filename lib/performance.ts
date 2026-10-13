@@ -19,8 +19,10 @@ export interface MemberStats {
   name: string;
   /** Mirrored from the Attendance app. */
   department: string | null;
-  /** Their job title, likewise. */
+  /** Their job title. PM's own — Attendance has no such field. */
   designation: string | null;
+  /** "pm" when an admin set the department here rather than Attendance. */
+  department_source: "attendance" | "pm";
   role: "admin" | "member";
   online: boolean;
   last_seen_at: string | null;
@@ -87,7 +89,8 @@ export async function getTeamPerformance(user: User): Promise<TeamPerformance> {
   const params = ids ?? [];
 
   const rows = await query<DbRow[]>(
-    `SELECT u.id, u.emp_id, u.name, u.department, u.designation, u.role, u.last_seen_at,
+    `SELECT u.id, u.emp_id, u.name, u.department, u.department_source,
+            u.designation, u.role, u.last_seen_at,
             (u.last_seen_at IS NOT NULL
               AND u.last_seen_at >= UTC_TIMESTAMP() - INTERVAL 5 MINUTE) AS online,
             (SELECT COUNT(*) FROM tasks t WHERE t.assignee_id = u.id
@@ -160,6 +163,7 @@ export async function getTeamPerformance(user: User): Promise<TeamPerformance> {
     name: r.name,
     department: (r.department as string | null) ?? null,
     designation: (r.designation as string | null) ?? null,
+    department_source: r.department_source === "pm" ? "pm" : "attendance",
     role: r.role,
     online: Boolean(Number(r.online)),
     last_seen_at: r.last_seen_at,

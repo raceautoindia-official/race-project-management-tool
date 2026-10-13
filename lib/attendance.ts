@@ -155,6 +155,8 @@ export async function syncEmployeeStatus(
     is_active: boolean;
     department: string | null;
     designation: string | null;
+    /** "pm" when an admin set the department here, so the mirror stands off. */
+    departmentSource: "attendance" | "pm";
   }
 ): Promise<{
   role: Role;
@@ -168,34 +170,32 @@ export async function syncEmployeeStatus(
       [employeeId]
     );
     const emp = (rows as Pick<AttendanceEmployee, "role" | "is_active">[])[0];
-    // A transfer or a promotion reaches PM on the same heartbeat as a change
-    // of role — but asked for separately, so an Attendance without those
-    // columns keeps the rest of this working.
-    const extras = await fetchEmployeeExtras(employeeId);
+    // A transfer reaches PM on the same heartbeat as a change of role — but
+    // asked for separately, so an Attendance without the column keeps the
+    // rest of this working.
+    //
+    // Unless an admin has set the department here on purpose. Attendance's
+    // own data has gaps and mistakes, and overwriting a deliberate answer
+    // with a blank one every minute would be worse than useless.
+    const mirrored = current.departmentSource !== "pm";
+    const extras = mirrored ? await fetchEmployeeExtras(employeeId) : {};
     const fresh = {
       role: emp ? mapAttendanceRole(emp.role) : current.role,
       is_active: Boolean(emp?.is_active),
       department:
         extras.department === undefined ? current.department : extras.department,
-      designation:
-        extras.designation === undefined ? current.designation : extras.designation,
+      // Never mirrored: Attendance has no job title to give.
+      designation: current.designation,
     };
     if (
       fresh.role !== current.role ||
       fresh.is_active !== current.is_active ||
-      fresh.department !== current.department ||
-      fresh.designation !== current.designation
+      fresh.department !== current.department
     ) {
       await query(
-        `UPDATE users SET role = ?, is_active = ?, department = ?, designation = ?
+        `UPDATE users SET role = ?, is_active = ?, department = ?
           WHERE employee_id = ?`,
-        [
-          fresh.role,
-          fresh.is_active ? 1 : 0,
-          fresh.department,
-          fresh.designation,
-          employeeId,
-        ]
+        [fresh.role, fresh.is_active ? 1 : 0, fresh.department, employeeId]
       );
     }
     return fresh;
@@ -213,13 +213,18 @@ export async function verifyEmployeePin(
   return bcrypt.compare(pin, pinHash);
 }
 
-/** What PM mirrors from Attendance beyond name, role and active flag. */
+/**
+ * What PM mirrors from Attendance beyond name, role and active flag.
+ *
+ * Only the department. attendance_db.employees has no job-title column —
+ * it records a department and a role, and nothing else about what someone
+ * does — so users.designation is PM's own and nothing here touches it.
+ */
 export interface EmployeeExtras {
   department?: string | null;
-  designation?: string | null;
 }
 
-const EXTRA_COLUMNS = ["department", "designation"] as const;
+const EXTRA_COLUMNS = ["department"] as const;
 
 /** Which of those columns this Attendance actually has. Asked once. */
 let knownColumns: Set<string> | null = null;
@@ -244,13 +249,13 @@ async function employeeColumns(): Promise<Set<string>> {
 }
 
 /**
- * An employee's department and job title, read on their own and never fatally.
+ * An employee's department, read on its own and never fatally.
  *
  * Deliberately not part of the login query. Attendance is a database this app
  * does not own and cannot migrate, so a column it may not have must never be
- * able to stop anyone signing in — and asking for two columns at once would
- * mean a missing `designation` also cost us `department`. So PM asks what
- * exists first, then asks only for that.
+ * able to stop anyone signing in. So PM asks what exists first, then asks
+ * only for that — which also means a column added to Attendance later is
+ * picked up on the next restart without a code change.
  *
  * A key that is absent means "could not find out", and the caller leaves
  * whatever PM already recorded alone. `null` means Attendance says the person
@@ -306,21 +311,13 @@ export async function provisionPmUser(
   // Separately, and after the fact: what PM cannot read is what PM does not
   // update. Signing in still works either way.
   const extras = await fetchEmployeeExtras(emp.id);
-  const sets: string[] = [];
-  const values: unknown[] = [];
   if (extras.department !== undefined) {
-    sets.push("department = ?");
-    values.push(extras.department);
-  }
-  if (extras.designation !== undefined) {
-    sets.push("designation = ?");
-    values.push(extras.designation);
-  }
-  if (sets.length) {
-    await query(`UPDATE users SET ${sets.join(", ")} WHERE employee_id = ?`, [
-      ...values,
-      emp.id,
-    ]);
+    // Left alone for anyone whose department an admin set here on purpose.
+    await query(
+      `UPDATE users SET department = ?
+        WHERE employee_id = ? AND department_source = 'attendance'`,
+      [extras.department, emp.id]
+    );
   }
   const rows = await query<DbRow[]>(
     `SELECT id FROM users WHERE employee_id = ? LIMIT 1`,

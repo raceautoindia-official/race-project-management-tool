@@ -1,6 +1,6 @@
 /**
- * Copy every employee's department and designation from Attendance into
- * pm_app.users. Run with: npm run sync:departments
+ * Copy every employee's department from Attendance into pm_app.users.
+ * Run with: npm run sync:departments
  *
  * PM mirrors identity from the Attendance app rather than keeping a second
  * list of its own, and a department arrives with the person: on login, and on
@@ -58,31 +58,30 @@ const attendance = await mysql.createConnection({
 });
 
 try {
-  // Ask for the columns this Attendance actually has: an older one may
-  // carry a department and no designation, and asking for both would then
-  // get neither.
+  // Job titles are not copied. attendance_db.employees has no column for
+  // one, and PM keeps its own that an admin fills in — copying would mean
+  // overwriting a deliberate answer with nothing.
   const [cols] = await attendance.query(
     `SELECT column_name AS c FROM information_schema.columns
       WHERE table_schema = DATABASE() AND table_name = 'employees'`
   );
   const present = new Set(cols.map((r) => String(r.c).toLowerCase()));
-  const fields = ["department", "designation"].filter((f) => present.has(f));
-  if (fields.length === 0) {
-    console.log(
-      "Attendance has neither a department nor a designation column on employees — nothing to copy."
-    );
+  if (!present.has("department")) {
+    console.log("Attendance has no department column on employees — nothing to copy.");
     process.exit(0);
   }
-  console.log(`Copying: ${fields.join(", ")}
-`);
+  const fields = ["department"];
 
   const [employees] = await attendance.query(
     `SELECT id, ${fields.join(", ")} FROM employees`
   );
   const byEmployee = new Map(employees.map((e) => [Number(e.id), e]));
 
+  // People whose department an admin set here are left alone, exactly as
+  // the app's own mirror leaves them alone.
   const [users] = await pm.query(
-    `SELECT id, employee_id, name, department, designation FROM users ORDER BY name`
+    `SELECT id, employee_id, name, department FROM users
+      WHERE department_source = 'attendance' ORDER BY name`
   );
 
   let changed = 0;
