@@ -3,13 +3,14 @@ import { query, DbRow } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { errorResponse, ApiError, forbidden, json } from "@/lib/http";
 import { assertProjectAccess, assertTaskWritable, canManageProject } from "@/lib/rbac";
+import { dispositionFor } from "@/lib/inline-files";
 
 export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ id: string }> };
 
 /** GET /api/attachments/:id — download the file (any project member). */
-export async function GET(_req: NextRequest, { params }: Params) {
+export async function GET(req: NextRequest, { params }: Params) {
   try {
     const user = await requireUser();
     const { id } = await params;
@@ -27,12 +28,19 @@ export async function GET(_req: NextRequest, { params }: Params) {
     await assertProjectAccess(user, att.project_id);
 
     const data: Buffer = att.data;
-    const safe = String(att.filename).replace(/[^\w.\- ]+/g, "_");
+    // A gallery thumbnail asks for the picture itself; everything else, and
+    // every type that is not a plain image, still downloads.
+    const wantsInline = new URL(req.url).searchParams.get("inline") === "1";
     return new Response(new Uint8Array(data), {
       headers: {
         "Content-Type": att.mime_type || "application/octet-stream",
-        "Content-Disposition": `attachment; filename="${safe}"`,
+        "Content-Disposition": dispositionFor(
+          att.mime_type,
+          wantsInline,
+          String(att.filename)
+        ),
         "Content-Length": String(data.length),
+        "X-Content-Type-Options": "nosniff",
       },
     });
   } catch (err) {

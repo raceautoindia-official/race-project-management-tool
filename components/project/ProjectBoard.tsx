@@ -36,7 +36,7 @@ import EditProjectModal from "./EditProjectModal";
 import ImportTasksModal from "./ImportTasksModal";
 import TimelineView from "./TimelineView";
 import RecurringTasksModal from "./RecurringTasksModal";
-import ProjectFiles from "./ProjectFiles";
+import ProjectGallery from "./ProjectGallery";
 import TaskRequestsPanel from "./TaskRequestsPanel";
 import ProjectStatusBanner from "./ProjectStatusBanner";
 
@@ -463,7 +463,7 @@ export default function ProjectBoard({
       />
 
       <div className="mb-4">
-        <ProjectFiles
+        <ProjectGallery
           projectId={project.id}
           currentUserId={currentUser.id}
           canManage={canManage}
