@@ -45,6 +45,16 @@ export default async function AdminHomePage() {
           </p>
         </Link>
         <Link
+          href="/admin/people"
+          className="rounded-xl border border-slate-200 bg-white p-6 hover:border-indigo-300 hover:shadow-sm"
+        >
+          <div className="text-lg font-semibold text-slate-800">People &amp; levels →</div>
+          <p className="mt-1 text-sm text-slate-600">
+            Everyone&apos;s department and job title, and the seniority level each job
+            title carries.
+          </p>
+        </Link>
+        <Link
           href="/admin/activity"
           className="rounded-xl border border-slate-200 bg-white p-6 hover:border-indigo-300 hover:shadow-sm"
         >

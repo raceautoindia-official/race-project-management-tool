@@ -23,18 +23,20 @@ export default async function ProjectDetailPage({
    * ?task=12 opens that task straight away — what notifications link to —
    * and &focus=blockers scrolls to the part the notification was about.
    */
-  searchParams: Promise<{ task?: string; focus?: string }>;
+  searchParams: Promise<{ task?: string; focus?: string; subtask?: string }>;
 }) {
   const user = await requirePageUser();
   const { id } = await params;
   const search = await searchParams;
   const openTaskId = Number(search.task);
   const focus = search.focus === "blockers" ? "blockers" : null;
+  const openSubtaskId = Number(search.subtask);
   const projectId = Number(id);
   if (!Number.isInteger(projectId)) notFound();
 
   const projectRows = await query<DbRow[]>(
-    `SELECT p.id, p.name, p.description, p.department, p.status, p.approval_status, p.owner_id,
+    `SELECT p.id, p.name, p.description, p.department, p.status, p.start_date, p.due_date,
+            p.approval_status, p.owner_id,
             p.requested_by, p.requested_at, p.decided_at, p.decision_note,
             u.name AS owner_name, rq.name AS requester_name, dc.name AS decider_name
      FROM projects p
@@ -58,7 +60,9 @@ export default async function ProjectDetailPage({
   if (user.role !== "admin" && !projectRole) {
     redirect("/projects");
   }
-  const canManage = user.role === "admin" || projectRole === "lead";
+  // The owner runs the project (always a lead too; checked here as well).
+  const canManage =
+    user.role === "admin" || projectRole === "lead" || project.owner_id === user.id;
 
   const tasks = (await fetchTasks("t.project_id = ?", [projectId])) as unknown as Task[];
 
@@ -75,7 +79,8 @@ export default async function ProjectDetailPage({
   const labels = labelRows as unknown as Label[];
 
   const memberRows = await query<DbRow[]>(
-    `SELECT pm.id, pm.project_id, pm.user_id, pm.role_in_project, u.name, u.email
+    `SELECT pm.id, pm.project_id, pm.user_id, pm.role_in_project, u.name, u.email,
+            u.department, u.designation
      FROM project_members pm
      JOIN users u ON u.id = pm.user_id
      WHERE pm.project_id = ?
@@ -98,7 +103,7 @@ export default async function ProjectDetailPage({
   let allUsers: DbRow[] = [];
   if (canManage) {
     allUsers = await query<DbRow[]>(
-      `SELECT id, name, email FROM users WHERE is_active = TRUE ORDER BY name`
+      `SELECT id, name, email, department, designation FROM users WHERE is_active = TRUE ORDER BY name`
     );
   }
 
@@ -124,6 +129,8 @@ export default async function ProjectDetailPage({
           decider_name: project.decider_name,
           decided_at: project.decided_at,
           decision_note: project.decision_note,
+          start_date: (project.start_date as string | null) ?? null,
+          due_date: (project.due_date as string | null) ?? null,
         }}
         initialTasks={tasks}
         initialMembers={members}
@@ -132,7 +139,14 @@ export default async function ProjectDetailPage({
         initialRequests={requests}
         openTaskId={Number.isInteger(openTaskId) ? openTaskId : null}
         focus={focus}
-        allUsers={allUsers.map((u) => ({ id: u.id, name: u.name, email: u.email }))}
+        openSubtaskId={Number.isInteger(openSubtaskId) ? openSubtaskId : null}
+        allUsers={allUsers.map((u) => ({
+          id: u.id,
+          name: u.name,
+          email: u.email,
+          department: u.department ?? null,
+          designation: u.designation ?? null,
+        }))}
         currentUser={{
           id: user.id,
           role: user.role,

@@ -62,6 +62,19 @@ const THEMES: Record<string, SectionTheme> = {
     tint: "bg-rose-50",
     edge: "ring-rose-200",
   },
+  // Reviews took over Outstanding, so it keeps Outstanding's red.
+  "/reviews": {
+    band: "from-rose-600 via-red-600 to-red-800",
+    ink: "text-rose-300",
+    tint: "bg-rose-50",
+    edge: "ring-rose-200",
+  },
+  "/reports": {
+    band: "from-blue-600 via-blue-700 to-indigo-900",
+    ink: "text-blue-300",
+    tint: "bg-blue-50",
+    edge: "ring-blue-200",
+  },
   "/work-hours": {
     band: "from-teal-600 via-teal-700 to-emerald-800",
     ink: "text-teal-300",

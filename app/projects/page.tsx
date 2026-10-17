@@ -29,7 +29,8 @@ function groupByDepartment(projects: Project[]): [string, Project[]][] {
 }
 
 const PROJECT_SELECT = `
-  p.id, p.name, p.description, p.department, p.status, p.approval_status, p.owner_id,
+  p.id, p.name, p.description, p.department, p.status, p.start_date, p.due_date,
+  p.approval_status, p.owner_id,
   p.requested_by, p.created_at, p.updated_at, u.name AS owner_name,
   pm_self.role_in_project AS role_in_project,
   (SELECT COUNT(*) FROM project_members pm WHERE pm.project_id = p.id) AS member_count,

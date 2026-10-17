@@ -9,6 +9,8 @@ import type { ProjectTemplate } from "@/lib/types";
 import MoreFields from "@/components/MoreFields";
 import { DepartmentSelect } from "@/components/DepartmentField";
 import TemplatePicker from "@/components/TemplatePicker";
+import ProjectDatesFields, { dateOrderError } from "@/components/ProjectDatesFields";
+import { todayIST } from "@/lib/work-dates";
 
 interface PickUser {
   id: number;
@@ -65,6 +67,8 @@ export default function NewProjectButton({
   // requester must name the person who will.
   const [managerId, setManagerId] = useState(isAdmin ? String(currentUserId) : "");
   const [peopleQuery, setPeopleQuery] = useState("");
+  const [startDate, setStartDate] = useState(() => todayIST());
+  const [dueDate, setDueDate] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [templates, setTemplates] = useState<ProjectTemplate[]>([]);
   const [templateId, setTemplateId] = useState("");
@@ -86,6 +90,8 @@ export default function NewProjectButton({
     setMemberIds([]);
     setManagerId(isAdmin ? String(currentUserId) : "");
     setPeopleQuery("");
+    setStartDate(todayIST());
+    setDueDate("");
     setFiles([]);
     setTemplateId("");
     setError("");
@@ -131,6 +137,11 @@ export default function NewProjectButton({
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    const dateError = dateOrderError(startDate, dueDate);
+    if (dateError) {
+      setError(dateError);
+      return;
+    }
     setError("");
     setBusy(true);
     try {
@@ -142,6 +153,13 @@ export default function NewProjectButton({
           { method: "POST", body: JSON.stringify({ name }) }
         );
         projectId = res.project.id;
+        // Templates carry no dates; set the chosen ones on the new project.
+        if (startDate || dueDate) {
+          await apiFetch(`/api/projects/${projectId}`, {
+            method: "PATCH",
+            body: JSON.stringify({ startDate: startDate || null, dueDate: dueDate || null }),
+          }).catch(() => toast("Project created, but its dates were not saved", "error"));
+        }
       } else {
         const res = await apiFetch<{ project: { id: number } }>("/api/projects", {
           method: "POST",
@@ -150,6 +168,8 @@ export default function NewProjectButton({
             description,
             department,
             memberIds,
+            startDate: startDate || null,
+            dueDate: dueDate || null,
             // The same dropdown means "who runs it" to an admin and "who
             // approves it" to everyone else.
             ...(isAdmin
@@ -302,6 +322,14 @@ export default function NewProjectButton({
               hint="Its tasks count to this department too."
             />
           </div>
+
+          <ProjectDatesFields
+            idPrefix="project"
+            start={startDate}
+            due={dueDate}
+            onStart={setStartDate}
+            onDue={setDueDate}
+          />
 
           <div>
             <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">

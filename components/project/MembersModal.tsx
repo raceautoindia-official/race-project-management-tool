@@ -6,12 +6,16 @@ import { RoleBadge } from "@/components/Badge";
 import Avatar from "@/components/Avatar";
 import { apiFetch } from "@/lib/api-client";
 import { useToast } from "@/components/ToastProvider";
+import { PersonSelect } from "@/components/work/kit";
 import type { ProjectMember } from "@/lib/types";
 
 interface PickUser {
   id: number;
   name: string;
   email: string;
+  /** Shown in the picker so you can tell who you are adding. */
+  department?: string | null;
+  designation?: string | null;
 }
 
 const inputClass =
@@ -35,7 +39,7 @@ export default function MembersModal({
   onChanged: (members: ProjectMember[]) => void;
 }) {
   const { toast } = useToast();
-  const [userId, setUserId] = useState("");
+  const [userId, setUserId] = useState<number | null>(null);
   const [role, setRole] = useState("member");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -58,9 +62,9 @@ export default function MembersModal({
     try {
       await apiFetch(`/api/projects/${projectId}/members`, {
         method: "POST",
-        body: JSON.stringify({ userId: Number(userId), roleInProject: role }),
+        body: JSON.stringify({ userId, roleInProject: role }),
       });
-      setUserId("");
+      setUserId(null);
       setRole("member");
       await refresh();
       toast("Member added");
@@ -103,7 +107,9 @@ export default function MembersModal({
               <Avatar name={m.name} size="md" />
               <div>
                 <div className="text-sm font-medium text-slate-800">{m.name}</div>
-                <div className="text-xs text-slate-500">{m.email}</div>
+                <div className="text-xs text-slate-500">
+                  {[m.designation, m.department].filter(Boolean).join(" · ") || m.email}
+                </div>
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -125,23 +131,24 @@ export default function MembersModal({
       </ul>
 
       <form onSubmit={add} className="flex flex-wrap items-end gap-2 border-t border-slate-100 pt-3">
-        <div className="flex-1">
+        <div className="min-w-0 flex-1 basis-56">
           <label htmlFor="add-member-user" className="mb-1 block text-xs font-medium text-slate-600">
             Add member
           </label>
-          <select
+          {/* Grouped by department, each with their job title. */}
+          <PersonSelect
             id="add-member-user"
+            people={candidates.map((u) => ({
+              user_id: u.id,
+              name: u.name,
+              department: u.department,
+              designation: u.designation,
+            }))}
             value={userId}
-            onChange={(e) => setUserId(e.target.value)}
-            className={`${inputClass} w-full`}
-          >
-            <option value="">Select a user…</option>
-            {candidates.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name} ({u.email})
-              </option>
-            ))}
-          </select>
+            onChange={setUserId}
+            emptyLabel="Select a person…"
+            className="w-full"
+          />
         </div>
         <select
           aria-label="Role in project"

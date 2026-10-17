@@ -21,7 +21,8 @@ export async function GET(_req: NextRequest, { params }: Params) {
 
     await assertProjectAccess(user, projectId);
     const members = await query<DbRow[]>(
-      `SELECT pm.id, pm.project_id, pm.user_id, pm.role_in_project, u.name, u.email
+      `SELECT pm.id, pm.project_id, pm.user_id, pm.role_in_project, u.name, u.email,
+              u.department, u.designation
        FROM project_members pm
        JOIN users u ON u.id = pm.user_id
        WHERE pm.project_id = ?

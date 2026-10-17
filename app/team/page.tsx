@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requirePageUser } from "@/lib/page-guard";
+import { query, DbRow } from "@/lib/db";
 import { getTeamPerformance, ontimePct, effortPct } from "@/lib/performance";
 import AppShell from "@/components/AppShell";
 import { PageHeader } from "@/components/Cards";
@@ -44,6 +45,12 @@ export default async function TeamPage() {
   // Exporting a spreadsheet of colleagues' performance stays with the people
   // accountable for it. Seeing who you work with is not the same thing.
   const showExport = scope === "all" || scope === "led";
+  // Each job title's seniority level (Admin › People & levels), matched by name.
+  const levelRows = await query<DbRow[]>(
+    `SELECT title, level FROM designation_levels WHERE level IS NOT NULL`
+  );
+  const levelOf = new Map(levelRows.map((r) => [String(r.title).toLowerCase(), Number(r.level)]));
+  const levelFor = (title: string) => levelOf.get(title.trim().toLowerCase());
 
   return (
     <AppShell user={user}>
@@ -97,7 +104,14 @@ export default async function TeamPage() {
                       )}
                     </div>
                     {m.designation && (
-                      <div className="text-sm text-slate-700">{m.designation}</div>
+                      <div className="text-sm text-slate-700">
+                        {m.designation}
+                        {levelFor(m.designation) !== undefined && (
+                          <span className="figure text-slate-500" title="Seniority level">
+                            {" "}· L{levelFor(m.designation)}
+                          </span>
+                        )}
+                      </div>
                     )}
                     <div className="text-xs text-slate-500">
                       {m.emp_id} ·{" "}

@@ -76,6 +76,9 @@ export interface Project {
   /** Checklist items across the project, and how many are ticked. */
   progress_units?: number;
   progress_done?: number;
+  /** YYYY-MM-DD. Either can be unset. */
+  start_date?: string | null;
+  due_date?: string | null;
   role_in_project?: ProjectRole;
   // Project request → lead approval.
   approval_status?: RequestStatus;
@@ -109,6 +112,9 @@ export interface ProjectMember {
   role_in_project: ProjectRole;
   name: string;
   email: string;
+  /** For pickers: who they are in the company. */
+  department?: string | null;
+  designation?: string | null;
 }
 
 export interface Task extends SpecColumns {

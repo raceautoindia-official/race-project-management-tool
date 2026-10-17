@@ -210,17 +210,7 @@ export async function getMemberDashboard(
      FROM tasks WHERE assignee_id = ?`,
     [userId]
   );
-  const upcomingMeetings = await query<DbRow[]>(
-    `SELECT m.id, m.title, m.start_time, p.name AS project_name
-     FROM meetings m
-     LEFT JOIN projects p ON p.id = m.project_id
-     WHERE m.start_time > UTC_TIMESTAMP()
-       AND (m.created_by = ? OR m.id IN (
-         SELECT meeting_id FROM meeting_attendees WHERE user_id = ?
-       ))
-     ORDER BY m.start_time ASC LIMIT 5`,
-    [userId, userId]
-  );
+  const upcomingMeetings = await getUpcomingMeetings(userId);
 
   const upcoming = await query<DbRow[]>(
     `SELECT t.id, t.title, t.due_date, t.status, t.priority, t.project_id,
@@ -256,4 +246,44 @@ export async function getMemberDashboard(
     upcomingMeetings,
     projects,
   };
+}
+
+/** The next few meetings someone organises or is invited to (My Work, member overview). */
+export async function getUpcomingMeetings(userId: number): Promise<DbRow[]> {
+  return query<DbRow[]>(
+    `SELECT m.id, m.title, m.start_time, p.name AS project_name
+     FROM meetings m
+     LEFT JOIN projects p ON p.id = m.project_id
+     WHERE m.start_time > UTC_TIMESTAMP()
+       AND (m.created_by = ? OR m.id IN (
+         SELECT meeting_id FROM meeting_attendees WHERE user_id = ?
+       ))
+     ORDER BY m.start_time ASC LIMIT 5`,
+    [userId, userId]
+  );
+}
+
+/**
+ * Recent activity around one person (My Work): what they did, plus what
+ * happened to the projects they belong to and those projects' tasks. Admins
+ * see everything, as on the old admin dashboard.
+ */
+export async function getRecentActivityFor(user: { id: number; role: string }): Promise<DbRow[]> {
+  if (user.role === "admin") {
+    return query<DbRow[]>(
+      `SELECT al.id, al.action, al.entity_type, al.entity_id, al.created_at, u.name AS user_name
+         FROM activity_log al LEFT JOIN users u ON u.id = al.user_id
+        ORDER BY al.created_at DESC, al.id DESC LIMIT 8`
+    );
+  }
+  const mine = `SELECT project_id FROM project_members WHERE user_id = ?`;
+  return query<DbRow[]>(
+    `SELECT al.id, al.action, al.entity_type, al.entity_id, al.created_at, u.name AS user_name
+       FROM activity_log al LEFT JOIN users u ON u.id = al.user_id
+      WHERE al.user_id = ?
+         OR (al.entity_type = 'project' AND al.entity_id IN (${mine}))
+         OR (al.entity_type = 'task' AND al.entity_id IN (SELECT id FROM tasks WHERE project_id IN (${mine})))
+      ORDER BY al.created_at DESC, al.id DESC LIMIT 8`,
+    [user.id, user.id, user.id]
+  );
 }

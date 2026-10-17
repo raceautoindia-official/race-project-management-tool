@@ -1,0 +1,323 @@
+import Link from "next/link";
+import { AttentionPanel, GlanceList } from "@/components/AttentionPanel";
+import { requirePageUser } from "@/lib/page-guard";
+import { getAdminDashboard, getMemberDashboard } from "@/lib/dashboard";
+import { getProjectProgressRows } from "@/lib/work-views";
+import AppShell from "@/components/AppShell";
+import { SectionCard, PageHeader } from "@/components/Cards";
+import StatusChart from "@/components/StatusChart";
+import DepartmentLoadPanel from "@/components/DepartmentLoadPanel";
+import { KpiTile, ProjectProgressList, HoursMeter } from "@/components/DashboardWidgets";
+import { ProjectStatusBadge, TaskPriorityBadge } from "@/components/Badge";
+import ProjectProgressReport from "@/components/work/ProjectProgressReport";
+import { MeetingList, PageTabs, type MeetingRow } from "@/components/work/items";
+import { formatDate, formatRelative, humanizeAction, STATUS_CHART_COLORS } from "@/lib/format";
+import { TASK_STATUS_LABELS, type TaskStatus } from "@/lib/types";
+
+export const dynamic = "force-dynamic";
+
+/**
+ * Reports — how the work is going. Overview is the old dashboard (admins see
+ * the whole organisation, members their own figures); Progress is approved,
+ * weighted progress per project against its schedule.
+ */
+
+type Tab = "overview" | "progress";
+
+function statusChartData(counts: Record<TaskStatus, number>) {
+  return (Object.keys(TASK_STATUS_LABELS) as TaskStatus[]).map((s) => ({
+    name: TASK_STATUS_LABELS[s],
+    value: counts[s],
+    color: STATUS_CHART_COLORS[s],
+  }));
+}
+
+export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+  const user = await requirePageUser();
+  const tab: Tab = (await searchParams).tab === "progress" ? "progress" : "overview";
+  const isAdmin = user.role === "admin";
+
+  return (
+    <AppShell user={user}>
+      <PageHeader
+        title="Reports"
+        subtitle={
+          isAdmin
+            ? "How the organisation's projects are doing. Only approved work counts as progress."
+            : "How your work and your projects are doing. Only approved work counts as progress."
+        }
+      />
+      <PageTabs
+        label="Report views"
+        active={tab}
+        tabs={[
+          { key: "overview", label: "Overview", href: "/reports" },
+          { key: "progress", label: "Progress", href: "/reports?tab=progress" },
+        ]}
+      />
+      {tab === "progress" ? (
+        <ProjectProgressReport rows={await getProjectProgressRows(user)} />
+      ) : isAdmin ? (
+        <AdminOverview />
+      ) : (
+        <MemberOverview userId={user.id} />
+      )}
+    </AppShell>
+  );
+}
+
+async function AdminOverview() {
+  const data = await getAdminDashboard();
+  return (
+    <>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[2fr_1fr]">
+        <AttentionPanel
+          items={[
+            { label: "overdue", clear: "nothing overdue", value: data.overdue.length, href: "/reviews?tab=overdue", tone: "danger" },
+            { label: "outstanding", clear: "nothing outstanding", value: data.outstandingCount, href: "/reviews?tab=overdue", tone: "warn" },
+            { label: "awaiting approval", clear: "none awaiting", value: data.pendingApprovalCount, href: "/reviews", tone: "warn" },
+          ]}
+        >
+          {data.overdue.length === 0 ? (
+            <p className="text-sm text-slate-500">Every task is inside its due date.</p>
+          ) : (
+            <ul className="space-y-2">
+              {data.overdue.slice(0, 3).map((t) => (
+                <li key={t.id} className="flex items-center justify-between gap-3">
+                  <Link
+                    href={`/projects/${t.project_id}/tasks/${t.id}`}
+                    className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800 hover:text-indigo-600"
+                  >
+                    {t.title}
+                    <span className="ml-2 font-normal text-slate-500">{t.assignee_name ?? "Unassigned"}</span>
+                  </Link>
+                  <span className="figure shrink-0 text-xs font-semibold text-rose-600">{formatDate(t.due_date)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </AttentionPanel>
+
+        <GlanceList
+          items={[
+            { label: "People", value: data.totals.users },
+            { label: "Projects", value: data.totals.projects, hint: `${data.totals.activeProjects} active` },
+            { label: "Tasks", value: data.totals.tasks },
+            { label: "Hours logged", value: `${data.hours.spent}h`, hint: `of ${data.hours.estimated}h` },
+          ]}
+        />
+      </div>
+
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <SectionCard title="Tasks by status">
+          <StatusChart data={statusChartData(data.tasksByStatus)} />
+        </SectionCard>
+        <DepartmentLoadPanel rows={data.byDepartment} />
+        <SectionCard
+          title="Active project completion"
+          action={
+            <Link href="/reports?tab=progress" className="text-sm font-medium text-indigo-600 hover:underline">
+              All projects
+            </Link>
+          }
+        >
+          <ProjectProgressList projects={data.projectProgress} />
+        </SectionCard>
+        <SectionCard title="Hours logged (all tasks)">
+          <HoursMeter estimated={data.hours.estimated} spent={data.hours.spent} />
+        </SectionCard>
+      </div>
+
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <SectionCard
+          title="Everything overdue"
+          action={
+            <Link href="/reviews?tab=overdue" className="text-sm font-medium text-indigo-600 hover:underline">
+              Overdue & in review
+            </Link>
+          }
+        >
+          {data.overdue.length === 0 ? (
+            <p className="text-sm text-slate-500">Nothing overdue. 🎉</p>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {data.overdue.map((t) => (
+                <li key={t.id} className="flex items-center justify-between py-2">
+                  <div className="min-w-0">
+                    <Link
+                      href={`/projects/${t.project_id}/tasks/${t.id}`}
+                      className="block truncate text-sm font-medium text-slate-800 hover:text-indigo-600"
+                    >
+                      {t.title}
+                    </Link>
+                    <div className="text-xs text-slate-500">
+                      {t.project_name} · {t.assignee_name ?? "Unassigned"}
+                    </div>
+                  </div>
+                  <span className="ml-3 shrink-0 text-xs font-medium text-red-600">{formatDate(t.due_date)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </SectionCard>
+
+        <SectionCard
+          title="Upcoming meetings"
+          action={
+            <Link href="/meetings" className="text-sm font-medium text-indigo-600 hover:underline">
+              All meetings
+            </Link>
+          }
+        >
+          <MeetingList meetings={data.upcomingMeetings as unknown as MeetingRow[]} />
+        </SectionCard>
+      </div>
+
+      <div className="mt-6">
+        <SectionCard
+          title="Recent activity"
+          action={
+            <Link href="/admin/activity" className="text-sm font-medium text-indigo-600 hover:underline">
+              View all
+            </Link>
+          }
+        >
+          {data.recentActivity.length === 0 ? (
+            <p className="text-sm text-slate-500">No activity yet.</p>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {data.recentActivity.map((a) => (
+                <li key={a.id} className="flex items-center justify-between py-2 text-sm">
+                  <span className="text-slate-700">
+                    <span className="font-medium">{a.user_name ?? "System"}</span>{" "}
+                    <span className="text-slate-600">{humanizeAction(a.action).toLowerCase()}</span>
+                  </span>
+                  <span className="text-xs text-slate-500">{formatRelative(a.created_at)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </SectionCard>
+      </div>
+    </>
+  );
+}
+
+async function MemberOverview({ userId }: { userId: number }) {
+  const data = await getMemberDashboard(userId);
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
+        <KpiTile label="Open tasks" value={data.openCount} />
+        <KpiTile label="In progress" value={data.tasksByStatus.in_progress} />
+        <KpiTile label="Completed" value={data.tasksByStatus.done} />
+        <KpiTile label="Overdue" value={data.overdueCount} href="/reviews?tab=overdue" tone={data.overdueCount ? "danger" : "default"} />
+        <KpiTile
+          label="Outstanding"
+          value={data.outstandingCount}
+          href="/reviews?tab=overdue"
+          tone={data.outstandingCount ? "warn" : "default"}
+        />
+        <KpiTile
+          label="Awaiting approval"
+          value={data.pendingApprovalCount}
+          href="/reviews"
+          tone={data.pendingApprovalCount ? "warn" : "default"}
+        />
+      </div>
+
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <SectionCard title="My tasks by status">
+          <StatusChart data={statusChartData(data.tasksByStatus)} />
+        </SectionCard>
+        <SectionCard title="My hours logged">
+          <HoursMeter estimated={data.hours.estimated} spent={data.hours.spent} />
+        </SectionCard>
+        <SectionCard
+          title="Upcoming meetings"
+          action={
+            <Link href="/meetings" className="text-sm font-medium text-indigo-600 hover:underline">
+              All
+            </Link>
+          }
+        >
+          <MeetingList meetings={data.upcomingMeetings as unknown as MeetingRow[]} />
+        </SectionCard>
+      </div>
+
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <SectionCard
+          title="Upcoming tasks"
+          action={
+            <Link href="/dashboard?view=tasks" className="text-sm font-medium text-indigo-600 hover:underline">
+              My tasks
+            </Link>
+          }
+        >
+          {data.upcoming.length === 0 ? (
+            <p className="text-sm text-slate-500">No open tasks assigned to you.</p>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {data.upcoming.map((t) => (
+                <li key={t.id} className="flex items-center justify-between gap-2 py-2">
+                  <div className="min-w-0">
+                    <Link
+                      href={`/projects/${t.project_id}/tasks/${t.id}`}
+                      className="block truncate text-sm font-medium text-slate-800 hover:text-indigo-600"
+                    >
+                      {t.title}
+                    </Link>
+                    <div className="text-xs text-slate-500">{t.project_name}</div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <TaskPriorityBadge priority={t.priority} />
+                    <span className="text-xs text-slate-600">{t.due_date ? formatDate(t.due_date) : "No due date"}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </SectionCard>
+
+        <SectionCard
+          title="My projects"
+          action={
+            <Link href="/projects" className="text-sm font-medium text-indigo-600 hover:underline">
+              All projects
+            </Link>
+          }
+        >
+          {data.projects.length === 0 ? (
+            <p className="text-sm text-slate-500">You are not a member of any projects yet.</p>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {data.projects.map((p) => {
+                const total = Number(p.task_count);
+                const done = Number(p.done_count);
+                const pct = total ? Math.round((done / total) * 100) : 0;
+                return (
+                  <Link
+                    key={p.id}
+                    href={`/projects/${p.id}`}
+                    className="rounded-lg border border-slate-200 p-4 hover:border-indigo-300 hover:shadow-sm"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-slate-800">{p.name}</span>
+                      <ProjectStatusBadge status={p.status} />
+                    </div>
+                    <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                      <div className="h-full rounded-full bg-indigo-500" style={{ width: `${pct}%` }} />
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      {done}/{total} tasks done ({pct}%)
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </SectionCard>
+      </div>
+    </>
+  );
+}

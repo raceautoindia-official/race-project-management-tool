@@ -39,11 +39,16 @@ import RecurringTasksModal from "./RecurringTasksModal";
 import ProjectGallery from "./ProjectGallery";
 import TaskRequestsPanel from "./TaskRequestsPanel";
 import ProjectStatusBanner from "./ProjectStatusBanner";
+import ProjectTree from "@/components/work/ProjectTree";
+import { HealthBadge, ProgressLegend, WorkProgress, shortDate } from "@/components/work/kit";
+import { projectProgress } from "@/lib/work-engine";
 
 interface PickUser {
   id: number;
   name: string;
   email: string;
+  department?: string | null;
+  designation?: string | null;
 }
 
 interface ProjectInfo {
@@ -62,6 +67,8 @@ interface ProjectInfo {
   decider_name: string | null;
   decided_at: string | null;
   decision_note: string | null;
+  start_date?: string | null;
+  due_date?: string | null;
 }
 
 const PRIORITY_ORDER: Record<TaskPriority, number> = {
@@ -71,7 +78,15 @@ const PRIORITY_ORDER: Record<TaskPriority, number> = {
   low: 3,
 };
 
-type ViewMode = "board" | "list" | "timeline" | "calendar";
+type ViewMode = "tree" | "board" | "list" | "timeline" | "calendar";
+
+const VIEW_LABELS: Record<ViewMode, string> = {
+  tree: "Tasks & subtasks",
+  board: "Board",
+  list: "List",
+  timeline: "Timeline",
+  calendar: "Calendar",
+};
 
 export default function ProjectBoard({
   project: initialProject,
@@ -82,6 +97,7 @@ export default function ProjectBoard({
   initialRequests,
   openTaskId = null,
   focus = null,
+  openSubtaskId = null,
   allUsers,
   currentUser,
   canManage,
@@ -96,6 +112,8 @@ export default function ProjectBoard({
   openTaskId?: number | null;
   /** The part of that task the notification was about. */
   focus?: "blockers" | null;
+  /** The subtask a notification was about, expanded in the opened task. */
+  openSubtaskId?: number | null;
   allUsers: PickUser[];
   currentUser: { id: number; role: Role; name: string; department?: string | null };
   canManage: boolean;
@@ -108,7 +126,7 @@ export default function ProjectBoard({
   const [milestones, setMilestones] = useState<Milestone[]>(initialMilestones);
   const [newMs, setNewMs] = useState("");
   const [newMsDate, setNewMsDate] = useState("");
-  const [view, setView] = useState<ViewMode>("board");
+  const [view, setView] = useState<ViewMode>("tree");
   const [requests, setRequests] = useState<TaskRequest[]>(initialRequests);
   const [raiseOpen, setRaiseOpen] = useState(false);
 
@@ -138,10 +156,14 @@ export default function ProjectBoard({
 
   const total = tasks.length;
   const done = tasks.filter((t) => t.status === "done").length;
-  // Checklist items, not whole tasks: a task that is nearly finished shows
-  // as nearly finished rather than as nothing at all.
+  // Weighted, approved work only: a task counts toward the project once it
+  // is approved (Done); tasks waiting for review show as pending.
   const units = projectUnitsOf(tasks);
   const pct = projectPercent(units);
+  const projectProg = projectProgress(
+    tasks.map((t) => ({ id: t.id, status: t.status, weight: Number(t.weight ?? 0), weight_mode: t.weight_mode === "manual" ? "manual" : "auto" }))
+  );
+  const people = members.map((m) => ({ user_id: m.user_id, name: m.name, department: m.department ?? null, designation: m.designation ?? null }));
   const counts = statusCounts(tasks);
   const totalEst = tasks.reduce((s, t) => s + Number(t.estimated_hours ?? 0), 0);
   const spentSum = tasks.reduce((s, t) => s + Number(t.spent_hours ?? 0), 0);
@@ -238,6 +260,16 @@ export default function ProjectBoard({
       openDetail(res.task);
     } catch (e) {
       toast(e instanceof Error ? e.message : "Could not open the task", "error");
+    }
+  }
+
+  /** One task moved (a subtask changed its status or progress). */
+  async function reloadTask(taskId: number) {
+    try {
+      const res = await apiFetch<{ task: Task }>(`/api/tasks/${taskId}`);
+      upsertTask(res.task);
+    } catch {
+      // The panel already said what went wrong.
     }
   }
 
@@ -438,10 +470,17 @@ export default function ProjectBoard({
         </div>
 
         <div className="mt-4">
-          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
-            <span title={`${units.credited} of ${units.units} checklist items`}>
+          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-300">
+            <span>
               <span className="figure text-sm font-semibold text-white">{pct}%</span>{" "}
-              complete · {done}/{total} tasks done
+              complete (approved) · {done}/{total} tasks approved
+              {projectProg.pending > 0.5 && (
+                <span className="text-amber-200"> · {Math.round(projectProg.pending)}% waiting for review</span>
+              )}
+            </span>
+            <span className="flex items-center gap-2">
+              <span className="figure">{shortDate(project.start_date)} → {shortDate(project.due_date)}</span>
+              <HealthBadge approved={pct} start={project.start_date} due={project.due_date} />
             </span>
             {totalEst > 0 && (
               <span className="figure">
@@ -449,7 +488,10 @@ export default function ProjectBoard({
               </span>
             )}
           </div>
-          <StatusBar counts={counts} />
+          <WorkProgress approved={projectProg.approved} pending={projectProg.pending} size="lg" label="Project progress" />
+          <div className="mt-2">
+            <StatusBar counts={counts} />
+          </div>
         </div>
         </div>
       </div>
@@ -461,15 +503,6 @@ export default function ProjectBoard({
         readyToComplete={readyToComplete}
         onProjectChange={(patch) => setProject((prev) => ({ ...prev, ...patch }))}
       />
-
-      <div className="mb-4">
-        <ProjectGallery
-          projectId={project.id}
-          currentUserId={currentUser.id}
-          canManage={canManage}
-          readOnly={!writable}
-        />
-      </div>
 
       <TaskRequestsPanel
         projectId={project.id}
@@ -490,6 +523,105 @@ export default function ProjectBoard({
         }}
       />
 
+      <div className="mb-4 inline-flex rounded-lg border border-slate-200 bg-white p-1 text-sm">
+        {(["tree", "board", "list", "timeline", "calendar"] as ViewMode[]).map((v) => (
+          <button
+            key={v}
+            onClick={() => setView(v)}
+            aria-pressed={view === v}
+            className={`rounded-md px-3 py-1.5 font-medium ${
+              view === v ? "bg-indigo-600 text-white" : "text-slate-600"
+            }`}
+          >
+            {VIEW_LABELS[v]}
+          </button>
+        ))}
+      </div>
+      {view === "tree" && (
+        <div className="mb-3"><ProgressLegend /></div>
+      )}
+
+      {view === "tree" && (
+        <ProjectTree
+          projectId={project.id}
+          projectName={project.name}
+          tasks={tasks}
+          people={people}
+          currentUser={currentUser}
+          isManager={canManage}
+          writable={writable}
+          onOpen={openDetail}
+          onTaskChanged={(id) => void reloadTask(id)}
+          onWeightsSaved={() => void reloadTasks()}
+        />
+      )}
+
+      {view === "board" && (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {TASK_STATUSES.map((status) => {
+            const colTasks = tasks.filter((t) => t.status === status);
+            return (
+              <div
+                key={status}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={() => {
+                  if (draggedId != null) moveTask(draggedId, status);
+                  setDraggedId(null);
+                }}
+                className="flex flex-col rounded-xl bg-slate-100/70 p-3"
+              >
+                <div className="mb-3 flex items-center justify-between px-1">
+                  <span className="text-sm font-semibold text-slate-700">
+                    {TASK_STATUS_LABELS[status]}
+                  </span>
+                  <span className="rounded-full bg-white px-2 text-xs font-medium text-slate-600">
+                    {colTasks.length}
+                  </span>
+                </div>
+                <div className="flex flex-1 flex-col gap-2">
+                  {colTasks.map((t) => (
+                    <TaskCard key={t.id} task={t} onOpen={openDetail} onDragStart={setDraggedId} />
+                  ))}
+                  {colTasks.length === 0 && (
+                    <p className="px-1 py-4 text-center text-xs text-slate-500">Drop tasks here</p>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {view === "list" && (
+        <ListView
+          tasks={visibleList}
+          members={members}
+          labels={labels}
+          fStatus={fStatus}
+          fPriority={fPriority}
+          fAssignee={fAssignee}
+          fLabel={fLabel}
+          setFStatus={setFStatus}
+          setFPriority={setFPriority}
+          setFAssignee={setFAssignee}
+          setFLabel={setFLabel}
+          onOpen={openDetail}
+          toggleSort={toggleSort}
+          sortKey={sortKey}
+          sortDir={sortDir}
+          canManage={canManageWritable}
+          projectId={project.id}
+          onBulkDone={reloadTasks}
+        />
+      )}
+
+      {view === "timeline" && (
+        <TimelineView tasks={tasks} milestones={milestones} onSelect={openDetail} />
+      )}
+
+      {view === "calendar" && <Calendar tasks={tasks} onSelect={openDetail} />}
+
+      <div className="mt-6">
       {(milestones.length > 0 || canManageWritable) && (
         <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4">
           <div className="mb-2 text-sm font-semibold text-slate-700">Milestones</div>
@@ -560,84 +692,16 @@ export default function ProjectBoard({
         </div>
       )}
 
-      <div className="mb-4 inline-flex rounded-lg border border-slate-200 bg-white p-1 text-sm">
-        {(["board", "list", "timeline", "calendar"] as ViewMode[]).map((v) => (
-          <button
-            key={v}
-            onClick={() => setView(v)}
-            className={`rounded-md px-3 py-1.5 font-medium capitalize ${
-              view === v ? "bg-indigo-600 text-white" : "text-slate-600"
-            }`}
-          >
-            {v}
-          </button>
-        ))}
+      <div className="mb-4">
+        <ProjectGallery
+          projectId={project.id}
+          currentUserId={currentUser.id}
+          canManage={canManage}
+          readOnly={!writable}
+        />
       </div>
 
-      {view === "board" && (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {TASK_STATUSES.map((status) => {
-            const colTasks = tasks.filter((t) => t.status === status);
-            return (
-              <div
-                key={status}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={() => {
-                  if (draggedId != null) moveTask(draggedId, status);
-                  setDraggedId(null);
-                }}
-                className="flex flex-col rounded-xl bg-slate-100/70 p-3"
-              >
-                <div className="mb-3 flex items-center justify-between px-1">
-                  <span className="text-sm font-semibold text-slate-700">
-                    {TASK_STATUS_LABELS[status]}
-                  </span>
-                  <span className="rounded-full bg-white px-2 text-xs font-medium text-slate-600">
-                    {colTasks.length}
-                  </span>
-                </div>
-                <div className="flex flex-1 flex-col gap-2">
-                  {colTasks.map((t) => (
-                    <TaskCard key={t.id} task={t} onOpen={openDetail} onDragStart={setDraggedId} />
-                  ))}
-                  {colTasks.length === 0 && (
-                    <p className="px-1 py-4 text-center text-xs text-slate-500">Drop tasks here</p>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {view === "list" && (
-        <ListView
-          tasks={visibleList}
-          members={members}
-          labels={labels}
-          fStatus={fStatus}
-          fPriority={fPriority}
-          fAssignee={fAssignee}
-          fLabel={fLabel}
-          setFStatus={setFStatus}
-          setFPriority={setFPriority}
-          setFAssignee={setFAssignee}
-          setFLabel={setFLabel}
-          onOpen={openDetail}
-          toggleSort={toggleSort}
-          sortKey={sortKey}
-          sortDir={sortDir}
-          canManage={canManageWritable}
-          projectId={project.id}
-          onBulkDone={reloadTasks}
-        />
-      )}
-
-      {view === "timeline" && (
-        <TimelineView tasks={tasks} milestones={milestones} onSelect={openDetail} />
-      )}
-
-      {view === "calendar" && <Calendar tasks={tasks} onSelect={openDetail} />}
+      </div>
 
       <TaskFormModal
         key={`taskform-${
@@ -666,6 +730,7 @@ export default function ProjectBoard({
         onClose={() => setDetailOpen(false)}
         task={detailTask}
         focus={detailTask?.id === openTaskId ? focus : null}
+        openSubtaskId={detailTask?.id === openTaskId ? openSubtaskId : null}
         currentUser={currentUser}
         canManage={canManage}
         projectReadOnlyReason={lockReason}

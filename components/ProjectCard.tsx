@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ProjectStatusBadge, RequestStatusBadge, RoleBadge } from "./Badge";
 import { DepartmentBadge } from "./DepartmentField";
 import { projectPercent } from "@/lib/progress";
+import { DateRange, HealthBadge } from "@/components/work/kit";
 import type { Project } from "@/lib/types";
 
 export default function ProjectCard({ project }: { project: Project }) {
@@ -42,6 +43,16 @@ export default function ProjectCard({ project }: { project: Project }) {
           {" · "}
           {done}/{total} tasks done
         </span>
+      </div>
+
+      {/* Schedule: the dates, and whether approved progress keeps up with them. */}
+      <div className="mt-3 flex items-start justify-between gap-2">
+        <DateRange
+          start={project.start_date}
+          due={project.due_date}
+          finished={project.status !== "active" || pct >= 100}
+        />
+        <HealthBadge approved={pct} start={project.start_date} due={project.due_date} />
       </div>
 
       <div className="mt-3 flex items-center justify-between text-xs text-slate-600">

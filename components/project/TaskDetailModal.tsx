@@ -13,18 +13,16 @@ import Avatar from "@/components/Avatar";
 import { apiFetch, isConflict } from "@/lib/api-client";
 import { useToast } from "@/components/ToastProvider";
 import { ProgressBar } from "@/components/ProgressBar";
-import { taskProgress } from "@/lib/progress";
 import { formatDate, formatRelative, isOverdue } from "@/lib/format";
 import { formatHM, formatMinutes, formatIst } from "@/lib/tz";
 import {
   canSignOff,
   pendingChecklistItems,
   signOffBlockers,
-  SPEC_LABELS,
   specFieldsFor,
-  type SpecKey,
 } from "@/lib/workflow";
 import { SpecView } from "./WorkSpec";
+import SubtasksPanel from "@/components/work/SubtasksPanel";
 
 interface TimeLog {
   id: number;
@@ -77,7 +75,13 @@ export default function TaskDetailModal({
   onAddFollowUp,
   onChanged,
   onDeleted,
+  variant = "modal",
+  openSubtaskId = null,
 }: {
+  /** "page" renders the same body inline on the task page. */
+  variant?: "modal" | "page";
+  /** Expand this subtask on load (a notification linked to it). */
+  openSubtaskId?: number | null;
   open: boolean;
   onClose: () => void;
   task: Task | null;
@@ -97,14 +101,9 @@ export default function TaskDetailModal({
   const { toast } = useToast();
   const [comments, setComments] = useState<Comment[]>([]);
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
-  const [seedingSpec, setSeedingSpec] = useState(false);
   // The section a notification was about, so opening lands on it rather
   // than at the top of a long task.
   const focusRef = useRef<HTMLDivElement>(null);
-  // Seconds left before the finished checklist sends itself for review,
-  // and whether this person has already said not yet.
-  const [reviewIn, setReviewIn] = useState<number | null>(null);
-  const [reviewDeclined, setReviewDeclined] = useState(false);
   // Said only when someone presses Post comment with nothing written.
   const [commentHint, setCommentHint] = useState(false);
   const commentInput = useRef<HTMLInputElement>(null);
@@ -179,24 +178,6 @@ export default function TaskDetailModal({
     focusRef.current.scrollIntoView({ block: "center" });
   }, [loading, focus]);
 
-  // Counts the offer down a second at a time. The send happens inside the
-  // timer rather than in the effect body, so nothing cascades a render.
-  useEffect(() => {
-    if (reviewIn === null) return;
-    const timer = setTimeout(() => {
-      if (reviewIn > 1) {
-        setReviewIn(reviewIn - 1);
-        return;
-      }
-      setReviewIn(null);
-      void changeStatus("review");
-    }, 1000);
-    return () => clearTimeout(timer);
-    // changeStatus is rebuilt every render; listing it here would restart
-    // the countdown on each tick.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reviewIn]);
-
   if (!task) return null;
   const currentTask = task;
 
@@ -257,11 +238,7 @@ export default function TaskDetailModal({
     currentTask.status === "done" &&
     canSignOff(currentUser, canManage, currentTask);
   const overdue = isOverdue(currentTask.due_date, currentTask.status);
-  const subDone = subtasks.filter((s) => s.is_done).length;
-  const subPct = subtasks.length
-    ? Math.round((subDone / subtasks.length) * 100)
-    : 0;
-  // What the specification asks for but the checklist doesn't have yet.
+  // What the specification asks for but the subtasks don't have yet.
   // A task created before its spec was seeded — or whose spec was written
   // afterwards — can be brought up to date in one click.
   const specPending = pendingChecklistItems(
@@ -269,28 +246,25 @@ export default function TaskDetailModal({
     currentTask,
     subtasks.map((s) => s.title)
   );
-  // Grouped by the spec field each item came from, in the order the spec
-  // asks for them, so it is plain which are the expected behaviour and
-  // which are the acceptance criteria. Items typed here come last.
-  const checklistGroups = (() => {
-    const groups = new Map<string, Subtask[]>();
-    for (const s of subtasks) {
-      const key = s.source ?? "";
-      const list = groups.get(key);
-      if (list) list.push(s);
-      else groups.set(key, [s]);
-    }
-    return [...groups.entries()];
-  })();
-  // One unlabelled group is just a list; headings would say nothing.
-  const showChecklistGroups = checklistGroups.some(([source]) => source !== "");
-  const progress = taskProgress({
-    status: currentTask.status,
-    subtask_total: subtasks.length,
-    subtask_done: subDone,
-  });
 
   const totalMinutes = timeLogs.reduce((s, l) => s + l.minutes, 0);
+
+  /**
+   * A subtask changed: the task's status and progress may have moved with it
+   * (e.g. every subtask approved sends it for review). Re-read both.
+   */
+  async function refreshTask() {
+    try {
+      const [t, s] = await Promise.all([
+        apiFetch<{ task: Task }>(`/api/tasks/${currentTask.id}`),
+        apiFetch<{ subtasks: Subtask[] }>(`/api/tasks/${currentTask.id}/subtasks`),
+      ]);
+      setSubtasks(s.subtasks);
+      onChanged(t.task);
+    } catch {
+      // The panel already said what went wrong.
+    }
+  }
 
   // Someone else changed the task (e.g. signed it off): show the current state.
   async function reloadIfChanged(e: unknown) {
@@ -469,14 +443,6 @@ export default function TaskDetailModal({
     setMentionQuery(null);
   }
 
-  function syncCounts(list: Subtask[]) {
-    onChanged({
-      ...currentTask,
-      subtask_total: list.length,
-      subtask_done: list.filter((s) => s.is_done).length,
-    });
-  }
-
   async function changeStatus(status: TaskStatus) {
     if (status === currentTask.status) return;
     // Dependency warning: moving a blocked task forward.
@@ -602,81 +568,6 @@ export default function TaskDetailModal({
     }
   }
 
-  /**
-   * Bring the checklist up to date with the specification. A new task is
-   * seeded at creation; this is for the ones created before that, and for a
-   * spec written or corrected afterwards. The server re-reads the stored
-   * spec — this only asks it to.
-   */
-  async function addChecklistFromSpec() {
-    setSeedingSpec(true);
-    try {
-      const res = await apiFetch<{ added: number; subtasks: Subtask[] }>(
-        `/api/tasks/${currentTask.id}/subtasks/from-spec`,
-        { method: "POST" }
-      );
-      setSubtasks(res.subtasks);
-      syncCounts(res.subtasks);
-      toast(
-        res.added === 1
-          ? "1 item added from the specification"
-          : `${res.added} items added from the specification`
-      );
-    } catch (e) {
-      void reloadIfChanged(e);
-      toast(
-        e instanceof Error ? e.message : "Could not read the specification",
-        "error"
-      );
-    } finally {
-      setSeedingSpec(false);
-    }
-  }
-
-
-  /**
-   * Every box ticked means the work is done, so the task offers to hand
-   * itself over rather than waiting for someone to find the status menu.
-   * It waits five seconds first — a box ticked by mistake is common, and
-   * moving a task back out of review is not this person's to do.
-   */
-  function offerReview(list: Subtask[]) {
-    if (reviewDeclined || !canEditExecution) return;
-    if (currentTask.status === "review" || currentTask.status === "done") return;
-    if (!list.length || list.some((x) => !x.is_done)) return;
-    setReviewIn(5);
-  }
-
-  async function toggleSubtask(s: Subtask) {
-    try {
-      const res = await apiFetch<{ subtask: Subtask }>(`/api/subtasks/${s.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ is_done: !s.is_done }),
-      });
-      const list = subtasks.map((x) => (x.id === s.id ? res.subtask : x));
-      setSubtasks(list);
-      syncCounts(list);
-      offerReview(list);
-      // Unticking something takes back the offer.
-      if (list.some((x) => !x.is_done)) setReviewIn(null);
-    } catch (e) {
-      void reloadIfChanged(e);
-      toast(e instanceof Error ? e.message : "Could not update subtask", "error");
-    }
-  }
-
-  async function deleteSubtask(id: number) {
-    try {
-      await apiFetch(`/api/subtasks/${id}`, { method: "DELETE" });
-      const list = subtasks.filter((x) => x.id !== id);
-      setSubtasks(list);
-      syncCounts(list);
-    } catch (e) {
-      void reloadIfChanged(e);
-      toast(e instanceof Error ? e.message : "Could not delete subtask", "error");
-    }
-  }
-
   async function signOff() {
     if (signOffMissing.length) return;
     setBusy(true);
@@ -712,56 +603,7 @@ export default function TaskDetailModal({
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={currentTask.title} widthClass="max-w-2xl">
-      {/* The checklist is finished: the task is going for review unless
-          this is stopped. Inside the modal's own content, so clicking it
-          does not fall through and close the task. */}
-      {reviewIn !== null && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 p-4">
-          <div
-            role="alertdialog"
-            aria-modal="true"
-            aria-label="Checklist finished"
-            className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl"
-          >
-            <h3 className="text-base font-semibold text-slate-900">
-              ✅ Checklist finished
-            </h3>
-            <p aria-live="polite" className="mt-1 text-sm text-slate-600">
-              Every item is ticked, so this task is going for review in{" "}
-              <strong className="text-slate-900">{reviewIn}</strong>{" "}
-              second{reviewIn === 1 ? "" : "s"}.
-            </p>
-            <div className="mt-4 flex gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setReviewIn(null);
-                  void changeStatus("review");
-                }}
-                className="flex-1 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
-              >
-                Send for review now
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setReviewIn(null);
-                  setReviewDeclined(true);
-                }}
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-              >
-                Not yet
-              </button>
-            </div>
-            <p className="mt-2 text-xs text-slate-500">
-              “Not yet” leaves it where it is and tells nobody. Send it whenever
-              you are ready with the <strong>Send for review</strong> button at the
-              top of the task.
-            </p>
-          </div>
-        </div>
-      )}
+    <Frame variant={variant} open={open} onClose={onClose} title={currentTask.title}>
       {error && (
         <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
           {error}
@@ -803,14 +645,14 @@ export default function TaskDetailModal({
               📅 Add to calendar
             </a>
           )}
+          {/* With subtasks the task goes for review on its own once they are
+              all approved; the button is for tasks done in one piece. */}
           {canChangeStatus &&
+            Number(currentTask.subtask_total ?? 0) === 0 &&
             (currentTask.status === "todo" ||
               currentTask.status === "in_progress") && (
               <button
-                onClick={() => {
-                  setReviewIn(null);
-                  void changeStatus("review");
-                }}
+                onClick={() => void changeStatus("review")}
                 className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700"
               >
                 Send for review
@@ -953,15 +795,30 @@ export default function TaskDetailModal({
         </p>
       )}
 
-      {/* Progress */}
-      <div className="mt-4">
-        <div className="mb-1 flex items-center justify-between text-xs text-slate-600">
-          <span>Progress</span>
-          <span className="font-medium text-slate-600">{progress}%</span>
-        </div>
-        <ProgressBar
-          value={progress}
-          tone={currentTask.status === "done" ? "green" : "indigo"}
+      {/* Subtasks: who does each piece, and the task owner's review of it.
+          The same panel as on the task page. */}
+      <div className="mt-6 border-t border-slate-100 pt-4">
+        <SubtasksPanel
+          task={{
+            id: currentTask.id,
+            project_id: currentTask.project_id,
+            title: currentTask.title,
+            status: currentTask.status,
+            assignee_id: currentTask.assignee_id,
+          }}
+          currentUser={currentUser}
+          isManager={canManage}
+          people={members.map((m) => ({
+            user_id: m.user_id,
+            name: m.name,
+            department: m.department ?? null,
+            designation: m.designation ?? null,
+          }))}
+          readOnly={readOnly}
+          specPending={specPending.length}
+          openSubtaskId={openSubtaskId}
+          compact={variant === "modal"}
+          onTaskChanged={() => void refreshTask()}
         />
       </div>
 
@@ -1282,90 +1139,6 @@ export default function TaskDetailModal({
         </div>
       </dl>
 
-      {/* Subtasks / checklist */}
-      <div className="mt-6 border-t border-slate-100 pt-4">
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold text-slate-700">
-            Checklist {subtasks.length > 0 && `(${subDone}/${subtasks.length})`}
-          </h3>
-          {canEditExecution && specPending.length > 0 && (
-            <button
-              type="button"
-              onClick={addChecklistFromSpec}
-              disabled={seedingSpec}
-              title="Add what this task asks for — its expected behaviour and acceptance criteria, or its features and rules — as checklist items"
-              className="shrink-0 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {seedingSpec ? "Adding…" : `+ From specification (${specPending.length})`}
-            </button>
-          )}
-        </div>
-        {subtasks.length > 0 && (
-          <div className="mb-3 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-            <div className="h-full bg-green-500" style={{ width: `${subPct}%` }} />
-          </div>
-        )}
-        {checklistGroups.map(([source, items]) => (
-          <div key={source || "typed-here"} className="mb-2">
-            {showChecklistGroups && (
-              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                {source
-                  ? SPEC_LABELS[source as SpecKey]
-                  : "Added on this task"}{" "}
-                <span className="font-normal normal-case text-slate-400">
-                  ({items.filter((i) => i.is_done).length}/{items.length})
-                </span>
-              </p>
-            )}
-            <ul className="space-y-1">
-              {items.map((s) => (
-                <li key={s.id} className="group flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={s.is_done}
-                    disabled={!canEditExecution}
-                    onChange={() => toggleSubtask(s)}
-                    // The text beside it is a span, not a label, because the
-                    // row has its own controls — so the box says what it is.
-                    aria-label={s.title}
-                    className="h-4 w-4 rounded border-slate-300 disabled:opacity-60"
-                  />
-                  <span
-                    className={`flex-1 text-sm ${
-                      s.is_done ? "text-slate-500 line-through" : "text-slate-700"
-                    }`}
-                  >
-                    {s.title}
-                  </span>
-                  {canEditExecution && (
-                    <button
-                      onClick={() => deleteSubtask(s.id)}
-                      className="text-xs rounded px-1 text-slate-500 hover:bg-red-50 hover:text-red-600"
-                      aria-label="Delete subtask"
-                    >
-                      ✕
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
-        {/* The checklist is the specification, not a scratch list: items
-            come from what the work was asked to do. To change it, change
-            the specification and press “From specification”. */}
-        {canEditExecution && (
-          <p className="mt-2 text-xs text-slate-500">
-            {subtasks.length === 0
-              ? "No checklist yet — it is built from this task's specification."
-              : "These come from the specification."}{" "}
-            {canManageTask
-              ? "Edit the task to add or reword a point."
-              : "Ask a lead to edit the task if a point is missing."}
-          </p>
-        )}
-      </div>
-
       {/* Attachments */}
       <div className="mt-6 border-t border-slate-100 pt-4">
         <h3 className="mb-3 text-sm font-semibold text-slate-700">
@@ -1552,7 +1325,7 @@ export default function TaskDetailModal({
         </div>
         )}
       </div>
-    </Modal>
+    </Frame>
   );
 }
 
@@ -1625,5 +1398,27 @@ function ApprovalTrail({ task }: { task: Task }) {
         ))}
       </ol>
     </section>
+  );
+}
+
+/** The task's body as a dialog (board) or inline (task page). */
+function Frame({
+  variant,
+  open,
+  onClose,
+  title,
+  children,
+}: {
+  variant: "modal" | "page";
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  children: React.ReactNode;
+}) {
+  if (variant === "page") return <div>{children}</div>;
+  return (
+    <Modal open={open} onClose={onClose} title={title} widthClass="max-w-2xl">
+      {children}
+    </Modal>
   );
 }
