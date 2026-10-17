@@ -50,6 +50,8 @@ CREATE TABLE IF NOT EXISTS projects (
   -- Whose work this is. Its tasks count to the same department.
   department  VARCHAR(100) NULL,
   status      ENUM('active','completed','archived') NOT NULL DEFAULT 'active',
+  start_date  DATE NULL,
+  due_date    DATE NULL,
   -- Members request projects; the nominated lead (owner) or an admin decides.
   approval_status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'approved',
   owner_id    INT,
@@ -112,6 +114,9 @@ CREATE TABLE IF NOT EXISTS tasks (
   is_additional   TINYINT(1) NOT NULL DEFAULT 0,   -- extra work raised post-completion
   parent_task_id  INT NULL,                        -- the task this follows up
   priority    ENUM('low','medium','high','urgent') NOT NULL DEFAULT 'medium',
+  weight      DECIMAL(6,3) NOT NULL DEFAULT 0,     -- share of the project's progress (%)
+  weight_mode ENUM('auto','manual') NOT NULL DEFAULT 'auto',
+  position    INT NOT NULL DEFAULT 0,              -- order in the project's task list
   estimated_hours DECIMAL(6,2) NULL,           -- planned effort (set by admin/lead)
   spent_hours     DECIMAL(6,2) NOT NULL DEFAULT 0, -- actual logged by assignee
   assignee_id INT,
@@ -168,16 +173,52 @@ CREATE TABLE IF NOT EXISTS task_requests (
   INDEX idx_treq_project_status (project_id, status)
 );
 
+-- Subtasks: the work a task is split into (redesign 2026-10-17). Each has an
+-- assignee, dates, a weight (share of the task's progress) and a status that
+-- goes through the task owner's review. `is_done` mirrors status = 'done'.
+CREATE TABLE IF NOT EXISTS subtasks (
+  id                INT AUTO_INCREMENT PRIMARY KEY,
+  task_id           INT NOT NULL,
+  title             VARCHAR(255) NOT NULL,
+  description       TEXT NULL,
+  source            VARCHAR(32) NULL,          -- spec field it came from (NULL = typed here)
+  assignee_id       INT NULL,
+  status            ENUM('todo','in_progress','review','done','cancelled') NOT NULL DEFAULT 'todo',
+  is_done           BOOLEAN NOT NULL DEFAULT FALSE,
+  position          INT NOT NULL DEFAULT 0,
+  start_date        DATE NULL,
+  due_date          DATE NULL,
+  weight            DECIMAL(6,3) NOT NULL DEFAULT 0,
+  weight_mode       ENUM('auto','manual') NOT NULL DEFAULT 'auto',
+  submitted_at      DATETIME NULL,
+  approved_by       INT NULL,
+  approved_at       DATETIME NULL,
+  changes_requested VARCHAR(1000) NULL,
+  created_by        INT NULL,
+  created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_subtasks_task FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  CONSTRAINT fk_subtasks_assignee FOREIGN KEY (assignee_id) REFERENCES users(id) ON DELETE SET NULL,
+  CONSTRAINT fk_subtasks_approver FOREIGN KEY (approved_by) REFERENCES users(id) ON DELETE SET NULL,
+  CONSTRAINT fk_subtasks_creator  FOREIGN KEY (created_by)  REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_subtasks_task (task_id),
+  INDEX idx_subtasks_assignee (assignee_id, status),
+  INDEX idx_subtasks_due (due_date)
+);
+
 CREATE TABLE IF NOT EXISTS task_comments (
   id         INT AUTO_INCREMENT PRIMARY KEY,
   task_id    INT NOT NULL,
+  subtask_id INT NULL,                         -- set when the comment is about one subtask
   user_id    INT NOT NULL,
   body       TEXT NOT NULL,
   edited_at  DATETIME NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_comments_task FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
   CONSTRAINT fk_comments_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-  INDEX idx_comments_task (task_id)
+  CONSTRAINT fk_comments_subtask FOREIGN KEY (subtask_id) REFERENCES subtasks(id) ON DELETE CASCADE,
+  INDEX idx_comments_task (task_id),
+  INDEX idx_comments_subtask (subtask_id)
 );
 
 -- Audit / activity trail
@@ -224,19 +265,6 @@ CREATE TABLE IF NOT EXISTS task_labels (
   PRIMARY KEY (task_id, label_id),
   CONSTRAINT fk_tl_task FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
   CONSTRAINT fk_tl_label FOREIGN KEY (label_id) REFERENCES labels(id) ON DELETE CASCADE
-);
-
--- Task checklists / subtasks
-CREATE TABLE IF NOT EXISTS subtasks (
-  id         INT AUTO_INCREMENT PRIMARY KEY,
-  task_id    INT NOT NULL,
-  title      VARCHAR(255) NOT NULL,
-  source     VARCHAR(32) NULL,                 -- spec field it came from (NULL = typed here)
-  is_done    BOOLEAN NOT NULL DEFAULT FALSE,
-  position   INT NOT NULL DEFAULT 0,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT fk_subtasks_task FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
-  INDEX idx_subtasks_task (task_id)
 );
 
 -- Meetings (calendar) + reminders  (Phase 2 · Wave 2)
@@ -356,6 +384,7 @@ CREATE TABLE IF NOT EXISTS milestones (
 CREATE TABLE IF NOT EXISTS task_attachments (
   id          INT AUTO_INCREMENT PRIMARY KEY,
   task_id     INT NOT NULL,
+  subtask_id  INT NULL,                        -- set when filed on one subtask
   uploaded_by INT NULL,
   filename    VARCHAR(255) NOT NULL,
   mime_type   VARCHAR(120) NULL,
@@ -364,7 +393,9 @@ CREATE TABLE IF NOT EXISTS task_attachments (
   created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_att_task FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
   CONSTRAINT fk_att_user FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE SET NULL,
-  INDEX idx_att_task (task_id)
+  CONSTRAINT fk_att_subtask FOREIGN KEY (subtask_id) REFERENCES subtasks(id) ON DELETE CASCADE,
+  INDEX idx_att_task (task_id),
+  INDEX idx_att_subtask (subtask_id)
 );
 
 -- Files that belong to a project rather than to one of its tasks.
@@ -508,3 +539,13 @@ CREATE TABLE IF NOT EXISTS planner_entries (
   UNIQUE KEY uq_planner_entry (user_id, period, entry_date),
   INDEX idx_planner_date (entry_date, period)
 );
+
+-- Job titles with a level, so seniority compares across differently named
+-- titles. users.designation holds the title; the level is looked up by it.
+CREATE TABLE IF NOT EXISTS designation_levels (
+  id         INT AUTO_INCREMENT PRIMARY KEY,
+  title      VARCHAR(120) NOT NULL,
+  level      TINYINT UNSIGNED NULL,           -- 1 = most junior; NULL = not set yet
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_designation_title (title)
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
