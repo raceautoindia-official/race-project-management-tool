@@ -50,6 +50,8 @@ export default function SubtasksPanel({
   onTaskChanged,
   openSubtaskId = null,
   compact = false,
+  taskOwnerName = null,
+  startAdding = false,
 }: {
   task: PanelTask;
   currentUser: { id: number; role: "admin" | "member" };
@@ -66,12 +68,16 @@ export default function SubtasksPanel({
   /** Expand this subtask on load (a notification linked to it). */
   openSubtaskId?: number | null;
   compact?: boolean;
+  /** Who reviews these subtasks (the task's owner), named in hints. */
+  taskOwnerName?: string | null;
+  /** Open the "add a subtask" form straight away ("+ Split into subtasks"). */
+  startAdding?: boolean;
 }) {
   const { toast } = useToast();
   const [subs, setSubs] = useState<SubtaskDto[] | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<number | null>(null);
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState(startAdding);
   const [expanded, setExpanded] = useState<number | null>(openSubtaskId);
   const [weightsOpen, setWeightsOpen] = useState(false);
   const [changesFor, setChangesFor] = useState<SubtaskDto | null>(null);
@@ -104,6 +110,8 @@ export default function SubtasksPanel({
   const mayShape = !readOnly && can("subtask.create", base) && (!approvedTask || isManager);
   const mayWeigh = !readOnly && can("subtask.weights", base);
   const ctxFor = (s: SubtaskDto): SpineContext => ({ ...base, subtaskAssigneeId: s.assignee_id });
+  const iOwnTask = task.assignee_id === currentUser.id;
+  const ownerLabel = iOwnTask ? "you" : taskOwnerName ?? "the task owner";
 
   async function refreshAll() {
     await load();
@@ -218,13 +226,24 @@ export default function SubtasksPanel({
         </div>
       </div>
 
+      <p className="mb-2 text-xs text-slate-500">
+        The person assigned does a subtask and marks it complete → <strong className="font-medium text-slate-700">{ownerLabel}</strong>{" "}
+        {iOwnTask ? "approve" : "approves"} it → it counts toward this task. When every subtask is approved, the task goes to the project owner for approval.
+      </p>
       {live.length > 0 && <WorkProgress approved={progress.approved} pending={progress.pending} showLabel label="Task progress" className="mb-3" />}
 
       {subs.length === 0 && !adding && (
         <div className="rounded-lg border border-dashed border-slate-300 px-4 py-5 text-center text-sm text-slate-500">
           {mayShape
-            ? "No subtasks yet. Split this task into pieces and give each one to a person — or just do it yourself and send it for review."
-            : "No subtasks — the task owner is doing this one directly."}
+            ? "No subtasks yet. Split this task into pieces and give each one to a person — or do it yourself and send the task for review."
+            : `No subtasks — ${taskOwnerName ?? "the task owner"} is doing this one directly.`}
+          {mayShape && (
+            <div className="mt-3">
+              <button type="button" onClick={() => setAdding(true)} className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700">
+                + Split into subtasks
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -247,6 +266,7 @@ export default function SubtasksPanel({
                     className="min-w-0 flex-1 text-left"
                   >
                     <span className={`block truncate text-sm font-medium ${s.status === "done" ? "text-slate-500 line-through decoration-slate-300" : "text-slate-900"}`}>
+                      <span className={`mr-1 inline-block text-slate-400 transition ${open ? "rotate-90" : ""}`} aria-hidden>▸</span>
                       {s.title}
                     </span>
                     {s.source && SPEC_LABELS[s.source as SpecKey] && (
@@ -280,7 +300,13 @@ export default function SubtasksPanel({
                       <Btn onClick={() => act(s, "start")} busy={busy === s.id} variant="secondary">▶ Start</Btn>
                     )}
                     {(s.status === "todo" || s.status === "in_progress") && mayWork && (
-                      <Btn onClick={() => act(s, "submit")} busy={busy === s.id}>✓ Mark complete</Btn>
+                      <Btn
+                        onClick={() => act(s, "submit")}
+                        busy={busy === s.id}
+                        title={iOwnTask ? "You review this task's subtasks, so it is approved straight away." : `Sends it to ${taskOwnerName ?? "the task owner"} to review.`}
+                      >
+                        ✓ Mark complete
+                      </Btn>
                     )}
                     {s.status === "review" && mayReview && (
                       <>
@@ -289,7 +315,7 @@ export default function SubtasksPanel({
                       </>
                     )}
                     {s.status === "review" && !mayReview && (
-                      <span className="text-xs text-amber-700">Waiting for the task owner</span>
+                      <span className="text-xs text-amber-700">Waiting for {taskOwnerName ?? "the task owner"} to review</span>
                     )}
                   </div>
                 </div>
@@ -297,6 +323,7 @@ export default function SubtasksPanel({
                   <SubtaskDetails
                     s={s}
                     people={people}
+                    reviewerName={taskOwnerName}
                     mayShape={mayShape}
                     mayReopen={mayReopen}
                     busy={busy === s.id}
@@ -357,11 +384,13 @@ function Btn({
   onClick,
   busy,
   variant = "primary",
+  title,
 }: {
   children: React.ReactNode;
   onClick: () => void;
   busy?: boolean;
   variant?: "primary" | "secondary" | "success";
+  title?: string;
 }) {
   const styles = {
     primary: "bg-indigo-600 text-white hover:bg-indigo-700",
@@ -369,7 +398,7 @@ function Btn({
     success: "bg-emerald-600 text-white hover:bg-emerald-700",
   };
   return (
-    <button type="button" onClick={onClick} disabled={busy} className={`rounded-lg px-2.5 py-1 text-xs font-semibold disabled:opacity-50 ${styles[variant]}`}>
+    <button type="button" onClick={onClick} disabled={busy} title={title} className={`rounded-lg px-2.5 py-1 text-xs font-semibold disabled:opacity-50 ${styles[variant]}`}>
       {children}
     </button>
   );
@@ -382,6 +411,7 @@ const inputCls =
 function SubtaskDetails({
   s,
   people,
+  reviewerName,
   mayShape,
   mayReopen,
   busy,
@@ -391,6 +421,7 @@ function SubtaskDetails({
 }: {
   s: SubtaskDto;
   people: PickPerson[];
+  reviewerName: string | null;
   mayShape: boolean;
   mayReopen: boolean;
   busy: boolean;
@@ -412,6 +443,31 @@ function SubtaskDetails({
 
   return (
     <div className="space-y-3 border-t border-slate-100 px-3 pb-3 pt-3 sm:pl-11">
+      <dl className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
+        <div>
+          <dt className="font-medium text-slate-500">Assigned to</dt>
+          <dd className="mt-1">
+            <PersonLine name={s.assignee_name} designation={s.assignee_designation} department={s.assignee_department} empty="Nobody yet" />
+          </dd>
+        </div>
+        <div>
+          <dt className="font-medium text-slate-500">Reviewed by</dt>
+          <dd className="mt-1 text-slate-800">{reviewerName ?? "The task owner"}</dd>
+        </div>
+        <div>
+          <dt className="font-medium text-slate-500">Dates</dt>
+          <dd className="mt-1">
+            <DateRange start={s.start_date} due={s.due_date} finished={s.status === "done" || s.status === "cancelled"} notStarted={s.status === "todo"} />
+          </dd>
+        </div>
+        <div>
+          <dt className="font-medium text-slate-500">Status</dt>
+          <dd className="mt-1">
+            <SubtaskStatusBadge status={s.status} />
+            {s.approver_name && s.status === "done" && <span className="mt-1 block text-slate-500">Approved by {s.approver_name}</span>}
+          </dd>
+        </div>
+      </dl>
       {mayShape ? (
         <>
           <label className="block text-xs font-medium text-slate-600">
@@ -442,22 +498,19 @@ function SubtaskDetails({
           </div>
           {badDates && <p className="text-xs text-red-600">The due date can&apos;t be before the start date.</p>}
           <label className="block text-xs font-medium text-slate-600">
-            Assigned to
+            Reassign to
             <PersonSelect
               people={people}
               value={s.assignee_id}
               onChange={(id) => onPatch({ assigneeId: id }, id ? "Reassigned" : "Unassigned")}
               emptyLabel="Nobody yet"
               className="mt-1 block w-full sm:w-80"
-              label="Assigned to"
+              label="Reassign to"
             />
           </label>
         </>
       ) : (
         s.description && <p className="whitespace-pre-wrap text-sm text-slate-600">{s.description}</p>
-      )}
-      {s.approver_name && s.status === "done" && (
-        <p className="text-xs text-slate-500">Approved by {s.approver_name}</p>
       )}
       <div className="flex flex-wrap gap-2">
         {(s.status === "done" || s.status === "review") && mayReopen && (

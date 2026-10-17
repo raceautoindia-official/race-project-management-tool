@@ -91,7 +91,7 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Prom
           <ItemList
             items={work.submitted}
             aside={(i) =>
-              `${i.kind === "subtask" ? `Waiting for ${i.person_name ?? "the task owner"}` : "Waiting for the project owner"}${
+              `${i.kind === "subtask" ? `Waiting for ${i.person_name ?? "the task owner"}` : `Waiting for ${i.project_owner_name ?? "the project owner"}`}${
                 i.submitted_at ? ` · sent ${utcAgo(i.submitted_at)}` : ""
               }`
             }

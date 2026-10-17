@@ -13,6 +13,11 @@ import { isOverdue } from "@/lib/format";
 import { effectiveWeights } from "@/lib/work-engine";
 import type { Task } from "@/lib/types";
 import SubtasksPanel from "./SubtasksPanel";
+import TaskActions from "./TaskActions";
+import { useToast } from "@/components/ToastProvider";
+import { apiFetch } from "@/lib/api-client";
+import { todayIST } from "@/lib/work-dates";
+import { PersonSelect } from "./kit";
 import { DateRange, PersonLine, WeightChip, WeightEditor, WorkProgress, type PickPerson } from "./kit";
 
 type Filter = "all" | "mine" | "review" | "overdue";
@@ -30,6 +35,8 @@ export default function ProjectTree({
   onOpen,
   onTaskChanged,
   onWeightsSaved,
+  projectOwnerName = null,
+  onTaskAdded,
 }: {
   projectId: number;
   projectName: string;
@@ -43,9 +50,15 @@ export default function ProjectTree({
   /** Re-read one task (its status or progress moved). */
   onTaskChanged: (taskId: number) => void;
   onWeightsSaved: () => void;
+  /** Named in "waiting for … to approve". */
+  projectOwnerName?: string | null;
+  /** A task was added inline; reload the list. */
+  onTaskAdded?: () => void;
 }) {
   const [filter, setFilter] = useState<Filter>("all");
   const [open, setOpen] = useState<Set<number>>(new Set());
+  // The task whose "add a subtask" form opens with it ("+ Split into subtasks").
+  const [splitting, setSplitting] = useState<number | null>(null);
   const [weightsOpen, setWeightsOpen] = useState(false);
 
   const weights = effectiveWeights(
@@ -146,12 +159,34 @@ export default function ProjectTree({
                         <span>
                           {Number(t.subtask_total ?? 0) > 0
                             ? `${t.subtask_done ?? 0}/${t.subtask_total} subtasks approved`
-                            : "No subtasks — the owner does this one"}
+                            : "No subtasks yet"}
                         </span>
+                        {Number(t.subtask_total ?? 0) === 0 && !locked && t.status !== "done" && (isManager || t.assignee_id === currentUser.id) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSplitting(t.id);
+                              setOpen((s0) => new Set(s0).add(t.id));
+                            }}
+                            className="font-medium text-indigo-600 hover:underline"
+                          >
+                            + Split into subtasks
+                          </button>
+                        )}
                         <Link href={`/projects/${projectId}/tasks/${t.id}`} className="text-indigo-600 hover:underline">
                           Open page →
                         </Link>
                       </p>
+                      <div className="mt-1.5">
+                        <TaskActions
+                          task={t}
+                          currentUserId={currentUser.id}
+                          isManager={isManager}
+                          readOnly={!writable}
+                          projectOwnerName={projectOwnerName}
+                          onChanged={() => onTaskChanged(t.id)}
+                        />
+                      </div>
                     </div>
                   </div>
                   <span className="lg:hidden" />
@@ -171,6 +206,8 @@ export default function ProjectTree({
                       people={people}
                       readOnly={locked}
                       compact
+                      taskOwnerName={t.assignee_name ?? null}
+                      startAdding={splitting === t.id}
                       onTaskChanged={() => onTaskChanged(t.id)}
                     />
                   </div>
@@ -180,6 +217,8 @@ export default function ProjectTree({
           })}
         </div>
       )}
+
+      {isManager && writable && <AddTaskRow projectId={projectId} people={people} onAdded={() => onTaskAdded?.()} />}
 
       <WeightEditor
         open={weightsOpen}
@@ -196,5 +235,80 @@ export default function ProjectTree({
         }))}
       />
     </div>
+  );
+}
+
+/**
+ * Quick add at the bottom of the list: a task's name, its owner and dates.
+ * Everything else (spec, labels, requester…) stays in "+ New task".
+ */
+function AddTaskRow({ projectId, people, onAdded }: { projectId: number; people: PickPerson[]; onAdded: () => void }) {
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [owner, setOwner] = useState<number | null>(null);
+  const [start, setStart] = useState(todayIST());
+  const [due, setDue] = useState("");
+  const [saving, setSaving] = useState(false);
+  const badDates = !!start && !!due && due < start;
+  const cls = "rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="mt-3 rounded-lg border border-dashed border-indigo-300 px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-50">
+        + Add task
+      </button>
+    );
+  }
+  return (
+    <form
+      className="mt-3 space-y-2 rounded-xl border border-indigo-200 bg-indigo-50/40 p-3"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        if (!title.trim() || badDates) return;
+        setSaving(true);
+        try {
+          await apiFetch(`/api/projects/${projectId}/tasks`, {
+            method: "POST",
+            body: JSON.stringify({ title: title.trim(), assigneeId: owner, startDate: start || null, dueDate: due || null }),
+          });
+          toast(`Task added${owner ? " — its owner can now split it into subtasks" : ""}`);
+          setTitle("");
+          setDue("");
+          onAdded();
+        } catch (err) {
+          toast(err instanceof Error ? err.message : "Could not add the task", "error");
+        } finally {
+          setSaving(false);
+        }
+      }}
+    >
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder='Task, e.g. "Vendor onboarding"' aria-label="Task title" className={`${cls} sm:flex-1`} />
+        <PersonSelect people={people} value={owner} onChange={setOwner} emptyLabel="Task owner…" label="Task owner" className="sm:w-60" />
+      </div>
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="text-xs font-medium text-slate-600">
+          Start date
+          <input type="date" value={start} onChange={(e) => setStart(e.target.value)} className={`${cls} mt-1 block`} />
+        </label>
+        <label className="text-xs font-medium text-slate-600">
+          Due date
+          <input type="date" value={due} min={start || undefined} onChange={(e) => setDue(e.target.value)} className={`${cls} mt-1 block`} />
+        </label>
+        <div className="ml-auto flex gap-2">
+          <button type="submit" disabled={!title.trim() || badDates || saving} className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">
+            {saving ? "Adding…" : "Add task"}
+          </button>
+          <button type="button" onClick={() => setOpen(false)} className="rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-slate-100">
+            Done
+          </button>
+        </div>
+      </div>
+      {badDates && <p className="text-xs text-red-600">The due date can&apos;t be before the start date.</p>}
+      <p className="text-xs text-slate-500">
+        The task owner splits it into subtasks and approves them. Weights stay an even split. Need a specification, labels or a requester? Use “+ New task”.
+      </p>
+    </form>
   );
 }

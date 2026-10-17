@@ -27,6 +27,8 @@ export interface WorkItem {
   person_name: string | null;
   submitted_at: string | null;
   changes_requested: string | null;
+  /** Who approves a task (the project owner); null on subtask items. */
+  project_owner_name: string | null;
 }
 
 export interface OwnedTask {
@@ -93,12 +95,14 @@ const OPEN_PROJECT = `p.approval_status = 'approved' AND p.status = 'active'`;
 const SUBTASK_ITEM = `
   'subtask' AS kind, s.id, s.task_id, s.title, t.title AS task_title, t.project_id,
   p.name AS project_name, s.status, s.start_date, s.due_date,
-  s.assignee_id AS person_id, u.name AS person_name, s.submitted_at, s.changes_requested`;
+  s.assignee_id AS person_id, u.name AS person_name, s.submitted_at, s.changes_requested,
+  NULL AS project_owner_name`;
 
 const TASK_ITEM = `
   'task' AS kind, t.id, t.id AS task_id, t.title, t.title AS task_title, t.project_id,
   p.name AS project_name, t.status, t.start_date, t.due_date,
-  t.assignee_id AS person_id, u.name AS person_name, NULL AS submitted_at, NULL AS changes_requested`;
+  t.assignee_id AS person_id, u.name AS person_name, NULL AS submitted_at, NULL AS changes_requested,
+  (SELECT po.name FROM users po WHERE po.id = p.owner_id) AS project_owner_name`;
 
 /** A task "has subtasks" when it has any that are not cancelled. */
 const HAS_SUBTASKS = `EXISTS (SELECT 1 FROM subtasks x WHERE x.task_id = t.id AND x.status <> 'cancelled')`;
@@ -119,6 +123,7 @@ function asItems(rows: DbRow[]): WorkItem[] {
     person_name: r.person_name ?? null,
     submitted_at: r.submitted_at ?? null,
     changes_requested: r.changes_requested ?? null,
+    project_owner_name: r.project_owner_name ?? null,
   }));
 }
 

@@ -184,6 +184,15 @@ export default function ProjectBoard({
   const projectProg = projectProgress(
     tasks.map((t) => ({ id: t.id, status: t.status, weight: Number(t.weight ?? 0), weight_mode: t.weight_mode === "manual" ? "manual" : "auto" }))
   );
+  const myTaskCount = tasks.filter((t) => t.assignee_id === currentUser.id).length;
+  const roleLine =
+    project.owner_id === currentUser.id
+      ? "You own this project: add tasks and give each one an owner, set how much each counts (weights), and approve finished tasks."
+      : canManage
+        ? "You manage this project: add tasks, set weights and approve finished tasks."
+        : myTaskCount > 0
+          ? `You own ${myTaskCount === 1 ? "a task" : `${myTaskCount} tasks`} here: split ${myTaskCount === 1 ? "it" : "them"} into subtasks for people, then approve each one when it's done.`
+          : "Work on the subtasks assigned to you and mark them complete — the task owner reviews them. You can follow everything else here.";
   const people = members.map((m) => ({ user_id: m.user_id, name: m.name, department: m.department ?? null, designation: m.designation ?? null }));
   const counts = statusCounts(tasks);
   const totalEst = tasks.reduce((s, t) => s + Number(t.estimated_hours ?? 0), 0);
@@ -559,7 +568,13 @@ export default function ProjectBoard({
         ))}
       </div>
       {view === "tree" && (
-        <div className="mb-3"><ProgressLegend /></div>
+        <div className="mb-3 space-y-2">
+          <p className="rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-900">
+            <span aria-hidden>💡 </span>
+            {roleLine}
+          </p>
+          <ProgressLegend />
+        </div>
       )}
 
       {view === "tree" && (
@@ -574,6 +589,8 @@ export default function ProjectBoard({
           onOpen={openDetail}
           onTaskChanged={(id) => void reloadTask(id)}
           onWeightsSaved={() => void reloadTasks()}
+          projectOwnerName={project.owner_name}
+          onTaskAdded={() => void reloadTasks()}
         />
       )}
 
@@ -752,6 +769,7 @@ export default function ProjectBoard({
         task={detailTask}
         focus={detailTask?.id === openTaskId ? focus : null}
         openSubtaskId={detailTask?.id === openTaskId ? openSubtaskId : null}
+        projectOwnerName={project.owner_name}
         currentUser={currentUser}
         canManage={canManage}
         projectReadOnlyReason={lockReason}

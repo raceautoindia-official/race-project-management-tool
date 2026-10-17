@@ -23,6 +23,7 @@ import {
 } from "@/lib/workflow";
 import { SpecView } from "./WorkSpec";
 import SubtasksPanel from "@/components/work/SubtasksPanel";
+import TaskActions from "@/components/work/TaskActions";
 
 interface TimeLog {
   id: number;
@@ -77,7 +78,10 @@ export default function TaskDetailModal({
   onDeleted,
   variant = "modal",
   openSubtaskId = null,
+  projectOwnerName = null,
 }: {
+  /** Named in "waiting for … to approve". */
+  projectOwnerName?: string | null;
   /** "page" renders the same body inline on the task page. */
   variant?: "modal" | "page";
   /** Expand this subtask on load (a notification linked to it). */
@@ -657,6 +661,19 @@ export default function TaskDetailModal({
                 Send for review
               </button>
             )}
+          {/* Waiting for approval: the approver gets the buttons, everyone
+              else is told who it is waiting for. */}
+          {currentTask.status === "review" && (
+            <TaskActions
+              task={currentTask}
+              currentUserId={currentUser.id}
+              isManager={canManage}
+              readOnly={readOnly}
+              projectOwnerName={projectOwnerName}
+              onChanged={() => void refreshTask()}
+              size="md"
+            />
+          )}
           {maySignOff && (
             <button
               onClick={() => setSignOffOpen((v) => !v)}
@@ -817,6 +834,7 @@ export default function TaskDetailModal({
           specPending={specPending.length}
           openSubtaskId={openSubtaskId}
           compact={variant === "modal"}
+          taskOwnerName={currentTask.assignee_name ?? null}
           onTaskChanged={() => void refreshTask()}
         />
       </div>

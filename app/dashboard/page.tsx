@@ -232,7 +232,7 @@ function MyTodo({ overdue, thisWeek, later, submitted }: { overdue: WorkItem[]; 
                     {i.title}
                   </Link>
                   <span className="text-xs text-slate-500">
-                    {i.kind === "subtask" ? `waiting for ${i.person_name ?? "the task owner"}` : "waiting for the project owner"}
+                    {i.kind === "subtask" ? `waiting for ${i.person_name ?? "the task owner"}` : `waiting for ${i.project_owner_name ?? "the project owner"}`}
                     {i.submitted_at ? ` · ${utcAgo(i.submitted_at)}` : ""}
                   </span>
                 </li>

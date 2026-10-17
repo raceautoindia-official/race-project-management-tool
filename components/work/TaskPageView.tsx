@@ -6,6 +6,7 @@ import { useState } from "react";
 import TaskDetailModal from "@/components/project/TaskDetailModal";
 import TaskFormModal from "@/components/project/TaskFormModal";
 import { TaskStatusBadge } from "@/components/Badge";
+import TaskActions from "./TaskActions";
 import type { Label, ProjectMember, Role, Task, TaskStatus } from "@/lib/types";
 import { DateRange, PersonLine, ProgressLegend, WorkProgress, weightLabel } from "./kit";
 
@@ -55,6 +56,23 @@ export default function TaskPageView({
   const hasSubtasks = Number(task.subtask_total ?? 0) > 0;
   const approved = task.status === "done" ? 100 : Number(task.progress_approved ?? 0);
   const pending = Number(task.progress_pending ?? 0);
+
+  // Your part in this task, in one sentence.
+  const role =
+    task.assignee_id === currentUser.id
+      ? "You own this task: split it into subtasks and give each one to a person (or do it yourself), then approve each subtask when it's marked complete."
+      : canManage
+        ? `You approve this task when it's ready. ${task.assignee_name ?? "Its owner"} runs its subtasks.`
+        : `Work on any subtask assigned to you and mark it complete — ${task.assignee_name ?? "the task owner"} reviews it.`;
+
+  async function reload() {
+    try {
+      const res = await fetch(`/api/tasks/${task.id}`);
+      if (res.ok) setTask(((await res.json()) as { task: Task }).task);
+    } catch {
+      // the page still shows the last known state
+    }
+  }
 
   // What happens next, in plain words.
   const next =
@@ -128,7 +146,23 @@ export default function TaskPageView({
             <ProgressLegend />
             <span className="text-xs text-slate-600">{next}</span>
           </div>
+          <div className="mt-3 border-t border-slate-200 pt-3">
+            <TaskActions
+              task={task}
+              currentUserId={currentUser.id}
+              isManager={canManage}
+              readOnly={Boolean(projectReadOnlyReason)}
+              projectOwnerName={project.owner_name}
+              onChanged={() => void reload()}
+              size="md"
+            />
+          </div>
         </div>
+
+        <p className="mt-3 rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-900">
+          <span aria-hidden>💡 </span>
+          {role}
+        </p>
       </section>
 
       <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
@@ -144,6 +178,7 @@ export default function TaskPageView({
           projectReadOnlyReason={projectReadOnlyReason}
           members={members}
           projectTasks={projectTasks}
+          projectOwnerName={project.owner_name}
           onEdit={(t) => setForm({ edit: t, parent: null })}
           onAddFollowUp={(t) => setForm({ edit: null, parent: t })}
           onChanged={setTask}
