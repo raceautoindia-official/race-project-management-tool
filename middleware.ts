@@ -48,6 +48,9 @@ function isPublic(pathname: string): boolean {
   // Cron endpoints authenticate via the x-cron-secret header (see lib/cron.ts),
   // not a session cookie, so they bypass the session gate here.
   if (pathname.startsWith("/api/cron/")) return true;
+  // Design preview: client-side sample data only, no DB access — safe to share
+  // with reviewers who have no account.
+  if (pathname === "/preview" || pathname.startsWith("/preview/")) return true;
   return false;
 }
 
