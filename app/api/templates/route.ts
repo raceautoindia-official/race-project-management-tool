@@ -64,6 +64,21 @@ export async function POST(req: NextRequest) {
       [data.projectId]
     );
 
+    // The way each task was split, as subtask titles (people and dates are
+    // this project's own; the shape is what repeats).
+    const subRows = tasks.length
+      ? await query<DbRow[]>(
+          `SELECT task_id, title FROM subtasks
+            WHERE status <> 'cancelled' AND task_id IN (${tasks.map(() => "?").join(",")})
+            ORDER BY position, id`,
+          tasks.map((t) => t.id)
+        )
+      : [];
+    const subtasksByTask = new Map<number, string[]>();
+    for (const r of subRows) {
+      subtasksByTask.set(r.task_id, [...(subtasksByTask.get(r.task_id) ?? []), r.title]);
+    }
+
     const labelsByTask = new Map<number, string[]>();
     for (const r of tlabels) {
       const arr = labelsByTask.get(r.task_id) ?? [];
@@ -79,6 +94,7 @@ export async function POST(req: NextRequest) {
         priority: t.priority,
         estimated_hours: t.estimated_hours,
         labelNames: labelsByTask.get(t.id as number) ?? [],
+        subtasks: subtasksByTask.get(t.id as number) ?? [],
       })),
       milestones: milestones.map((m) => ({ name: m.name })),
     };

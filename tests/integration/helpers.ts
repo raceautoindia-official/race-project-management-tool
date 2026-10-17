@@ -8,12 +8,20 @@ export function actAs(user: User | null) {
 }
 
 let seq = 0;
+
+/**
+ * A unique emp_id (max 20 chars). Test files run in parallel processes, each
+ * with its own `seq`, so time + seq alone can collide; a random part can not.
+ */
+function empIdFor(n: number): string {
+  return `T${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}${n}`.slice(0, 20);
+}
 export async function createUser(name: string, role: Role = "member"): Promise<User> {
   seq++;
   const res = (await query<DbResult>(
     `INSERT INTO users (employee_id, emp_id, name, email, role)
      VALUES (?, ?, ?, ?, ?)`,
-    [100000 + seq + Math.floor(Math.random() * 1e6), `T${Date.now()}${seq}`, name, `${name.toLowerCase()}@test.local`, role]
+    [100000 + seq + Math.floor(Math.random() * 1e6), empIdFor(seq), name, `${name.toLowerCase()}@test.local`, role]
   )) as unknown as DbResult;
   return {
     id: res.insertId,

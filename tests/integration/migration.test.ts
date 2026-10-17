@@ -237,7 +237,7 @@ describe("2026-10-17 redesign fundamentals", () => {
       ALTER TABLE subtasks
         DROP INDEX idx_subtasks_assignee, DROP INDEX idx_subtasks_due,
         DROP COLUMN description, DROP COLUMN assignee_id, DROP COLUMN status,
-        DROP COLUMN start_date, DROP COLUMN due_date, DROP COLUMN weight,
+        DROP COLUMN start_date, DROP COLUMN due_date, DROP COLUMN due_alert_sent, DROP COLUMN weight,
         DROP COLUMN weight_mode, DROP COLUMN submitted_at, DROP COLUMN approved_by,
         DROP COLUMN approved_at, DROP COLUMN changes_requested, DROP COLUMN created_by,
         DROP COLUMN updated_at;

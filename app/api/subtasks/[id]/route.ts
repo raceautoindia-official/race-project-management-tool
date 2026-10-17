@@ -46,7 +46,10 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       if (data.title !== undefined) { sets.push("title = ?"); values.push(data.title); }
       if (data.description !== undefined) { sets.push("description = ?"); values.push(data.description ?? null); }
       if (data.startDate !== undefined) { sets.push("start_date = ?"); values.push(data.startDate); }
-      if (data.dueDate !== undefined) { sets.push("due_date = ?"); values.push(data.dueDate); }
+      if (data.dueDate !== undefined) {
+        sets.push("due_date = ?", "due_alert_sent = 0"); // a new date gets its own reminders
+        values.push(data.dueDate);
+      }
     }
     // One date alone still has to fit the other, stored one.
     const start = data.startDate !== undefined ? data.startDate : sub.start_date;

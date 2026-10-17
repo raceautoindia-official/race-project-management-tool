@@ -137,3 +137,45 @@ describe("scheduled jobs (cron endpoints)", () => {
     expect(Number(out.body.digestsSent)).toBeGreaterThan(0);
   });
 });
+
+describe("due-date reminders for subtasks", () => {
+  it("tells the assignee once when due, and the assignee and task owner once when overdue", async () => {
+    const t = await task(openProject, "Subtask reminders", "UTC_DATE() + INTERVAL 30 DAY");
+    const helper = await createUser("Chelper");
+    const soon = (await query<DbResult>(
+      `INSERT INTO subtasks (task_id, title, assignee_id, due_date) VALUES (?, 'Due soon part', ?, UTC_DATE() + INTERVAL 1 DAY)`,
+      [t, helper.id]
+    )) as unknown as DbResult;
+    const late = (await query<DbResult>(
+      `INSERT INTO subtasks (task_id, title, assignee_id, due_date) VALUES (?, 'Late part', ?, UTC_DATE() - INTERVAL 2 DAY)`,
+      [t, helper.id]
+    )) as unknown as DbResult;
+
+    const first = await cron(dueDateAlerts.POST);
+    expect(first.status).toBe(200);
+    const flags = await query<DbRow[]>(
+      `SELECT id, due_alert_sent FROM subtasks WHERE id IN (?, ?) ORDER BY id`,
+      [soon.insertId, late.insertId]
+    );
+    expect(flags.map((f) => Number(f.due_alert_sent))).toEqual([1, 2]);
+
+    const notes = await query<DbRow[]>(
+      `SELECT user_id, type FROM notifications WHERE type IN ('subtask_due_soon','subtask_overdue') AND user_id IN (?, ?) ORDER BY id`,
+      [helper.id, sam.id]
+    );
+    // In any order: the job walks subtasks in whatever order the database returns.
+    expect(notes.map((n) => `${n.user_id === helper.id ? "helper" : "owner"}:${n.type}`).sort()).toEqual([
+      "helper:subtask_due_soon",
+      "helper:subtask_overdue",
+      "owner:subtask_overdue",
+    ]);
+
+    // Running again sends nothing new.
+    await cron(dueDateAlerts.POST);
+    const again = await query<DbRow[]>(
+      `SELECT COUNT(*) AS n FROM notifications WHERE type IN ('subtask_due_soon','subtask_overdue') AND user_id IN (?, ?)`,
+      [helper.id, sam.id]
+    );
+    expect(Number(again[0].n)).toBe(3);
+  });
+});

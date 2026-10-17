@@ -52,6 +52,19 @@ SET @sql := IF(@has = 0,
   'SELECT ''subtasks redesign columns already present''');
 PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
 
+-- Due-date reminders for subtasks: 0 none sent, 1 "due soon" sent, 2 "overdue"
+-- sent. Reset to 0 when the due date changes. (Separate check so databases
+-- that ran an earlier draft of this migration still get it.)
+SET @has := (
+  SELECT COUNT(*) FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'subtasks'
+    AND column_name = 'due_alert_sent'
+);
+SET @sql := IF(@has = 0,
+  'ALTER TABLE subtasks ADD COLUMN due_alert_sent TINYINT NOT NULL DEFAULT 0 AFTER due_date',
+  'SELECT ''subtasks.due_alert_sent already present''');
+PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
+
 -- ── tasks ─────────────────────────────────────────────────────────────────
 SET @has := (
   SELECT COUNT(*) FROM information_schema.columns

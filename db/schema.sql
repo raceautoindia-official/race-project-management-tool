@@ -188,6 +188,7 @@ CREATE TABLE IF NOT EXISTS subtasks (
   position          INT NOT NULL DEFAULT 0,
   start_date        DATE NULL,
   due_date          DATE NULL,
+  due_alert_sent    TINYINT NOT NULL DEFAULT 0,  -- 0 none, 1 due soon, 2 overdue
   weight            DECIMAL(6,3) NOT NULL DEFAULT 0,
   weight_mode       ENUM('auto','manual') NOT NULL DEFAULT 'auto',
   submitted_at      DATETIME NULL,

@@ -17,6 +17,8 @@ interface TemplateData {
     priority: string;
     estimated_hours: number | null;
     labelNames?: string[];
+    /** Subtask titles (templates saved since the 2026-10-17 redesign). */
+    subtasks?: string[];
   }[];
   milestones?: { name: string }[];
 }
@@ -85,6 +87,13 @@ export async function POST(req: NextRequest, { params }: Params) {
           ]
         );
         const taskId = (tRes as DbResult).insertId;
+        // Unassigned for now: whoever owns the task gives them out.
+        for (const [i, title] of (t.subtasks ?? []).entries()) {
+          await conn.execute(
+            `INSERT INTO subtasks (task_id, title, position, created_by) VALUES (?, ?, ?, ?)`,
+            [taskId, String(title).slice(0, 255), i, admin.id]
+          );
+        }
         for (const ln of t.labelNames ?? []) {
           const lid = labelIdByName.get(ln);
           if (lid) {

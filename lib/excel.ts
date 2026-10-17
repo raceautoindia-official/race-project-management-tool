@@ -51,9 +51,34 @@ function styleSheet(ws: ExcelJS.Worksheet) {
   header.alignment = { vertical: "middle" };
 }
 
-/** Workbook of existing tasks for export. */
+export interface SubtaskExportRow {
+  task_title: string;
+  title: string;
+  assignee_emp_id: string | null;
+  status: string;
+  start_date: string | null;
+  due_date: string | null;
+  weight: number; // effective % of its task
+}
+
+export const SUBTASK_HEADERS = [
+  "Task",
+  "Subtask",
+  "Assignee Employee ID",
+  "Status",
+  "Start Date",
+  "Due Date",
+  "Weight %",
+];
+
+/**
+ * Workbook of existing tasks for export. The "Tasks" sheet comes first and
+ * keeps its columns, so a saved export still imports; subtasks, when given,
+ * go on a second sheet for reading.
+ */
 export async function tasksWorkbookBuffer(
-  rows: TaskExportRow[]
+  rows: TaskExportRow[],
+  subtasks: SubtaskExportRow[] = []
 ): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("Tasks");
@@ -70,6 +95,22 @@ export async function tasksWorkbookBuffer(
     ]);
   }
   styleSheet(ws);
+  if (subtasks.length) {
+    const sub = wb.addWorksheet("Subtasks");
+    sub.addRow(SUBTASK_HEADERS);
+    for (const s of subtasks) {
+      sub.addRow([
+        s.task_title,
+        s.title,
+        s.assignee_emp_id ?? "",
+        s.status,
+        s.start_date ?? "",
+        s.due_date ?? "",
+        Math.round(s.weight * 10) / 10,
+      ]);
+    }
+    styleSheet(sub);
+  }
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
 

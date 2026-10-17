@@ -3,7 +3,8 @@ import { query, DbRow } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { errorResponse, ApiError } from "@/lib/http";
 import { assertProjectAccess } from "@/lib/rbac";
-import { tasksWorkbookBuffer, type TaskExportRow } from "@/lib/excel";
+import { tasksWorkbookBuffer, type SubtaskExportRow, type TaskExportRow } from "@/lib/excel";
+import { effectiveWeights } from "@/lib/work-engine";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -26,7 +27,36 @@ export async function GET(_req: NextRequest, { params }: Params) {
       [projectId]
     );
 
-    const buffer = await tasksWorkbookBuffer(rows as unknown as TaskExportRow[]);
+    // Each task's subtasks, in order, with their share of the task.
+    const subRows = await query<DbRow[]>(
+      `SELECT s.id, s.task_id, t.title AS task_title, s.title, u.emp_id AS assignee_emp_id,
+              s.status, s.start_date, s.due_date, s.weight, s.weight_mode
+         FROM subtasks s
+         JOIN tasks t ON t.id = s.task_id
+         LEFT JOIN users u ON u.id = s.assignee_id
+        WHERE t.project_id = ?
+        ORDER BY t.created_at DESC, s.position, s.id`,
+      [projectId]
+    );
+    const byTask = new Map<number, DbRow[]>();
+    for (const s of subRows) byTask.set(s.task_id, [...(byTask.get(s.task_id) ?? []), s]);
+    const subtasks: SubtaskExportRow[] = [];
+    for (const list of byTask.values()) {
+      const w = effectiveWeights(list.map((s) => ({ id: s.id, weight: s.weight, weight_mode: s.weight_mode, cancelled: s.status === "cancelled" })));
+      for (const s of list) {
+        subtasks.push({
+          task_title: s.task_title,
+          title: s.title,
+          assignee_emp_id: s.assignee_emp_id ?? null,
+          status: s.status,
+          start_date: s.start_date ?? null,
+          due_date: s.due_date ?? null,
+          weight: w.get(s.id) ?? 0,
+        });
+      }
+    }
+
+    const buffer = await tasksWorkbookBuffer(rows as unknown as TaskExportRow[], subtasks);
     const safeName = String(project.name ?? "project")
       .replace(/[^a-z0-9]+/gi, "-")
       .toLowerCase();

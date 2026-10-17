@@ -295,3 +295,36 @@ describe("ownership", () => {
     expect(Number(res[0].n)).toBe(0);
   });
 });
+
+describe("templates keep the shape of the work", () => {
+  it("saves each task's subtasks and recreates them, unassigned", async () => {
+    const templates = await import("@/app/api/templates/route");
+    const instantiate = await import("@/app/api/templates/[id]/instantiate/route");
+    const id = await newTask("Template me");
+    actAs(owner);
+    await call(subtasks.POST, { method: "POST", id, body: { title: "Step one" } });
+    await call(subtasks.POST, { method: "POST", id, body: { title: "Step two", assigneeId: doer.id } });
+
+    actAs(admin);
+    const saved = await call<{ template: { id: number } }>(templates.POST, {
+      method: "POST",
+      body: { name: "Spine shape", projectId },
+    });
+    expect(saved.status).toBe(201);
+    const made = await call<{ project: { id: number } }>(instantiate.POST, {
+      method: "POST",
+      id: saved.body.template.id,
+      body: { name: "From the template" },
+    });
+    expect(made.status).toBeLessThan(300);
+    const rows = await query<DbRow[]>(
+      `SELECT s.title, s.assignee_id FROM subtasks s JOIN tasks t ON t.id = s.task_id
+        WHERE t.project_id = ? AND t.title = 'Template me' ORDER BY s.position`,
+      [made.body.project.id]
+    );
+    expect(rows.map((r) => ({ ...r }))).toEqual([
+      { title: "Step one", assignee_id: null },
+      { title: "Step two", assignee_id: null },
+    ]);
+  });
+});
