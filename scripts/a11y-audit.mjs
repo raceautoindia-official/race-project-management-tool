@@ -79,6 +79,10 @@ async function layoutCheck(page, where, size) {
 
 for (const size of WIDTHS) {
   const ctx = await browser.newContext({ viewport: { width: size.width, height: size.height } });
+  const ctxBoard = ctx;
+  // Open projects on the Board view (task cards), which this script drives;
+  // the app otherwise remembers each person's last view.
+  await ctxBoard.addInitScript(() => { try { localStorage.setItem("pm-project-view", "board"); } catch { /* ignore */ } });
   const page = await ctx.newPage();
   page.on("dialog", (d) => d.accept());
 
@@ -92,6 +96,7 @@ for (const size of WIDTHS) {
 
   for (const path of [
     "/dashboard", "/projects", "/projects/8", "/my-tasks", "/team", "/calendar",
+    "/reviews", "/reports", "/admin/people",
     "/outstanding", "/meetings", "/reminders", "/notifications", "/profile",
     "/admin", "/admin/activity",
   ]) {
@@ -128,6 +133,12 @@ for (const size of WIDTHS) {
 
 // Keyboard: can you reach and use the app without a mouse?
 const ctx = await browser.newContext({ viewport: { width: 1440, height: 950 } });
+{
+  const ctxBoard = ctx;
+  // Open projects on the Board view (task cards), which this script drives;
+  // the app otherwise remembers each person's last view.
+  await ctxBoard.addInitScript(() => { try { localStorage.setItem("pm-project-view", "board"); } catch { /* ignore */ } });
+}
 const kb = await ctx.newPage();
 await kb.goto(`${BASE}/login`);
 await kb.keyboard.press("Tab");

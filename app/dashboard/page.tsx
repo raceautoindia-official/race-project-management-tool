@@ -13,6 +13,7 @@ import IntroStrip from "@/components/work/IntroStrip";
 import ReviewActions from "@/components/work/ReviewActions";
 import { AttentionRow, ItemContext, MeetingList, PageTabs, itemHref, utcAgo, type MeetingRow } from "@/components/work/items";
 import { DateRange, DueLabel, HealthBadge, ProgressLegend, SubtaskStatusBadge, WorkProgress } from "@/components/work/kit";
+import DoActions from "@/components/work/DoActions";
 
 export const dynamic = "force-dynamic";
 
@@ -264,6 +265,7 @@ function TodoGroup({ title, tone, items }: { title: string; tone: string; items:
             <span className="w-32 text-right">
               <DateRange start={i.start_date} due={i.due_date} notStarted={i.status === "todo"} />
             </span>
+            <DoActions kind={i.kind} id={i.id} status={i.status} title={i.title} />
           </li>
         ))}
       </ul>

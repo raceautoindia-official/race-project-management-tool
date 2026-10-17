@@ -645,10 +645,9 @@ export default function TaskDetailModal({
               📅 Add to calendar
             </a>
           )}
-          {/* With subtasks the task goes for review on its own once they are
-              all approved; the button is for tasks done in one piece. */}
+          {/* With subtasks the task also goes for review on its own once they
+              are all approved; the owner can still send it sooner. */}
           {canChangeStatus &&
-            Number(currentTask.subtask_total ?? 0) === 0 &&
             (currentTask.status === "todo" ||
               currentTask.status === "in_progress") && (
               <button

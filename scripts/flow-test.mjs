@@ -64,7 +64,11 @@ const db = await mysql.createConnection({
 fs.mkdirSync(SHOTS, { recursive: true });
 const browser = await chromium.launch({ channel: process.env.FLOW_BROWSER_CHANNEL ?? "chrome" });
 async function signIn(empId) {
-  const page = await (await browser.newContext({ viewport: { width: 1440, height: 950 } })).newPage();
+  const ctxBoard = await browser.newContext({ viewport: { width: 1440, height: 950 } });
+  // Open projects on the Board view (task cards), which this script drives;
+  // the app otherwise remembers each person's last view.
+  await ctxBoard.addInitScript(() => { try { localStorage.setItem("pm-project-view", "board"); } catch { /* ignore */ } });
+  const page = await ctxBoard.newPage();
   page.answer = ""; // prompt() text, when a step needs one
   page.on("dialog", (d) => d.accept(page.answer));
   await page.goto(`${BASE}/login`);
@@ -240,15 +244,18 @@ try {
     await task.getByText("Checked on staging — looks right.").waitFor({ timeout: 20000 });
   });
 
-  await step("3b the checklist comes from the spec and ticks off", async () => {
+  await step("3b subtasks come from the spec, and go through review", async () => {
     const task = admin.getByRole("dialog", { name: CORRECTION });
-    // Built from the request, grouped under the field that asked for it.
-    await task.getByText("Expected behavior (0/1)").waitFor({ timeout: 20000 });
-    await task.getByText("Acceptance criteria (0/1)").waitFor({ timeout: 20000 });
-    const box = task.getByRole("checkbox").first();
-    await box.click();
-    for (let i = 0; i < 20 && !(await box.isChecked()); i++) await admin.waitForTimeout(150);
-    must(await box.isChecked(), "the checklist item did not tick");
+    const subtasks = task.getByRole("region", { name: "Subtasks" });
+    // Built from the request, each labelled with the field that asked for it.
+    await subtasks.getByText("(0/2 approved)").waitFor({ timeout: 20000 });
+    await subtasks.getByText("Expected behavior", { exact: true }).waitFor({ timeout: 20000 });
+    await subtasks.getByText("Acceptance criteria", { exact: true }).waitFor({ timeout: 20000 });
+    // Finished by someone other than the task owner → it waits for review;
+    // an admin may review it.
+    await subtasks.getByRole("button", { name: "✓ Mark complete" }).first().click();
+    await subtasks.getByRole("button", { name: "✓ Approve" }).first().click();
+    await subtasks.getByText("(1/2 approved)").waitFor({ timeout: 20000 });
   });
 
   await step("3c a file attaches to the task", async () => {

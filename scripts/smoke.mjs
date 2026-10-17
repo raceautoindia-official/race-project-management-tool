@@ -54,7 +54,11 @@ async function step(name, fn) {
 
 const browser = await chromium.launch({ channel: process.env.SMOKE_BROWSER_CHANNEL ?? "chrome" });
 async function signIn(empId) {
-  const page = await (await browser.newContext({ viewport: { width: 1400, height: 950 } })).newPage();
+  const ctxBoard = await browser.newContext({ viewport: { width: 1400, height: 950 } });
+  // Open projects on the Board view (task cards), which this script drives;
+  // the app otherwise remembers each person's last view.
+  await ctxBoard.addInitScript(() => { try { localStorage.setItem("pm-project-view", "board"); } catch { /* ignore */ } });
+  const page = await ctxBoard.newPage();
   page.on("dialog", (d) => d.accept()); // confirm prompts
   await page.goto(`${BASE}/login`);
   await page.getByLabel("Employee ID").fill(empId);

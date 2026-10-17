@@ -95,7 +95,8 @@ test("the nominated lead approves the project and adds a member", async () => {
 
   await lead.getByRole("button", { name: /^Members/ }).click();
   const members = lead.getByRole("dialog", { name: "Manage members" });
-  await members.getByLabel("Add member").selectOption({ label: `${USERS.sam.name} (${USERS.sam.email})` });
+  // The picker groups people by department and names them (with a job title when PM has one).
+  await members.getByLabel("Add member").selectOption({ label: USERS.sam.name });
   await members.getByRole("button", { name: "Add", exact: true }).click();
   await expect(members.getByText(USERS.sam.name)).toBeVisible();
   await closeDialog(members);
@@ -173,9 +174,9 @@ test("the lead approves a request with an owner and the task records its trail",
   await expect(trail.getByRole("listitem").nth(2)).toContainText(USERS.sam.name);
   await expect(trail.getByRole("listitem").nth(4)).toContainText("Pending");
   // It reads twice now, on purpose: once in the specification, and once as a
-  // checklist item built from it.
+  // subtask built from it, for the task owner.
   await expect(task.getByText("Typing D-1042 shows dealer D-1042.").first()).toBeVisible();
-  await expect(task.getByText(/Checklist \(0\/\d+\)/)).toBeVisible();
+  await expect(task.getByText(/\(0\/\d+ approved\)/)).toBeVisible();
   await closeDialog(task);
 
   // The approved request links to the task it became.
@@ -225,19 +226,25 @@ test("the lead creates a new-feature task directly", async () => {
   await expect(taskCard(lead, FEATURE_TASK)).toContainText("New feature");
 });
 
-test("a checklist that falls behind the spec can be brought back up to it", async () => {
+test("subtasks that fall behind the spec can be brought back up to it", async () => {
   const task = await openTask(lead, FEATURE_TASK);
-  await expect(task.getByText("Checklist (0/2)")).toBeVisible();
-  // Nothing to offer while the checklist already says what the spec says.
+  // The spec's points arrive as subtasks for the task owner.
+  await expect(task.getByText("(0/2 approved)")).toBeVisible();
+  // Nothing to offer while the subtasks already say what the spec says.
   await expect(task.getByRole("button", { name: /From specification/ })).toHaveCount(0);
 
-  // A task whose checklist no longer covers the spec — the state every task
+  // A task whose subtasks no longer cover the spec — the state every task
   // created before this feature was in.
-  await task.getByRole("button", { name: "Delete subtask" }).last().click();
-  await expect(task.getByText("Checklist (0/1)")).toBeVisible();
+  // The subtask's own Delete, not the task's.
+  const row = task.getByRole("listitem").filter({ hasText: "Only leads can export." });
+  await row.getByRole("button", { name: /Only leads can export\./ }).click();
+  await row.getByRole("button", { name: "Delete", exact: true }).click();
+  const confirm = lead.getByRole("dialog", { name: "Delete subtask?" });
+  await confirm.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(task.getByText("(0/1 approved)")).toBeVisible();
 
   await task.getByRole("button", { name: "+ From specification (1)" }).click();
-  await expect(task.getByText("Checklist (0/2)")).toBeVisible();
+  await expect(task.getByText("(0/2 approved)")).toBeVisible();
   await expect(task.getByText("Only leads can export.").first()).toBeVisible();
   await expect(task.getByRole("button", { name: /From specification/ })).toHaveCount(0);
   await closeDialog(task);
@@ -263,48 +270,46 @@ test("the comment button says what it needs instead of looking broken", async ()
   await closeDialog(task);
 });
 
-test("the checklist says which part of the spec each item came from", async () => {
+test("each subtask says which part of the spec it came from", async () => {
   const task = await openTask(lead, FEATURE_TASK);
   // Not one flat list: the features and the rules are told apart.
-  await expect(task.getByText("Features (0/1)")).toBeVisible();
-  await expect(task.getByText("Rules (0/1)")).toBeVisible();
+  const subtasks = task.getByRole("region", { name: "Subtasks" });
+  await expect(subtasks.getByText("Features", { exact: true })).toBeVisible();
+  await expect(subtasks.getByText("Rules", { exact: true })).toBeVisible();
   await closeDialog(task);
 });
 
-test("finishing the checklist offers to hand the task over, and takes no for an answer", async () => {
-  const task = await openTask(lead, FEATURE_TASK);
-  const boxes = task.locator('input[type="checkbox"]');
-  await expect(boxes).toHaveCount(2);
-  // Click and wait: a box only ticks once the server has saved it, so
-  // check() would race the round trip.
-  await boxes.nth(0).click();
-  await expect(boxes.nth(0)).toBeChecked();
-  await boxes.nth(1).click();
-  await expect(boxes.nth(1)).toBeChecked();
-
-  const offer = task.getByRole("alertdialog", { name: "Checklist finished" });
-  await expect(offer).toBeVisible();
-  await offer.getByRole("button", { name: "Not yet" }).click();
-  await expect(offer).toBeHidden();
-  // Declining leaves the task exactly where it was — and the manual way to
-  // send it is a button on the task, not a menu you have to know about.
-  await expect(task.getByLabel("Task status")).toHaveValue("todo");
-  await expect(task.getByRole("button", { name: "Send for review" })).toBeVisible();
-  await closeDialog(task);
-});
-
-test("or sends it for review on the spot", async () => {
-  const task = await openTask(lead, FEATURE_TASK);
-  const boxes = task.locator('input[type="checkbox"]');
-  // Raise the offer again: unticking takes it back, ticking brings it out.
-  await boxes.nth(1).click();
-  await expect(boxes.nth(1)).not.toBeChecked();
-  await boxes.nth(1).click();
-  await expect(boxes.nth(1)).toBeChecked();
-  const offer = task.getByRole("alertdialog", { name: "Checklist finished" });
-  await offer.getByRole("button", { name: "Send for review now" }).click();
+test("the task owner's own subtasks are approved at once, and the finished task goes for review by itself", async () => {
+  await sam.goto(projectPath);
+  const task = await openTask(sam, FEATURE_TASK);
+  const complete = task.getByRole("button", { name: "✓ Mark complete" });
+  await expect(complete).toHaveCount(2);
+  await complete.first().click();
+  await expect(task.getByText("(1/2 approved)")).toBeVisible();
+  await expect(task.getByText("Approved", { exact: true })).toHaveCount(1);
+  await task.getByRole("button", { name: "✓ Mark complete" }).click();
+  await expect(task.getByText("(2/2 approved)")).toBeVisible();
+  // Nobody had to remember the status menu: every subtask approved means the
+  // task is ready, so it went to the project's managers.
   await expect(task.getByLabel("Task status")).toHaveValue("review");
   await closeDialog(task);
+});
+
+test("the tasks & subtasks view leads to the task's own page", async () => {
+  await lead.goto(projectPath);
+  await lead.getByRole("button", { name: "Tasks & subtasks" }).click();
+  // Each task expands into its subtasks, with what has been approved.
+  await lead.getByRole("button", { name: `Show subtasks of ${FEATURE_TASK}` }).click();
+  await expect(lead.getByRole("region", { name: "Subtasks" }).getByText("(2/2 approved)")).toBeVisible();
+
+  await lead.getByRole("link", { name: "Open page →" }).first().click();
+  await expect(lead).toHaveURL(/\/projects\/\d+\/tasks\/\d+$/);
+  await expect(lead.getByRole("heading", { level: 1 })).toBeVisible();
+  await expect(lead.getByText("Approved by", { exact: true })).toBeVisible();
+  await expect(lead.getByRole("region", { name: "Subtasks" })).toBeVisible();
+  await expect(lead.getByRole("heading", { name: "Approval trail" })).toBeVisible();
+  await lead.getByRole("link", { name: "← Back to project" }).click();
+  await expect(lead).toHaveURL(new RegExp(`${projectPath}$`));
 });
 
 test("a member reports a blocker; it counts once a lead agrees", async () => {
@@ -389,9 +394,10 @@ test("everyone sees the signed-off task as read-only", async () => {
     }
     await expect(task.getByLabel("Task status")).toHaveCount(0);
     await expect(task.getByPlaceholder(/Write a comment/)).toHaveCount(0);
-    // Checklist boxes are shown but frozen, and nothing can be removed.
-    await expect(task.getByRole("button", { name: "Delete subtask" })).toHaveCount(0);
-    await expect(task.locator('input[type="checkbox"]').first()).toBeDisabled();
+    // Subtasks are shown but frozen: nothing to add, finish or approve.
+    for (const control of ["+ Add subtask", "✓ Mark complete", "✓ Approve"]) {
+      await expect(task.getByRole("button", { name: control, exact: true })).toHaveCount(0);
+    }
     await closeDialog(task);
   }
 });

@@ -28,6 +28,7 @@ import {
   type PickPerson,
 } from "./kit";
 import { taskProgress } from "@/lib/work-engine";
+import { SPEC_LABELS, type SpecKey } from "@/lib/workflow";
 
 type Action = "start" | "submit" | "approve" | "request_changes" | "reopen" | "cancel" | "restore";
 
@@ -248,6 +249,11 @@ export default function SubtasksPanel({
                     <span className={`block truncate text-sm font-medium ${s.status === "done" ? "text-slate-500 line-through decoration-slate-300" : "text-slate-900"}`}>
                       {s.title}
                     </span>
+                    {s.source && SPEC_LABELS[s.source as SpecKey] && (
+                      <span className="mr-2 inline-block rounded bg-slate-100 px-1.5 text-[11px] font-medium text-slate-600" title="The part of the specification this came from">
+                        {SPEC_LABELS[s.source as SpecKey]}
+                      </span>
+                    )}
                     {s.changes_requested && s.status === "in_progress" && (
                       <span className="block truncate text-xs text-orange-700">↩ Changes requested: {s.changes_requested}</span>
                     )}

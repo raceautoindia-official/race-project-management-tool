@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ProjectStatusBadge, RequestStatusBadge } from "@/components/Badge";
 import LabelChip from "@/components/LabelChip";
@@ -80,6 +80,8 @@ const PRIORITY_ORDER: Record<TaskPriority, number> = {
 
 type ViewMode = "tree" | "board" | "list" | "timeline" | "calendar";
 
+const VIEW_KEY = "pm-project-view";
+
 const VIEW_LABELS: Record<ViewMode, string> = {
   tree: "Tasks & subtasks",
   board: "Board",
@@ -126,7 +128,26 @@ export default function ProjectBoard({
   const [milestones, setMilestones] = useState<Milestone[]>(initialMilestones);
   const [newMs, setNewMs] = useState("");
   const [newMsDate, setNewMsDate] = useState("");
-  const [view, setView] = useState<ViewMode>("tree");
+  const [view, setViewState] = useState<ViewMode>("tree");
+  // The view each person last used comes back next time (per browser).
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(VIEW_KEY) as ViewMode | null;
+      // Read after mount so the server render and the first client render match.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (saved && saved in VIEW_LABELS) setViewState(saved);
+    } catch {
+      // Storage blocked: the default view is fine.
+    }
+  }, []);
+  function setView(v: ViewMode) {
+    setViewState(v);
+    try {
+      localStorage.setItem(VIEW_KEY, v);
+    } catch {
+      // ignore
+    }
+  }
   const [requests, setRequests] = useState<TaskRequest[]>(initialRequests);
   const [raiseOpen, setRaiseOpen] = useState(false);
 

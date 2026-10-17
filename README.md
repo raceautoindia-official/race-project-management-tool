@@ -546,6 +546,10 @@ A failed send is logged and never breaks the action that triggered it.
 
 ## Deploying to production
 
+> **Deploying the Project › Task › Subtask redesign?** Follow
+> [docs/DEPLOYMENT_REDESIGN.md](docs/DEPLOYMENT_REDESIGN.md) — it adds the redesign migration,
+> a rehearsal on a copy, and what users will notice.
+
 Do these in order — the new code needs the new database columns.
 
 1. **Back up** the database (`mysqldump pm_app > backup.sql`). There is no down-migration;

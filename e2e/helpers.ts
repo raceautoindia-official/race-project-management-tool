@@ -24,6 +24,15 @@ export async function signIn(browser: Browser, user: E2EUser): Promise<Page> {
   const page = await context.newPage();
   // Confirm prompts (withdraw, complete project, …) are accepted.
   page.on("dialog", (dialog) => dialog.accept());
+  // These specs drive the Board view (task cards); the project page remembers
+  // a person's last view, so start everyone on the board.
+  await context.addInitScript(() => {
+    try {
+      localStorage.setItem("pm-project-view", "board");
+    } catch {
+      // storage blocked — tests that need the board will say so
+    }
+  });
   await page.goto("/login");
   await page.getByLabel("Employee ID").fill(user.empId);
   await page.getByLabel("PIN").fill(E2E_PIN);
