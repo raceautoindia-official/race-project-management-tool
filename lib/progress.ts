@@ -1,6 +1,25 @@
 import type { Task, TaskStatus } from "./types";
+import { effectiveWeights } from "./work-engine";
 
-/** Nominal completion % for a task based purely on its workflow status. */
+/**
+ * Progress after the 2026-10-17 redesign: **only approved work counts**, and
+ * each piece counts by its weight (docs/REDESIGN_PLAN.md §3).
+ *
+ * - A task's bar: the weighted share of its subtasks that its owner has
+ *   approved (worked out by lib/tasks.ts attachTaskMeta with the engine in
+ *   lib/work-engine.ts); a Done task is 100%. A task without subtasks shows
+ *   nothing until it is Done — finishing it means sending it for review.
+ * - A project's bar: the weighted share of its tasks that are Done.
+ *
+ * The names below are the ones the app already used, so every list, card and
+ * dashboard that showed checklist units now shows weighted, approved progress
+ * without changing.
+ */
+
+/**
+ * The old nominal % per status. Kept for anything that still wants a rough
+ * "how far along" for a single status; progress bars no longer use it.
+ */
 export const STATUS_PROGRESS: Record<TaskStatus, number> = {
   todo: 0,
   in_progress: 40,
@@ -8,28 +27,18 @@ export const STATUS_PROGRESS: Record<TaskStatus, number> = {
   done: 100,
 };
 
-/**
- * A single task's completion %: prefer its checklist ratio when it has
- * subtasks, otherwise fall back to a status-based estimate. `done` is always
- * 100%.
- */
-export function taskProgress(
-  task: Pick<
-    Task,
-    "status" | "subtask_total" | "subtask_done" | "estimated_hours" | "spent_hours"
-  >
-): number {
+type ProgressFields = Pick<Task, "status" | "subtask_total" | "subtask_done"> & {
+  progress_approved?: number | null;
+};
+
+/** A single task's approved completion %, 0–100. */
+export function taskProgress(task: ProgressFields): number {
   if (task.status === "done") return 100;
-  // Prefer a real signal: checklist ratio, else logged-vs-estimated hours.
-  const total = task.subtask_total ?? 0;
-  if (total > 0) return Math.round(((task.subtask_done ?? 0) / total) * 100);
-  const est = Number(task.estimated_hours ?? 0);
-  if (est > 0) {
-    const spent = Number(task.spent_hours ?? 0);
-    return Math.min(100, Math.round((spent / est) * 100));
-  }
-  // No estimate and no checklist → fall back to a nominal status step.
-  return STATUS_PROGRESS[task.status];
+  if (task.progress_approved != null) return Math.round(Number(task.progress_approved));
+  // Rows that skipped attachTaskMeta: an even split of approved subtasks.
+  const total = Number(task.subtask_total ?? 0);
+  if (total > 0) return Math.round((Number(task.subtask_done ?? 0) / total) * 100);
+  return 0;
 }
 
 /** Tally a task list into per-status counts (for the status breakdown bar). */
@@ -47,24 +56,12 @@ export function statusCounts(
 }
 
 /**
- * How far a whole project has got, counted in checklist items.
- *
- * "Three of eight tasks done" is a blunt instrument: a task with its
- * checklist nine-tenths ticked counts for nothing, and a project can look
- * stalled on the day it is nearly finished. This counts the things people
- * actually tick off.
- *
- * Each task is worth as many units as it has checklist items, so a task with
- * twenty is worth ten times one with two — it is ten times the work. A task
- * with no checklist is worth one unit, earned when the task is marked Done,
- * which is the only evidence such a task offers. A task that is Done counts
- * in full whatever its checklist says, because the lead who marked it Done
- * has said so.
+ * A project's progress as two numbers: the total of its tasks' effective
+ * weights (`units`, 100 whenever it has tasks) and the share of that held by
+ * Done tasks (`credited`).
  */
 export interface ProjectUnits {
-  /** Checklist items across the project, counting a bare task as one. */
   units: number;
-  /** Those that are ticked, or belong to a task already Done. */
   credited: number;
 }
 
@@ -76,37 +73,49 @@ export function projectPercent(u: ProjectUnits | null | undefined): number {
 
 /** The same sum over tasks already loaded in the browser. */
 export function projectUnitsOf(
-  tasks: Pick<Task, "status" | "subtask_total" | "subtask_done">[]
+  tasks: (Pick<Task, "id" | "status"> & { weight?: number | string | null; weight_mode?: string | null })[]
 ): ProjectUnits {
+  const weights = effectiveWeights(
+    tasks.map((t) => ({
+      id: t.id,
+      weight: Number(t.weight ?? 0),
+      weight_mode: t.weight_mode === "manual" ? "manual" : "auto",
+    }))
+  );
   let units = 0;
   let credited = 0;
   for (const t of tasks) {
-    const own = Math.max(Number(t.subtask_total ?? 0), 1);
-    units += own;
-    credited += t.status === "done" ? own : Number(t.subtask_done ?? 0);
+    const w = weights.get(t.id) ?? 0;
+    units += w;
+    if (t.status === "done") credited += w;
   }
   return { units, credited };
 }
 
 /**
- * The same sum in SQL, for the lists that never load the tasks themselves.
+ * Each task's effective weight in SQL (alias `t`): a manual weight as set; an
+ * automatic one gets an even share of what the manual ones leave.
+ */
+const EFFECTIVE_WEIGHT_SQL = `
+  CASE WHEN t.weight_mode = 'manual' THEN t.weight
+       ELSE GREATEST(0, 100 - (SELECT COALESCE(SUM(m.weight), 0) FROM tasks m
+                                WHERE m.project_id = t.project_id AND m.weight_mode = 'manual'))
+            / (SELECT COUNT(*) FROM tasks a
+                WHERE a.project_id = t.project_id AND a.weight_mode = 'auto') END`;
+
+/**
+ * The same sum in SQL (alias `p` for the project), for the lists that never
+ * load the tasks themselves.
  *
  * `tests/integration/project-progress.test.ts` asserts this and
  * projectUnitsOf() agree, so the two cannot drift apart unnoticed.
  */
 export const PROJECT_UNITS_SQL = `
-  (SELECT COALESCE(SUM(GREATEST(COALESCE(sc.total, 0), 1)), 0)
+  (SELECT COALESCE(SUM(${EFFECTIVE_WEIGHT_SQL}), 0)
      FROM tasks t
-     LEFT JOIN (SELECT task_id, COUNT(*) AS total FROM subtasks GROUP BY task_id) sc
-       ON sc.task_id = t.id
     WHERE t.project_id = p.id)`;
 
 export const PROJECT_CREDITED_SQL = `
-  (SELECT COALESCE(SUM(
-            CASE WHEN t.status = 'done' THEN GREATEST(COALESCE(sc.total, 0), 1)
-                 ELSE COALESCE(sc.done, 0) END), 0)
+  (SELECT COALESCE(SUM(CASE WHEN t.status = 'done' THEN ${EFFECTIVE_WEIGHT_SQL} ELSE 0 END), 0)
      FROM tasks t
-     LEFT JOIN (SELECT task_id, COUNT(*) AS total, SUM(is_done) AS done
-                  FROM subtasks GROUP BY task_id) sc
-       ON sc.task_id = t.id
     WHERE t.project_id = p.id)`;

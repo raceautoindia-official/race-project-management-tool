@@ -2,89 +2,91 @@ import { NextRequest } from "next/server";
 import { query, DbRow, DbResult } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { json, errorResponse, ApiError } from "@/lib/http";
-import { assertProjectAccess, assertTaskEdit, assertTaskWritable } from "@/lib/rbac";
+import { assertTaskWritable } from "@/lib/rbac";
 import { createSubtaskSchema } from "@/lib/validation";
+import { logActivity, notify } from "@/lib/activity";
+import {
+  assertCan,
+  assertMayReopenTask,
+  assertProjectMember,
+  listSubtasks,
+  loadTaskContext,
+  makeRoomForSubtask,
+  subtaskLink,
+  syncTaskAfterSubtaskChange,
+} from "@/lib/subtasks";
 
 type Params = { params: Promise<{ id: string }> };
 
-async function loadTaskRef(
-  taskId: number
-): Promise<{ project_id: number; assignee_id: number | null }> {
-  const rows = await query<DbRow[]>(
-    `SELECT project_id, assignee_id FROM tasks WHERE id = ? LIMIT 1`,
-    [taskId]
-  );
-  if (!rows.length) throw new ApiError(404, "Task not found");
-  return { project_id: rows[0].project_id, assignee_id: rows[0].assignee_id };
+function taskIdOf(id: string): number {
+  const taskId = Number(id);
+  if (!Number.isInteger(taskId)) throw new ApiError(400, "Invalid id");
+  return taskId;
 }
 
-function mapSubtask(r: DbRow) {
-  return {
-    id: r.id,
-    task_id: r.task_id,
-    title: r.title,
-    source: r.source ?? null,
-    is_done: Boolean(r.is_done),
-    position: r.position,
-  };
-}
-
+/** GET /api/tasks/:id/subtasks — the task's subtasks, with assignees and weights. */
 export async function GET(_req: NextRequest, { params }: Params) {
   try {
     const user = await requireUser();
-    const { id } = await params;
-    const taskId = Number(id);
-    if (!Number.isInteger(taskId)) throw new ApiError(400, "Invalid id");
-    const ref = await loadTaskRef(taskId);
-    await assertProjectAccess(user, ref.project_id);
-
-    const rows = await query<DbRow[]>(
-      `SELECT id, task_id, title, source, is_done, position FROM subtasks
-       WHERE task_id = ? ORDER BY position ASC, id ASC`,
-      [taskId]
-    );
-    return json({ subtasks: rows.map(mapSubtask) });
+    const taskId = taskIdOf((await params).id);
+    await loadTaskContext(user, taskId); // access check
+    return json({ subtasks: await listSubtasks(taskId) });
   } catch (err) {
     return errorResponse(err);
   }
 }
 
+/**
+ * POST /api/tasks/:id/subtasks — split the task: { title, description?,
+ * assigneeId?, startDate?, dueDate? }. The task owner, project owner, a lead
+ * or an admin. Weights stay an even split (a fully fixed set makes room).
+ */
 export async function POST(req: NextRequest, { params }: Params) {
   try {
     const user = await requireUser();
-    const { id } = await params;
-    const taskId = Number(id);
-    if (!Number.isInteger(taskId)) throw new ApiError(400, "Invalid id");
-    const ref = await loadTaskRef(taskId);
-    await assertTaskEdit(user, ref);
+    const taskId = taskIdOf((await params).id);
+    const { task, ctx } = await loadTaskContext(user, taskId);
+    assertCan("subtask.create", ctx);
+    assertMayReopenTask(task, ctx);
     await assertTaskWritable(taskId);
 
-    const body = await req.json().catch(() => ({}));
-    const { title } = createSubtaskSchema.parse(body);
+    const data = createSubtaskSchema.parse(await req.json().catch(() => ({})));
+    // Not given → the task owner does it; explicitly null → nobody yet.
+    const assigneeId = data.assigneeId === undefined ? task.assignee_id : data.assigneeId;
+    if (assigneeId) await assertProjectMember(task.project_id, assigneeId);
 
+    await makeRoomForSubtask(taskId);
     const [{ nextPos }] = await query<DbRow[]>(
       `SELECT COALESCE(MAX(position) + 1, 0) AS nextPos FROM subtasks WHERE task_id = ?`,
       [taskId]
     );
-    const result = (await query<DbResult>(
-      `INSERT INTO subtasks (task_id, title, position) VALUES (?, ?, ?)`,
-      [taskId, title, nextPos]
+    const res = (await query<DbResult>(
+      `INSERT INTO subtasks (task_id, title, description, assignee_id, position, start_date, due_date, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [taskId, data.title, data.description ?? null, assigneeId ?? null, nextPos, data.startDate ?? null, data.dueDate ?? null, user.id]
     )) as unknown as DbResult;
+    const subtaskId = res.insertId;
 
-    return json(
-      {
-        subtask: {
-          id: result.insertId,
-          task_id: taskId,
-          title,
-          // Typed here rather than taken from the specification.
-          source: null,
-          is_done: false,
-          position: nextPos,
-        },
-      },
-      201
-    );
+    await logActivity({
+      userId: user.id,
+      action: "subtask.created",
+      entityType: "task",
+      entityId: taskId,
+      metadata: { subtaskId, title: data.title, assigneeId: assigneeId ?? null },
+    });
+    if (assigneeId && assigneeId !== user.id) {
+      await notify(
+        assigneeId,
+        "subtask_assigned",
+        `New subtask for you: "${data.title}" (in "${task.title}")`,
+        subtaskLink(task.project_id, taskId, subtaskId)
+      );
+    }
+    // New open work pulls a task in review / Done back into progress.
+    await syncTaskAfterSubtaskChange(taskId, user);
+
+    const subtask = (await listSubtasks(taskId)).find((s) => s.id === subtaskId);
+    return json({ subtask }, 201);
   } catch (err) {
     return errorResponse(err);
   }

@@ -17,7 +17,8 @@ type Params = { params: Promise<{ id: string }> };
 
 async function projectDetail(projectId: number) {
   const rows = await query<DbRow[]>(
-    `SELECT p.id, p.name, p.description, p.department, p.status, p.approval_status, p.owner_id,
+    `SELECT p.id, p.name, p.description, p.department, p.status, p.start_date, p.due_date,
+            p.approval_status, p.owner_id,
             p.requested_by, p.requested_at, p.decided_by, p.decided_at, p.decision_note,
             p.created_at, p.updated_at, u.name AS owner_name,
             rq.name AS requester_name, dc.name AS decider_name
@@ -31,7 +32,8 @@ async function projectDetail(projectId: number) {
   const project = rows[0];
 
   const members = await query<DbRow[]>(
-    `SELECT pm.id, pm.project_id, pm.user_id, pm.role_in_project, u.name, u.email
+    `SELECT pm.id, pm.project_id, pm.user_id, pm.role_in_project, u.name, u.email,
+            u.department, u.designation
      FROM project_members pm
      JOIN users u ON u.id = pm.user_id
      WHERE pm.project_id = ?
@@ -139,6 +141,22 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       sets.push("owner_id = ?");
       values.push(data.ownerId);
     }
+    if (data.startDate !== undefined || data.dueDate !== undefined) {
+      // One date alone still has to fit the stored other one.
+      const start = data.startDate !== undefined ? data.startDate : project.start_date;
+      const due = data.dueDate !== undefined ? data.dueDate : project.due_date;
+      if (start && due && due < start) {
+        throw new ApiError(400, "The due date can't be before the start date");
+      }
+      if (data.startDate !== undefined) {
+        sets.push("start_date = ?");
+        values.push(data.startDate);
+      }
+      if (data.dueDate !== undefined) {
+        sets.push("due_date = ?");
+        values.push(data.dueDate);
+      }
+    }
     if (sets.length > 0) {
       values.push(projectId);
       // When completing, the blockers are re-checked in the same statement so a
@@ -158,6 +176,15 @@ export async function PATCH(req: NextRequest, { params }: Params) {
           `The project can't be completed yet: ${blockers.join("; ") || "it changed — reload and try again"}.`
         );
       }
+    }
+
+    // The owner runs the project, so they are always one of its leads.
+    if (data.ownerId && data.ownerId !== project.owner_id) {
+      await query(
+        `INSERT INTO project_members (project_id, user_id, role_in_project)
+         VALUES (?, ?, 'lead') ON DUPLICATE KEY UPDATE role_in_project = 'lead'`,
+        [projectId, data.ownerId]
+      );
     }
 
     const statusChanged = data.status !== undefined && data.status !== project.status;

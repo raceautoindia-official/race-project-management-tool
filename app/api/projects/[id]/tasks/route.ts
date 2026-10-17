@@ -12,6 +12,7 @@ import { createTaskSchema } from "@/lib/validation";
 import { logActivity, notify } from "@/lib/activity";
 import { fetchTasks, syncTaskLabels, seedChecklistFromSpec } from "@/lib/tasks";
 import { normalizeSpec, SPEC_KEYS, specFromBody } from "@/lib/workflow";
+import { makeRoomForTask } from "@/lib/subtasks";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -104,6 +105,8 @@ export async function POST(req: NextRequest, { params }: Params) {
     const isAdditional = data.parentTaskId != null || data.isAdditional === true;
     const spec = normalizeSpec(data.taskType, specFromBody(data));
 
+    // A fully fixed set of weights shrinks so the new task gets an even share.
+    await makeRoomForTask(projectId);
     const result = (await query<DbResult>(
       `INSERT INTO tasks
          (project_id, title, description, task_type, ${SPEC_KEYS.join(", ")},

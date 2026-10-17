@@ -48,6 +48,10 @@ export async function PATCH(
     if (!sets.length) throw new ApiError(400, "Nothing to change");
 
     await query(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`, [...values, id]);
+    // A new job title shows up in Admin › Levels, waiting for a level.
+    if (data.designation) {
+      await query(`INSERT IGNORE INTO designation_levels (title) VALUES (?)`, [data.designation]);
+    }
 
     await logActivity({
       userId: admin.id,

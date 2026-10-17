@@ -9,6 +9,7 @@ import {
   STATUS_VALUES,
   PRIORITY_VALUES,
 } from "@/lib/excel";
+import { makeRoomForTask } from "@/lib/subtasks";
 
 export const dynamic = "force-dynamic";
 
@@ -103,6 +104,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           ? r.estimatedHours
           : null;
 
+      await makeRoomForTask(projectId);
       await query<DbResult>(
         `INSERT INTO tasks
            (project_id, title, description, status, priority, estimated_hours,

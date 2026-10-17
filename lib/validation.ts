@@ -98,16 +98,20 @@ const departmentField = z
   .nullish()
   .transform((v) => (v ? v : null));
 
-export const createProjectSchema = z.object({
-  name: z.string().min(1).max(150),
-  description: optionalText,
-  department: departmentField,
-  status: z.enum(["active", "completed", "archived"]).optional(),
-  ownerId: optionalId.optional(),
-  memberIds: z.array(z.coerce.number().int().positive()).optional(),
-  // Non-admins request a project: the nominated lead approves it.
-  leadId: optionalId.optional(),
-});
+export const createProjectSchema = z
+  .object({
+    name: z.string().min(1).max(150),
+    description: optionalText,
+    department: departmentField,
+    status: z.enum(["active", "completed", "archived"]).optional(),
+    ownerId: optionalId.optional(),
+    memberIds: z.array(z.coerce.number().int().positive()).optional(),
+    // Non-admins request a project: the nominated lead approves it.
+    leadId: optionalId.optional(),
+    startDate: optionalDate.optional(),
+    dueDate: optionalDate.optional(),
+  })
+  .superRefine(checkDateOrder);
 
 /**
  * The two fields PM decides about a person. Everything else about who they
@@ -151,7 +155,10 @@ export const updateProjectSchema = z
     department: departmentField,
     status: z.enum(["active", "completed", "archived"]).optional(),
     ownerId: optionalId.optional(),
+    startDate: optionalDate.optional(),
+    dueDate: optionalDate.optional(),
   })
+  .superRefine(checkDateOrder)
   .refine((d) => Object.keys(d).length > 0, {
     message: "No fields to update",
   });
@@ -342,18 +349,63 @@ export const createLabelSchema = z.object({
 });
 
 // ---- Subtasks ----
-export const createSubtaskSchema = z.object({
-  title: z.string().min(1).max(255),
-});
+// A subtask is a piece of work: an assignee, dates and a description. Leaving
+// assigneeId out gives it to the task's owner; null leaves it unassigned.
+export const createSubtaskSchema = z
+  .object({
+    title: z.string().trim().min(1).max(255),
+    description: optionalText,
+    assigneeId: optionalId.optional(),
+    startDate: optionalDate.optional(),
+    dueDate: optionalDate.optional(),
+  })
+  .superRefine(checkDateOrder);
 
 export const updateSubtaskSchema = z
   .object({
-    title: z.string().min(1).max(255).optional(),
+    title: z.string().trim().min(1).max(255).optional(),
+    description: optionalText,
+    assigneeId: optionalId.optional(),
+    startDate: optionalDate.optional(),
+    dueDate: optionalDate.optional(),
+    // Kept for older screens: ticking = "mark complete", unticking = reopen.
     is_done: z.boolean().optional(),
   })
+  .superRefine(checkDateOrder)
   .refine((d) => Object.keys(d).length > 0, {
     message: "No fields to update",
   });
+
+/** The review flow on a subtask. Sending work back must say what to change. */
+export const subtaskActionSchema = z
+  .object({
+    action: z.enum(["start", "submit", "approve", "request_changes", "reopen", "cancel", "restore"]),
+    note: z.string().trim().max(1000).optional().nullable(),
+  })
+  .superRefine((d, ctx) => {
+    if (d.action === "request_changes" && !d.note) {
+      ctx.addIssue({ code: "custom", path: ["note"], message: "Say what needs to change" });
+    }
+  });
+
+/** New weights for a set of siblings, or a reset to an even split. */
+export const weightsSchema = z.union([
+  z.object({ reset: z.literal(true) }),
+  z.object({
+    weights: z
+      .array(z.object({ id: z.coerce.number().int().positive(), weight: z.coerce.number() }))
+      .min(1),
+  }),
+]);
+
+/** Admin: give a job title a seniority level (1 = most junior). */
+export const designationLevelSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+  level: z.preprocess(
+    (v) => (v === "" || v === undefined || v === null ? null : v),
+    z.coerce.number().int().min(1).max(20).nullable()
+  ),
+});
 
 // ---- Profile ----
 export const updateProfileSchema = z.object({

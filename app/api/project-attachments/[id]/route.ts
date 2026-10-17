@@ -58,9 +58,11 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
       [attId]
     );
     if (!att) throw new ApiError(404, "Attachment not found");
-    await assertProjectAccess(user, att.project_id);
+    const { project, projectRole } = await assertProjectAccess(user, att.project_id);
+    // A lead (or the project owner, or an admin) may tidy up anyone's upload.
+    const manager = canManageProject(user, projectRole) || project.owner_id === user.id;
 
-    if (att.uploaded_by !== user.id && !(await canManageProject(user, att.project_id))) {
+    if (att.uploaded_by !== user.id && !manager) {
       throw forbidden("Only the person who attached it, or a project lead, can remove it");
     }
     await query(`DELETE FROM project_attachments WHERE id = ?`, [attId]);

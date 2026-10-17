@@ -8,6 +8,7 @@ import { logActivity, notify } from "@/lib/activity";
 import { fetchTaskRequests, fetchTasks } from "@/lib/tasks";
 import { checklistFromSpec, SPEC_KEYS } from "@/lib/workflow";
 import type { SpecColumns, WorkType } from "@/lib/types";
+import { makeRoomForTask } from "@/lib/subtasks";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -48,6 +49,8 @@ export async function POST(req: NextRequest, { params }: Params) {
         [projectId, data.assigneeId]
       );
       if (!m.length) throw new ApiError(400, "Assignee must be a member of the project");
+      // A fully fixed set of task weights shrinks so the new task gets a share.
+      await makeRoomForTask(projectId);
     }
 
     let taskId: number | null = null;
@@ -112,10 +115,10 @@ export async function POST(req: NextRequest, { params }: Params) {
         );
         if (items.length) {
           await conn.execute(
-            `INSERT INTO subtasks (task_id, title, position, source) VALUES ${items
-              .map(() => "(?, ?, ?, ?)")
+            `INSERT INTO subtasks (task_id, title, position, source, assignee_id) VALUES ${items
+              .map(() => "(?, ?, ?, ?, ?)")
               .join(", ")}`,
-            items.flatMap((item, i) => [taskId, item.title, i, item.source])
+            items.flatMap((item, i) => [taskId, item.title, i, item.source, data.assigneeId ?? null])
           );
         }
       }

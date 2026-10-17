@@ -3,6 +3,7 @@ import { query, DbRow, DbResult } from "@/lib/db";
 import { json, errorResponse } from "@/lib/http";
 import { assertCron } from "@/lib/cron";
 import { notify } from "@/lib/activity";
+import { makeRoomForTask } from "@/lib/subtasks";
 
 export const dynamic = "force-dynamic";
 
@@ -63,6 +64,7 @@ export async function POST(req: NextRequest) {
     );
     for (const rt of dueRt) {
       const runDate = String(rt.next_run).slice(0, 10);
+      await makeRoomForTask(rt.project_id);
       const result = (await query<DbResult>(
         `INSERT INTO tasks
            (project_id, title, description, status, priority, estimated_hours,

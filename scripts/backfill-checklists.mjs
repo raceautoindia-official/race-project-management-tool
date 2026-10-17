@@ -117,14 +117,15 @@ async function main() {
         [task.id]
       );
       await db.execute(
-        `INSERT INTO subtasks (task_id, title, position, source) VALUES ${pending
-          .map(() => "(?, ?, ?, ?)")
+        `INSERT INTO subtasks (task_id, title, position, source, assignee_id) VALUES ${pending
+          .map(() => "(?, ?, ?, ?, (SELECT assignee_id FROM tasks WHERE id = ?))")
           .join(", ")}`,
         pending.flatMap((item, i) => [
           task.id,
           item.title,
           Number(nextPos) + i,
           item.source,
+          task.id, // the task owner does their own spec's points
         ])
       );
     }

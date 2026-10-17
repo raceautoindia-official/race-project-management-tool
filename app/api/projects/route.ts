@@ -10,7 +10,8 @@ import { sendEmail, emailLayout, appBaseUrl, escapeHtml } from "@/lib/mailer";
 export const dynamic = "force-dynamic";
 
 const PROJECT_SELECT = `
-  p.id, p.name, p.description, p.department, p.status, p.approval_status, p.owner_id,
+  p.id, p.name, p.description, p.department, p.status, p.start_date, p.due_date,
+  p.approval_status, p.owner_id,
   p.requested_by, p.requested_at, p.decided_by, p.decided_at, p.decision_note,
   p.created_at, p.updated_at,
   u.name AS owner_name, rq.name AS requester_name,
@@ -148,12 +149,15 @@ export async function POST(req: NextRequest) {
         isAdmin
           ? `INSERT INTO projects
                (name, description, department, status, approval_status, owner_id,
-                requested_by, requested_at, decided_by, decided_at)
-             VALUES (?, ?, ?, ?, 'approved', ?, ?, UTC_TIMESTAMP(), ?, UTC_TIMESTAMP())`
+                requested_by, requested_at, decided_by, decided_at, start_date, due_date)
+             VALUES (?, ?, ?, ?, 'approved', ?, ?, UTC_TIMESTAMP(), ?, UTC_TIMESTAMP(),
+                     COALESCE(?, CURRENT_DATE()), ?)`
           : `INSERT INTO projects
                (name, description, department, status, approval_status, owner_id,
-                requested_by, requested_at)
-             VALUES (?, ?, ?, 'active', 'pending', ?, ?, UTC_TIMESTAMP())`,
+                requested_by, requested_at, start_date, due_date)
+             VALUES (?, ?, ?, 'active', 'pending', ?, ?, UTC_TIMESTAMP(),
+                     COALESCE(?, CURRENT_DATE()), ?)`,
+        // A project with no start date given starts today.
         isAdmin
           ? [
               data.name,
@@ -163,8 +167,10 @@ export async function POST(req: NextRequest) {
               ownerId,
               user.id,
               user.id,
+              data.startDate ?? null,
+              data.dueDate ?? null,
             ]
-          : [data.name, data.description ?? null, department, ownerId, user.id]
+          : [data.name, data.description ?? null, department, ownerId, user.id, data.startDate ?? null, data.dueDate ?? null]
       );
       projectId = (res as DbResult).insertId;
 

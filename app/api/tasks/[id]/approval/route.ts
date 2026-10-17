@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
-import { query, DbRow } from "@/lib/db";
+import { query, DbRow, DbResult } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
-import { json, errorResponse, ApiError } from "@/lib/http";
+import { json, errorResponse, ApiError, conflict } from "@/lib/http";
 import { assertProjectManage, assertTaskWritable } from "@/lib/rbac";
 import { approvalSchema } from "@/lib/validation";
 import { logActivity, notify } from "@/lib/activity";
@@ -9,11 +9,17 @@ import { logActivity, notify } from "@/lib/activity";
 type Params = { params: Promise<{ id: string }> };
 
 /**
- * POST /api/tasks/:id/approval  — admin/project-lead signs off (or rejects) a
- * late-completed "outstanding" task (#6).
- *   approve → approval_status=approved, outstanding cleared, task closed (done)
- *   reject  → approval_status=rejected, task reopened (in_progress), stays
- *             outstanding; the assignee is notified to redo it.
+ * POST /api/tasks/:id/approval — a manager (admin / project lead / owner)
+ * decides a task that is waiting for review.
+ *   approve → Done, exactly as PATCH status=done does: outstanding cleared,
+ *             approval stamped, completion time recorded, requester asked to
+ *             sign off.
+ *   reject  → back to In progress with the note; it stays outstanding if it
+ *             was overdue, and the owner is told what to change.
+ *
+ * Before 2026-10-17 this waited for approval_status = 'pending', which nothing
+ * ever set, so the route could never succeed. It now acts on the state tasks
+ * really wait in: status = 'review'.
  */
 export async function POST(req: NextRequest, { params }: Params) {
   try {
@@ -23,42 +29,40 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (!Number.isInteger(taskId)) throw new ApiError(400, "Invalid id");
 
     const rows = await query<DbRow[]>(
-      `SELECT id, project_id, title, assignee_id, approval_status
+      `SELECT id, project_id, title, assignee_id, requested_by, status
        FROM tasks WHERE id = ? LIMIT 1`,
       [taskId]
     );
     const task = rows[0];
     if (!task) throw new ApiError(404, "Task not found");
 
-    // Only an admin or the project lead may decide.
     await assertProjectManage(user, task.project_id);
     await assertTaskWritable(taskId);
 
-    if (task.approval_status !== "pending") {
-      throw new ApiError(409, "This task is not awaiting approval");
+    if (task.status !== "review") {
+      throw conflict("This task is not waiting for review");
     }
 
     const { decision, note } = approvalSchema.parse(
       await req.json().catch(() => ({}))
     );
 
-    if (decision === "approve") {
-      await query(
-        `UPDATE tasks
-           SET approval_status = 'approved', outstanding = 0, status = 'done',
-               approved_by = ?, approved_at = UTC_TIMESTAMP()
-         WHERE id = ?`,
-        [user.id, taskId]
-      );
-    } else {
-      await query(
-        `UPDATE tasks
-           SET approval_status = 'rejected', outstanding = 1,
-               status = 'in_progress', approved_by = ?, approved_at = UTC_TIMESTAMP()
-         WHERE id = ?`,
-        [user.id, taskId]
-      );
-    }
+    // Guarded on the state just read, so two managers deciding at once
+    // cannot both win.
+    const res = (await query<DbResult>(
+      decision === "approve"
+        ? `UPDATE tasks
+              SET status = 'done', outstanding = 0, approval_status = 'approved',
+                  approved_by = ?, approved_at = UTC_TIMESTAMP(), completed_at = UTC_TIMESTAMP(),
+                  request_approved_by = COALESCE(request_approved_by, ?),
+                  request_approved_at = COALESCE(request_approved_at, UTC_TIMESTAMP())
+            WHERE id = ? AND status = 'review' AND signed_off_at IS NULL`
+        : `UPDATE tasks
+              SET status = 'in_progress', approval_status = 'none'
+            WHERE id = ? AND status = 'review' AND signed_off_at IS NULL`,
+      decision === "approve" ? [user.id, user.id, taskId] : [taskId]
+    )) as unknown as DbResult;
+    if (res.affectedRows === 0) throw conflict("Someone else decided this task first");
 
     await logActivity({
       userId: user.id,
@@ -68,14 +72,23 @@ export async function POST(req: NextRequest, { params }: Params) {
       metadata: { title: task.title, note: note ?? null },
     });
 
+    const link = `/projects/${task.project_id}?task=${taskId}`;
     if (task.assignee_id && task.assignee_id !== user.id) {
       await notify(
         task.assignee_id,
-        decision === "approve" ? "task_approved" : "task_rejected",
+        decision === "approve" ? "task_approved" : "task_sent_back",
         decision === "approve"
-          ? `Your completion of "${task.title}" was approved`
+          ? `Your task "${task.title}" was approved and marked done`
           : `"${task.title}" was sent back${note ? `: ${note}` : ""}`,
-        `/projects/${task.project_id}`
+        link
+      );
+    }
+    if (decision === "approve" && task.requested_by && task.requested_by !== user.id) {
+      await notify(
+        task.requested_by,
+        "signoff_requested",
+        `"${task.title}" is done — please review and sign it off`,
+        link
       );
     }
 

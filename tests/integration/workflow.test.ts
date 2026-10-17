@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { query, DbRow } from "@/lib/db";
+import { query, DbRow, DbResult } from "@/lib/db";
 import type { Task, TaskRequest, User } from "@/lib/types";
 import { actAs, call, createLedProject, createUser } from "./helpers";
 
@@ -426,11 +426,21 @@ describe("project request → lead approval", () => {
 
     it("signing off locks the task and everything on it", async () => {
       actAs(sam);
-      const sub = await call<{ subtask: { id: number } }>(subtasks.POST, {
+      // The task is already approved (Done): its owner can't pile new work on
+      // it — that would reopen it, which is a lead's call (redesign 2026-10-17).
+      const refused = await call(subtasks.POST, {
         method: "POST",
         id: taskA.id,
         body: { title: "Check rounding" },
       });
+      expect(refused.status).toBe(409);
+      expect(refused.body).toMatchObject({ error: expect.stringMatching(/already approved/) });
+      // An approved subtask already on the task, for the lock checks below.
+      const inserted = (await query<DbResult>(
+        `INSERT INTO subtasks (task_id, title, status, is_done, assignee_id) VALUES (?, 'Check rounding', 'done', 1, ?)`,
+        [taskA.id, sam.id]
+      )) as unknown as DbResult;
+      const sub = { status: 201, body: { subtask: { id: inserted.insertId } } };
       const com = await call<{ comment: { id: number } }>(comments.POST, {
         method: "POST",
         id: taskA.id,

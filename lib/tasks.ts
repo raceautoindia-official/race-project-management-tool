@@ -1,6 +1,7 @@
 import { pool, query, DbRow } from "./db";
 import type { Label, SpecColumns, WorkType } from "./types";
 import { checklistFromSpec } from "./workflow";
+import { taskProgress as engineTaskProgress, type SubtaskForProgress, type TaskStatus } from "./work-engine";
 
 /**
  * SQL converting a TIMESTAMP column (returned in the session time zone) to UTC,
@@ -15,7 +16,7 @@ export const TASK_SELECT = `
   t.id, t.project_id, t.title, t.description, t.task_type,
   t.existing_behavior, t.expected_behavior, t.acceptance_criteria, t.reason, t.scope,
   t.features, t.flow, t.rules,
-  t.status, t.priority, t.outstanding, t.approval_status, t.approved_by, t.approved_at,
+  t.status, t.priority, t.weight, t.weight_mode, t.position, t.outstanding, t.approval_status, t.approved_by, t.approved_at,
   t.completed_at, t.estimated_hours, t.spent_hours, t.is_additional, t.parent_task_id,
   t.assignee_id, t.created_by, t.due_date, t.start_date, t.created_at, t.updated_at,
   t.request_id, t.requested_by, t.request_approved_by, t.request_approved_at,
@@ -84,8 +85,12 @@ export async function fetchTasks(
 }
 
 /**
- * Attach `labels`, `subtask_total`, and `subtask_done` to a list of task rows,
- * using two batched queries (no N+1). Mutates the rows in place.
+ * Attach `labels` and the subtask roll-up to a list of task rows, using two
+ * batched queries (no N+1). Mutates the rows in place:
+ * - `subtask_total`: subtasks that still count (cancelled ones don't);
+ * - `subtask_done`: those the task owner has approved;
+ * - `progress_approved` / `progress_pending`: the weighted % approved, and
+ *   finished but waiting for review (lib/work-engine.ts taskProgress).
  */
 export async function attachTaskMeta(tasks: DbRow[]): Promise<void> {
   if (tasks.length === 0) return;
@@ -101,8 +106,8 @@ export async function attachTaskMeta(tasks: DbRow[]): Promise<void> {
     ids
   );
   const subRows = await query<DbRow[]>(
-    `SELECT task_id, COUNT(*) AS total, SUM(is_done) AS done
-     FROM subtasks WHERE task_id IN (${placeholders}) GROUP BY task_id`,
+    `SELECT id, task_id, status, weight, weight_mode
+     FROM subtasks WHERE task_id IN (${placeholders})`,
     ids
   );
 
@@ -112,16 +117,23 @@ export async function attachTaskMeta(tasks: DbRow[]): Promise<void> {
     arr.push({ id: r.id, project_id: r.project_id, name: r.name, color: r.color });
     labelsByTask.set(r.task_id, arr);
   }
-  const subByTask = new Map<number, { total: number; done: number }>();
+  const subByTask = new Map<number, SubtaskForProgress[]>();
   for (const r of subRows) {
-    subByTask.set(r.task_id, { total: Number(r.total), done: Number(r.done) });
+    const arr = subByTask.get(r.task_id) ?? [];
+    arr.push({ id: r.id, status: r.status, weight: r.weight, weight_mode: r.weight_mode });
+    subByTask.set(r.task_id, arr);
   }
 
   for (const t of tasks) {
     t.labels = labelsByTask.get(t.id as number) ?? [];
-    const s = subByTask.get(t.id as number);
-    t.subtask_total = s?.total ?? 0;
-    t.subtask_done = s?.done ?? 0;
+    const subs = subByTask.get(t.id as number) ?? [];
+    const live = subs.filter((s) => s.status !== "cancelled");
+    t.subtask_total = live.length;
+    t.subtask_done = live.filter((s) => s.status === "done").length;
+    const p = engineTaskProgress(t.status as TaskStatus, subs);
+    t.progress_approved = Math.round(p.approved * 10) / 10;
+    t.progress_pending = Math.round(p.pending * 10) / 10;
+    if (t.weight !== undefined) t.weight = Number(t.weight);
   }
 }
 
@@ -162,11 +174,13 @@ export async function seedChecklistFromSpec(
   const items = checklistFromSpec(taskType, spec);
   if (!items.length) return 0;
   try {
+    // The spec's points are the task owner's own checklist: theirs to do.
+    const [owner] = await query<DbRow[]>(`SELECT assignee_id FROM tasks WHERE id = ?`, [taskId]);
     await query(
-      `INSERT INTO subtasks (task_id, title, position, source) VALUES ${items
-        .map(() => "(?, ?, ?, ?)")
+      `INSERT INTO subtasks (task_id, title, position, source, assignee_id) VALUES ${items
+        .map(() => "(?, ?, ?, ?, ?)")
         .join(", ")}`,
-      items.flatMap((item, i) => [taskId, item.title, i, item.source])
+      items.flatMap((item, i) => [taskId, item.title, i, item.source, owner?.assignee_id ?? null])
     );
     return items.length;
   } catch (err) {

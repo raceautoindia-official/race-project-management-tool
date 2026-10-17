@@ -288,8 +288,6 @@ export default function TaskDetailModal({
     status: currentTask.status,
     subtask_total: subtasks.length,
     subtask_done: subDone,
-    estimated_hours: currentTask.estimated_hours,
-    spent_hours: currentTask.spent_hours,
   });
 
   const totalMinutes = timeLogs.reduce((s, l) => s + l.minutes, 0);

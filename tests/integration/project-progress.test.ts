@@ -8,13 +8,15 @@ import {
   projectPercent,
   projectUnitsOf,
 } from "@/lib/progress";
+import { fetchTasks } from "@/lib/tasks";
 
 /**
- * A project's completion is counted in checklist items, so a task whose
- * checklist is nearly all ticked counts for nearly all of it.
+ * Since the 2026-10-17 redesign a project's completion is the weighted share
+ * of its tasks that are Done (approved), and a task's is the weighted share of
+ * its subtasks its owner has approved. Ticks no longer count on their own.
  *
- * The same sum exists twice — once in SQL for the lists that never load a
- * project's tasks, once in TypeScript for the board that already has them.
+ * The project sum exists twice — once in SQL for the lists that never load a
+ * project's tasks, once in TypeScript for pages that already have them.
  * These tests exist so the two cannot drift apart.
  */
 describe("project completion", () => {
@@ -23,33 +25,36 @@ describe("project completion", () => {
 
   async function addTask(
     status: string,
-    checklist: boolean[]
-  ): Promise<void> {
+    subtasks: string[],
+    weight?: number
+  ): Promise<number> {
     const res = (await query<DbResult>(
-      `INSERT INTO tasks (project_id, title, status, assignee_id)
-       VALUES (?, ?, ?, ?)`,
-      [projectId, `Task ${status} ${checklist.length}`, status, lead.id]
+      `INSERT INTO tasks (project_id, title, status, assignee_id, weight, weight_mode)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [projectId, `Task ${status} ${subtasks.length}`, status, lead.id, weight ?? 0, weight === undefined ? "auto" : "manual"]
     )) as unknown as DbResult;
-    for (const done of checklist) {
+    for (const s of subtasks) {
       await query(
-        `INSERT INTO subtasks (task_id, title, is_done) VALUES (?, 'item', ?)`,
-        [res.insertId, done ? 1 : 0]
+        `INSERT INTO subtasks (task_id, title, status, is_done) VALUES (?, 'item', ?, ?)`,
+        [res.insertId, s, s === "done" ? 1 : 0]
       );
     }
+    return res.insertId;
   }
+
+  let partly: number;
 
   beforeAll(async () => {
     lead = await createUser("ProgressLead");
     projectId = await createLedProject(lead, "Progress project");
-    // 4 items, 3 ticked.
-    await addTask("in_progress", [true, true, true, false]);
-    // Done counts in full even though one item is unticked.
-    await addTask("done", [true, false]);
-    // No checklist: one unit, unearned until it is Done.
+    // Fixed at 50%: three of four subtasks approved, one waiting for review.
+    partly = await addTask("in_progress", ["done", "done", "done", "review"], 50);
+    // Done counts in full; the two auto tasks share the other 50%.
+    await addTask("done", ["done", "todo"]);
     await addTask("todo", []);
   });
 
-  it("counts ticked items, not whole tasks", async () => {
+  it("counts Done tasks by their weight, not ticked items", async () => {
     const rows = await query<DbRow[]>(
       `SELECT ${PROJECT_UNITS_SQL} AS units, ${PROJECT_CREDITED_SQL} AS credited
          FROM projects p WHERE p.id = ?`,
@@ -57,40 +62,34 @@ describe("project completion", () => {
     );
     const units = Number(rows[0].units);
     const credited = Number(rows[0].credited);
-
-    // 4 + 2 + 1 units; 3 ticked + 2 (the Done task in full) + 0.
-    expect(units).toBe(7);
-    expect(credited).toBe(5);
-    expect(projectPercent({ units, credited })).toBe(71);
-
-    // Counting whole tasks would have called this project a third done.
-    expect(Math.round((1 / 3) * 100)).toBe(33);
+    expect(units).toBeCloseTo(100, 5); // 50 + 25 + 25
+    expect(credited).toBeCloseTo(25, 5); // only the Done task
+    expect(projectPercent({ units, credited })).toBe(25);
   });
 
-  it("agrees with the figure the project board works out for itself", async () => {
+  it("agrees with the figure worked out from loaded tasks", async () => {
     const tasks = await query<DbRow[]>(
-      `SELECT t.status,
-              (SELECT COUNT(*) FROM subtasks s WHERE s.task_id = t.id) AS subtask_total,
-              (SELECT COUNT(*) FROM subtasks s WHERE s.task_id = t.id AND s.is_done)
-                AS subtask_done
-         FROM tasks t WHERE t.project_id = ?`,
+      `SELECT t.id, t.status, t.weight, t.weight_mode FROM tasks t WHERE t.project_id = ?`,
       [projectId]
     );
     const inBrowser = projectUnitsOf(
-      tasks.map((t) => ({
-        status: t.status,
-        subtask_total: Number(t.subtask_total),
-        subtask_done: Number(t.subtask_done),
-      }))
+      tasks.map((t) => ({ id: t.id, status: t.status, weight: t.weight, weight_mode: t.weight_mode }))
     );
-
     const rows = await query<DbRow[]>(
       `SELECT ${PROJECT_UNITS_SQL} AS units, ${PROJECT_CREDITED_SQL} AS credited
          FROM projects p WHERE p.id = ?`,
       [projectId]
     );
-    expect(inBrowser.units).toBe(Number(rows[0].units));
-    expect(inBrowser.credited).toBe(Number(rows[0].credited));
+    expect(inBrowser.units).toBeCloseTo(Number(rows[0].units), 3);
+    expect(inBrowser.credited).toBeCloseTo(Number(rows[0].credited), 3);
+  });
+
+  it("gives each task its approved share, with work in review reported apart", async () => {
+    const [task] = await fetchTasks("t.id = ?", [partly]);
+    expect(task.subtask_total).toBe(4);
+    expect(task.subtask_done).toBe(3);
+    expect(task.progress_approved).toBe(75);
+    expect(task.progress_pending).toBe(25);
   });
 
   it("is zero, not an error, for a project with no tasks at all", async () => {

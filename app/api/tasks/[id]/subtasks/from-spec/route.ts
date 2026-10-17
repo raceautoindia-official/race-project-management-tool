@@ -4,6 +4,8 @@ import { requireUser } from "@/lib/auth";
 import { json, errorResponse, ApiError } from "@/lib/http";
 import { assertTaskEdit, assertTaskWritable } from "@/lib/rbac";
 import { pendingChecklistItems, SPEC_KEYS } from "@/lib/workflow";
+import { listSubtasks, loadTaskContext, syncTaskAfterSubtaskChange } from "@/lib/subtasks";
+import { isManager } from "@/lib/permissions";
 import type { SpecColumns, WorkType } from "@/lib/types";
 
 type Params = { params: Promise<{ id: string }> };
@@ -26,7 +28,7 @@ export async function POST(_req: NextRequest, { params }: Params) {
     if (!Number.isInteger(taskId)) throw new ApiError(400, "Invalid id");
 
     const rows = await query<DbRow[]>(
-      `SELECT project_id, assignee_id, task_type, ${SPEC_KEYS.join(", ")}
+      `SELECT project_id, assignee_id, status, task_type, ${SPEC_KEYS.join(", ")}
          FROM tasks WHERE id = ? LIMIT 1`,
       [taskId]
     );
@@ -37,6 +39,13 @@ export async function POST(_req: NextRequest, { params }: Params) {
       assignee_id: task.assignee_id,
     });
     await assertTaskWritable(taskId);
+    if (task.status === "done" && user.role !== "admin") {
+      // Adding spec points to an approved task would reopen it; a manager decides that.
+      const { ctx } = await loadTaskContext(user, taskId);
+      if (!isManager(ctx)) {
+        throw new ApiError(409, "This task is already approved — ask the project owner or a lead to reopen it before adding work");
+      }
+    }
 
     const existing = await query<DbRow[]>(
       `SELECT title FROM subtasks WHERE task_id = ?`,
@@ -57,35 +66,23 @@ export async function POST(_req: NextRequest, { params }: Params) {
         [taskId]
       );
       await query(
-        `INSERT INTO subtasks (task_id, title, position, source) VALUES ${pending
-          .map(() => "(?, ?, ?, ?)")
+        `INSERT INTO subtasks (task_id, title, position, source, assignee_id) VALUES ${pending
+          .map(() => "(?, ?, ?, ?, ?)")
           .join(", ")}`,
         pending.flatMap((item, i) => [
           taskId,
           item.title,
           Number(nextPos) + i,
           item.source,
+          task.assignee_id ?? null,
         ])
       );
     }
 
+    // New open work pulls a task in review back into progress.
+    if (pending.length) await syncTaskAfterSubtaskChange(taskId, user);
     // The whole list back, so the caller shows exactly what is stored.
-    const subtasks = await query<DbRow[]>(
-      `SELECT id, task_id, title, source, is_done, position FROM subtasks
-        WHERE task_id = ? ORDER BY position ASC, id ASC`,
-      [taskId]
-    );
-    return json({
-      added: pending.length,
-      subtasks: subtasks.map((r) => ({
-        id: r.id,
-        task_id: r.task_id,
-        title: r.title,
-        source: r.source ?? null,
-        is_done: Boolean(r.is_done),
-        position: r.position,
-      })),
-    });
+    return json({ added: pending.length, subtasks: await listSubtasks(taskId) });
   } catch (err) {
     return errorResponse(err);
   }

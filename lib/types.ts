@@ -157,6 +157,13 @@ export interface Task extends SpecColumns {
   labels?: Label[];
   subtask_total?: number;
   subtask_done?: number;
+  /** Share of the project's progress (redesign 2026-10-17). */
+  weight?: number;
+  weight_mode?: "auto" | "manual";
+  position?: number;
+  /** Weighted % of subtasks approved, and finished-but-unreviewed. */
+  progress_approved?: number;
+  progress_pending?: number;
 }
 
 /** A task raised by a project member, waiting for a lead to approve it. */
