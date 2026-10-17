@@ -69,7 +69,7 @@ export default function ToastProvider({
               onClick={() =>
                 setToasts((prev) => prev.filter((x) => x.id !== t.id))
               }
-              className="text-slate-400 hover:text-slate-600"
+              className="text-slate-500 hover:text-slate-600"
               aria-label="Dismiss"
             >
               ✕

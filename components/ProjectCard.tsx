@@ -1,11 +1,17 @@
 import Link from "next/link";
-import { ProjectStatusBadge, RoleBadge } from "./Badge";
+import { ProjectStatusBadge, RequestStatusBadge, RoleBadge } from "./Badge";
+import { DepartmentBadge } from "./DepartmentField";
+import { projectPercent } from "@/lib/progress";
 import type { Project } from "@/lib/types";
 
 export default function ProjectCard({ project }: { project: Project }) {
   const total = project.task_count ?? 0;
   const done = project.done_count ?? 0;
-  const pct = total ? Math.round((done / total) * 100) : 0;
+  // Counted in checklist items, so a task nine-tenths ticked is not nothing.
+  const pct = projectPercent({
+    units: project.progress_units ?? 0,
+    credited: project.progress_done ?? 0,
+  });
 
   return (
     <Link
@@ -14,20 +20,31 @@ export default function ProjectCard({ project }: { project: Project }) {
     >
       <div className="flex items-start justify-between gap-2">
         <h3 className="font-semibold text-slate-900">{project.name}</h3>
-        <ProjectStatusBadge status={project.status} />
+        <div className="flex shrink-0 flex-wrap justify-end gap-1">
+          <DepartmentBadge name={project.department} />
+          {project.approval_status && project.approval_status !== "approved" ? (
+            <RequestStatusBadge status={project.approval_status} />
+          ) : (
+            <ProjectStatusBadge status={project.status} />
+          )}
+        </div>
       </div>
-      <p className="mt-1 line-clamp-2 min-h-[2.5rem] text-sm text-slate-500">
+      <p className="mt-1 line-clamp-2 min-h-[2.5rem] text-sm text-slate-600">
         {project.description || "No description"}
       </p>
 
       <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-100">
         <div className="h-full bg-indigo-500" style={{ width: `${pct}%` }} />
       </div>
-      <div className="mt-1 text-xs text-slate-400">
-        {done}/{total} tasks done ({pct}%)
+      <div className="mt-1 text-xs text-slate-600">
+        <span className="figure font-medium text-slate-800">{pct}%</span> complete
+        <span className="text-slate-500">
+          {" · "}
+          {done}/{total} tasks done
+        </span>
       </div>
 
-      <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
+      <div className="mt-3 flex items-center justify-between text-xs text-slate-600">
         <span>
           {project.member_count ?? 0} member
           {(project.member_count ?? 0) === 1 ? "" : "s"}

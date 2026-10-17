@@ -15,7 +15,7 @@ function toMysql(v: string): string {
 }
 
 /** GET — the current user's reminders. */
-export async function GET(_req: NextRequest) {
+export async function GET() {
   try {
     const user = await requireUser();
     const rows = await query<DbRow[]>(

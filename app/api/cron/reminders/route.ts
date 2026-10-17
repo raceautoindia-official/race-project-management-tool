@@ -3,7 +3,7 @@ import { query, DbRow } from "@/lib/db";
 import { json, errorResponse } from "@/lib/http";
 import { assertCron } from "@/lib/cron";
 import { notify } from "@/lib/activity";
-import { sendEmail, emailLayout, appBaseUrl } from "@/lib/mailer";
+import { sendEmail, emailLayout, appBaseUrl, escapeHtml } from "@/lib/mailer";
 import { formatIst } from "@/lib/tz";
 import { REMINDER_CATEGORY_LABELS } from "@/lib/types";
 
@@ -64,8 +64,8 @@ export async function POST(req: NextRequest) {
           subject: `Reminder: ${r.title}`,
           html: emailLayout(
             `${label} reminder`,
-            `<p><strong>${r.title}</strong> is scheduled for <strong>${whenIst}</strong> (IST).</p>
-             ${r.notes ? `<p>${r.notes}</p>` : ""}
+            `<p><strong>${escapeHtml(r.title)}</strong> is scheduled for <strong>${escapeHtml(whenIst)}</strong> (IST).</p>
+             ${r.notes ? `<p>${escapeHtml(r.notes)}</p>` : ""}
              <p><a href="${base}/reminders">View your reminders →</a></p>`
           ),
         });

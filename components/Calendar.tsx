@@ -70,7 +70,7 @@ export default function Calendar({
         </div>
       </div>
 
-      <div className="grid grid-cols-7 gap-px overflow-hidden rounded-lg bg-slate-200 text-center text-xs font-medium text-slate-500">
+      <div className="grid grid-cols-7 gap-px overflow-hidden rounded-lg bg-slate-200 text-center text-xs font-medium text-slate-600">
         {WEEKDAYS.map((d) => (
           <div key={d} className="bg-slate-50 py-1.5">
             {d}
@@ -90,7 +90,7 @@ export default function Calendar({
             >
               <div
                 className={`mb-1 inline-flex h-5 w-5 items-center justify-center rounded-full text-xs ${
-                  isToday ? "bg-indigo-600 font-semibold text-white" : "text-slate-500"
+                  isToday ? "bg-indigo-600 font-semibold text-white" : "text-slate-600"
                 }`}
               >
                 {format(day, "d")}
@@ -111,7 +111,7 @@ export default function Calendar({
                   </button>
                 ))}
                 {dayTasks.length > 3 && (
-                  <div className="px-1 text-[10px] text-slate-400">
+                  <div className="px-1 text-[10px] text-slate-500">
                     +{dayTasks.length - 3} more
                   </div>
                 )}

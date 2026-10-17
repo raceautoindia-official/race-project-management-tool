@@ -45,7 +45,7 @@ export default async function NotificationsPage({
       />
 
       {rows.length === 0 ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-slate-400">
+        <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-slate-500">
           No notifications yet.
         </div>
       ) : (
@@ -64,13 +64,13 @@ export default async function NotificationsPage({
                     )}
                     <span
                       className={`text-sm ${
-                        n.is_read ? "text-slate-500" : "font-medium text-slate-800"
+                        n.is_read ? "text-slate-600" : "font-medium text-slate-800"
                       }`}
                     >
                       {n.message}
                     </span>
                   </div>
-                  <span className="shrink-0 text-xs text-slate-400">
+                  <span className="shrink-0 text-xs text-slate-500">
                     {formatRelative(n.created_at)}
                   </span>
                 </div>
@@ -90,7 +90,7 @@ export default async function NotificationsPage({
       )}
 
       {totalPages > 1 && (
-        <div className="mt-4 flex items-center justify-between text-sm text-slate-500">
+        <div className="mt-4 flex items-center justify-between text-sm text-slate-600">
           <span>
             Page {page} of {totalPages}
           </span>
@@ -103,7 +103,7 @@ export default async function NotificationsPage({
                 Previous
               </Link>
             ) : (
-              <span className="rounded-lg border border-slate-200 px-3 py-1.5 text-slate-300">
+              <span className="rounded-lg border border-slate-200 px-3 py-1.5 text-slate-500">
                 Previous
               </span>
             )}
@@ -115,7 +115,7 @@ export default async function NotificationsPage({
                 Next
               </Link>
             ) : (
-              <span className="rounded-lg border border-slate-200 px-3 py-1.5 text-slate-300">
+              <span className="rounded-lg border border-slate-200 px-3 py-1.5 text-slate-500">
                 Next
               </span>
             )}

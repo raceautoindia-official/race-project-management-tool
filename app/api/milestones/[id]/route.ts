@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { query, DbRow } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { json, errorResponse, ApiError } from "@/lib/http";
-import { assertProjectManage } from "@/lib/rbac";
+import { assertProjectManage, assertProjectWritable } from "@/lib/rbac";
 import { updateMilestoneSchema } from "@/lib/validation";
 
 type Params = { params: Promise<{ id: string }> };
@@ -24,7 +24,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     const msId = Number(id);
     if (!Number.isInteger(msId)) throw new ApiError(400, "Invalid id");
     const ms = await loadMilestone(msId);
-    await assertProjectManage(user, ms.project_id);
+    assertProjectWritable(await assertProjectManage(user, ms.project_id));
 
     const data = updateMilestoneSchema.parse(await req.json().catch(() => ({})));
     const sets: string[] = [];
@@ -60,7 +60,7 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
     const msId = Number(id);
     if (!Number.isInteger(msId)) throw new ApiError(400, "Invalid id");
     const ms = await loadMilestone(msId);
-    await assertProjectManage(user, ms.project_id);
+    assertProjectWritable(await assertProjectManage(user, ms.project_id));
     await query(`DELETE FROM milestones WHERE id = ?`, [msId]);
     return json({ ok: true });
   } catch (err) {

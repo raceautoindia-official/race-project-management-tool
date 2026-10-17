@@ -1,4 +1,3 @@
-import { NextRequest } from "next/server";
 import { query, DbRow } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { json, errorResponse } from "@/lib/http";
@@ -11,11 +10,15 @@ export const dynamic = "force-dynamic";
  *   admin  → everything
  *   others → tasks they lead (project lead) or are assigned to
  */
-export async function GET(_req: NextRequest) {
+export async function GET() {
   try {
     const user = await requireUser();
 
-    const where = ["(t.outstanding = 1 OR t.status = 'review')"];
+    const where = [
+      "(t.outstanding = 1 OR t.status = 'review')",
+      // Read-only projects (pending/rejected requests, completed) need no action.
+      "p.approval_status = 'approved' AND p.status <> 'completed'",
+    ];
     const params: unknown[] = [];
     if (user.role !== "admin") {
       where.push(`(

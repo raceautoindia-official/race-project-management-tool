@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { apiFetch } from "@/lib/api-client";
 import { useToast } from "@/components/ToastProvider";
 
@@ -13,23 +13,22 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return out;
 }
 
+function pushSupported(): boolean {
+  return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+}
+const noSubscription = () => () => {};
+
 export default function PushToggle() {
   const { toast } = useToast();
-  const [supported, setSupported] = useState(true);
+  // Browser capability, read without a state update in an effect (the server
+  // render assumes support; the client corrects it on hydration).
+  const supported = useSyncExternalStore(noSubscription, pushSupported, () => true);
   const [subscribed, setSubscribed] = useState(false);
   const [busy, setBusy] = useState(false);
   const vapid = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (
-      !("serviceWorker" in navigator) ||
-      !("PushManager" in window) ||
-      !("Notification" in window)
-    ) {
-      setSupported(false);
-      return;
-    }
+    if (!pushSupported()) return;
     navigator.serviceWorker
       .getRegistration()
       .then(async (reg) => {
@@ -89,14 +88,14 @@ export default function PushToggle() {
 
   if (!supported) {
     return (
-      <p className="text-sm text-slate-400">
+      <p className="text-sm text-slate-500">
         Your browser doesn’t support push notifications.
       </p>
     );
   }
   if (!vapid) {
     return (
-      <p className="text-sm text-slate-400">
+      <p className="text-sm text-slate-500">
         Push notifications aren’t configured on this server yet.
       </p>
     );
@@ -104,7 +103,7 @@ export default function PushToggle() {
 
   return (
     <div className="flex items-center justify-between gap-3">
-      <div className="text-xs text-slate-500">
+      <div className="text-xs text-slate-600">
         {subscribed
           ? "On — you’ll get reminders & mentions even when the app is closed."
           : "Get reminders and @mentions as desktop/mobile notifications, even when PMApp is closed."}
