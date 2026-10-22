@@ -97,66 +97,66 @@ h3 {
 }
 
 /**
- * A button sitting on the dark header band. The band is the one dark surface
- * in the page, so its controls need their own treatment rather than the
- * light-background one they would otherwise inherit.
+ * A button in a page header. Headers are light cards now (as in the approved
+ * preview), so these are white buttons that each carry their own hue — the
+ * colour tells you what kind of action it is before you read it.
  */
 .on-band {
-  border-color: color-mix(in srgb, white 25%, transparent);
-  background: transparent;
-  color: #e8ecf4;
+  border-color: var(--color-slate-200);
+  background: #fff;
+  color: var(--color-slate-700);
 }
 .on-band:hover {
-  background: color-mix(in srgb, white 10%, transparent);
-  color: #fff;
+  background: var(--color-slate-50);
+  color: var(--color-slate-900);
 }
 
-/* Each action on the band carries its own hue. */
+/* Each action carries its own hue. */
 .band-out {
-  border-color: color-mix(in srgb, #34d399 45%, transparent);
-  color: #a7f3d0;
+  border-color: #a7f3d0;
+  color: #047857;
 }
 .band-out:hover {
-  background: color-mix(in srgb, #34d399 14%, transparent);
-  color: #d1fae5;
+  background: #ecfdf5;
+  color: #065f46;
 }
 .band-sheet {
-  border-color: color-mix(in srgb, #22d3ee 45%, transparent);
-  color: #a5f3fc;
+  border-color: #a5f3fc;
+  color: #0e7490;
 }
 .band-sheet:hover {
-  background: color-mix(in srgb, #22d3ee 14%, transparent);
-  color: #cffafe;
+  background: #ecfeff;
+  color: #155e75;
 }
 .band-in {
-  border-color: color-mix(in srgb, #a78bfa 45%, transparent);
-  color: #ddd6fe;
+  border-color: #ddd6fe;
+  color: #6d28d9;
 }
 .band-in:hover {
-  background: color-mix(in srgb, #a78bfa 16%, transparent);
-  color: #ede9fe;
+  background: #f5f3ff;
+  color: #5b21b6;
 }
 .band-set {
-  border-color: color-mix(in srgb, #fbbf24 45%, transparent);
-  color: #fde68a;
+  border-color: #fde68a;
+  color: #b45309;
 }
 .band-set:hover {
-  background: color-mix(in srgb, #fbbf24 14%, transparent);
-  color: #fef3c7;
+  background: #fffbeb;
+  color: #92400e;
 }
 .band-people {
-  border-color: color-mix(in srgb, #38bdf8 45%, transparent);
-  color: #bae6fd;
+  border-color: #bae6fd;
+  color: #0369a1;
 }
 .band-people:hover {
-  background: color-mix(in srgb, #38bdf8 14%, transparent);
-  color: #e0f2fe;
+  background: #f0f9ff;
+  color: #075985;
 }
 .band-edit {
-  border-color: color-mix(in srgb, #f472b6 45%, transparent);
-  color: #fbcfe8;
+  border-color: #fbcfe8;
+  color: #be185d;
 }
 .band-edit:hover {
-  background: color-mix(in srgb, #f472b6 14%, transparent);
-  color: #fce7f3;
+  background: #fdf2f8;
+  color: #9d174d;
 }

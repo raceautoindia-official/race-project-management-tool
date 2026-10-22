@@ -238,6 +238,9 @@ export interface Attachment {
   created_at: string;
   uploaded_by: number | null;
   uploader_name?: string | null;
+  /** Set when the file was added on a subtask (e.g. sent back with a change request). */
+  subtask_id?: number | null;
+  subtask_title?: string | null;
 }
 
 export interface ActivityItem {

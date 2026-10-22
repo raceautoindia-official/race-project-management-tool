@@ -52,7 +52,7 @@ export function WorkProgress({
         aria-valuemin={0}
         aria-valuemax={100}
       >
-        <div className={`h-full transition-all duration-500 ${a >= 99.5 ? "bg-green-500" : "bg-indigo-500"}`} style={{ width: `${a}%` }} />
+        <div className={`h-full transition-all duration-500 ${a >= 99.5 ? "bg-gradient-to-r from-emerald-400 to-green-500" : "bg-gradient-to-r from-indigo-500 to-violet-500"}`} style={{ width: `${a}%` }} />
         {p > 0 && (
           <div
             className="h-full bg-amber-300 transition-all duration-500"
@@ -68,7 +68,7 @@ export function WorkProgress({
 export function ProgressLegend() {
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
-      <span className="flex items-center gap-1.5"><span className="h-2 w-3 rounded-sm bg-indigo-500" /> Approved (counts)</span>
+      <span className="flex items-center gap-1.5"><span className="h-2 w-3 rounded-sm bg-gradient-to-r from-indigo-500 to-violet-500" /> Approved (counts)</span>
       <span className="flex items-center gap-1.5"><span className="h-2 w-3 rounded-sm bg-amber-300" /> Waiting for review (doesn&apos;t count yet)</span>
     </div>
   );

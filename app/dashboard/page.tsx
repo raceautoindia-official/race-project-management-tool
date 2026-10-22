@@ -13,6 +13,7 @@ import IntroStrip from "@/components/work/IntroStrip";
 import ReviewActions from "@/components/work/ReviewActions";
 import { AttentionRow, ItemContext, MeetingList, PageTabs, itemHref, utcAgo, type MeetingRow } from "@/components/work/items";
 import { DateRange, DueLabel, HealthBadge, ProgressLegend, SubtaskStatusBadge, WorkProgress } from "@/components/work/kit";
+import ScheduleTrack from "@/components/work/ScheduleTrack";
 import DoActions from "@/components/work/DoActions";
 
 export const dynamic = "force-dynamic";
@@ -78,10 +79,10 @@ export default async function MyWorkPage({ searchParams }: { searchParams: Promi
 
           {/* At-a-glance counters */}
           <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Counter label="To review" value={toReview} tone="text-amber-700" href="/reviews" />
-            <Counter label="Overdue" value={overdue.length} tone="text-red-600" href="#my-todo" />
-            <Counter label="Due this week" value={thisWeek.length} tone="text-indigo-700" href="#my-todo" />
-            <Counter label="Waiting on others" value={work.submitted.length} tone="text-slate-700" href="/reviews?tab=sent" />
+            <Counter icon="⧗" label="To review" value={toReview} tone="amber" href="/reviews" />
+            <Counter icon="⚠" label="Overdue" value={overdue.length} tone="red" href="#my-todo" />
+            <Counter icon="📅" label="Due this week" value={thisWeek.length} tone="indigo" href="#my-todo" />
+            <Counter icon="↗" label="Waiting on others" value={work.submitted.length} tone="sky" href="/reviews?tab=sent" />
           </div>
 
           <div className="grid gap-6 lg:grid-cols-3">
@@ -99,11 +100,29 @@ export default async function MyWorkPage({ searchParams }: { searchParams: Promi
   );
 }
 
-function Counter({ label, value, tone, href }: { label: string; value: number; tone: string; href: string }) {
+/** A coloured count; it fades to grey at zero so the ones that matter stand out. */
+const COUNTER_TONES = {
+  amber: { box: "bg-amber-50 ring-amber-200 hover:ring-amber-400", figure: "text-amber-700", icon: "bg-amber-500" },
+  red: { box: "bg-red-50 ring-red-200 hover:ring-red-400", figure: "text-red-600", icon: "bg-red-500" },
+  indigo: { box: "bg-indigo-50 ring-indigo-200 hover:ring-indigo-400", figure: "text-indigo-700", icon: "bg-indigo-500" },
+  sky: { box: "bg-sky-50 ring-sky-200 hover:ring-sky-400", figure: "text-sky-700", icon: "bg-sky-500" },
+} as const;
+
+function Counter({ icon, label, value, tone, href }: { icon: string; label: string; value: number; tone: keyof typeof COUNTER_TONES; href: string }) {
+  const t = COUNTER_TONES[tone];
+  const on = value > 0;
   return (
-    <Link href={href} className="block rounded-2xl bg-white p-4 ring-1 ring-slate-200 transition hover:ring-indigo-300">
-      <p className={`figure text-2xl font-semibold ${value > 0 ? tone : "text-slate-300"}`}>{value}</p>
-      <p className="text-xs font-medium text-slate-500">{label}</p>
+    <Link
+      href={href}
+      className={`flex items-center gap-3 rounded-2xl p-4 ring-1 transition ${on ? t.box : "bg-white ring-slate-200 hover:ring-slate-300"}`}
+    >
+      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-base text-white ${on ? t.icon : "bg-slate-300"}`} aria-hidden>
+        {icon}
+      </span>
+      <span>
+        <span className={`figure block text-2xl font-bold leading-none ${on ? t.figure : "text-slate-400"}`}>{value}</span>
+        <span className="text-xs font-medium text-slate-600">{label}</span>
+      </span>
     </Link>
   );
 }
@@ -310,12 +329,14 @@ function OwnedProjects({ work }: { work: Awaited<ReturnType<typeof getMyWork>> }
     <SectionCard title={`Projects I own · ${work.ownedProjects.length}`}>
       <div className="grid gap-3 sm:grid-cols-2">
         {work.ownedProjects.map((p) => (
-          <Link key={p.id} href={`/projects/${p.id}`} className="rounded-xl border border-slate-200 p-3 transition hover:border-indigo-300 hover:shadow-sm">
+          <Link key={p.id} href={`/projects/${p.id}`} className="rounded-xl border border-slate-200 border-t-4 border-t-violet-400 p-3 transition hover:border-violet-300 hover:shadow-sm">
             <div className="flex items-start justify-between gap-2">
-              <span className="min-w-0 text-sm font-medium text-slate-900">{p.name}</span>
+              <span className="min-w-0 text-sm font-medium text-slate-900">
+                {p.name} <span className="figure ml-1 font-bold text-slate-900">{p.percent}%</span>
+              </span>
               <HealthBadge approved={p.percent} start={p.start_date} due={p.due_date} />
             </div>
-            <WorkProgress approved={p.percent} showLabel label={p.name} className="mt-3" />
+            <ScheduleTrack variant="compact" approved={p.percent} start={p.start_date} due={p.due_date} className="mt-3" />
             <p className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
               <span>
                 Due <DueLabel date={p.due_date} />

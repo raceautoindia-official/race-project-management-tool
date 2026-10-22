@@ -3,8 +3,9 @@
 import { useState } from "react";
 import Modal from "@/components/Modal";
 import { useToast } from "@/components/ToastProvider";
-import { apiFetch, isConflict } from "@/lib/api-client";
+import { apiFetch } from "@/lib/api-client";
 import { reviewsChanged } from "./review-count";
+import { FilesField, filesOk, noteWithFiles, uploadFiles } from "./AttachFiles";
 
 /**
  * What the current person can do with a task, in plain words, plus who acts
@@ -48,6 +49,7 @@ export default function TaskActions({
   const [busy, setBusy] = useState(false);
   const [sendingBack, setSendingBack] = useState(false);
   const [note, setNote] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
 
   const isOwner = task.assignee_id === currentUserId;
   const hasSubtasks = Number(task.subtask_total ?? 0) > 0;
@@ -62,7 +64,8 @@ export default function TaskActions({
       reviewsChanged();
       onChanged();
     } catch (e) {
-      if (isConflict(e)) onChanged();
+      // Re-read either way: a half-finished send-back still changed the task.
+      onChanged();
       toast(e instanceof Error ? e.message : "That didn't work — please try again", "error");
     } finally {
       setBusy(false);
@@ -144,17 +147,23 @@ export default function TaskActions({
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
           placeholder="e.g. The totals don't match the invoice — please recheck before sending again."
         />
+        <FilesField files={files} onChange={setFiles} />
         <div className="mt-4 flex justify-end gap-2">
           <button type="button" onClick={() => setSendingBack(false)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50">
             Cancel
           </button>
           <button
             type="button"
-            disabled={!note.trim() || busy}
+            disabled={!note.trim() || busy || !filesOk(files)}
             onClick={() =>
-              void run(() => decide("reject", note.trim()), "Sent back with your note").then(() => {
+              void run(async () => {
+                await decide("reject", noteWithFiles(note.trim(), files));
+                const failed = files.length ? await uploadFiles(`/api/tasks/${task.id}/attachments`, files) : [];
+                if (failed.length) throw new Error(`Sent back, but these files didn't upload: ${failed.join(", ")}`);
+              }, `Sent back with your note${files.length ? " and files" : ""}`).then(() => {
                 setSendingBack(false);
                 setNote("");
+                setFiles([]);
               })
             }
             className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"

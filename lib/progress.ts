@@ -9,7 +9,8 @@ import { effectiveWeights } from "./work-engine";
  *   approved (worked out by lib/tasks.ts attachTaskMeta with the engine in
  *   lib/work-engine.ts); a Done task is 100%. A task without subtasks shows
  *   nothing until it is Done — finishing it means sending it for review.
- * - A project's bar: the weighted share of its tasks that are Done.
+ * - A project's bar: each task's approved share, by the task's weight — so
+ *   an approved subtask moves the project too, not only a finished task.
  *
  * The names below are the ones the app already used, so every list, card and
  * dashboard that showed checklist units now shows weighted, approved progress
@@ -57,8 +58,8 @@ export function statusCounts(
 
 /**
  * A project's progress as two numbers: the total of its tasks' effective
- * weights (`units`, 100 whenever it has tasks) and the share of that held by
- * Done tasks (`credited`).
+ * weights (`units`, 100 whenever it has tasks) and the share of that earned
+ * by approved work (`credited`): each task's weight × its approved %.
  */
 export interface ProjectUnits {
   units: number;
@@ -73,7 +74,12 @@ export function projectPercent(u: ProjectUnits | null | undefined): number {
 
 /** The same sum over tasks already loaded in the browser. */
 export function projectUnitsOf(
-  tasks: (Pick<Task, "id" | "status"> & { weight?: number | string | null; weight_mode?: string | null })[]
+  tasks: (Pick<Task, "id" | "status"> & {
+    weight?: number | string | null;
+    weight_mode?: string | null;
+    /** From attachTaskMeta; a task without it counts only once Done. */
+    progress_approved?: number | null;
+  })[]
 ): ProjectUnits {
   const weights = effectiveWeights(
     tasks.map((t) => ({
@@ -87,7 +93,8 @@ export function projectUnitsOf(
   for (const t of tasks) {
     const w = weights.get(t.id) ?? 0;
     units += w;
-    if (t.status === "done") credited += w;
+    const share = t.status === "done" ? 100 : Math.max(0, Math.min(100, Number(t.progress_approved ?? 0)));
+    credited += (w * share) / 100;
   }
   return { units, credited };
 }
@@ -115,7 +122,23 @@ export const PROJECT_UNITS_SQL = `
      FROM tasks t
     WHERE t.project_id = p.id)`;
 
+/** A live subtask's effective weight in SQL (alias `s`, its task `t`). */
+const SUBTASK_WEIGHT_SQL = `
+  CASE WHEN s.weight_mode = 'manual' THEN s.weight
+       ELSE GREATEST(0, 100 - (SELECT COALESCE(SUM(m.weight), 0) FROM subtasks m
+                                WHERE m.task_id = t.id AND m.status <> 'cancelled' AND m.weight_mode = 'manual'))
+            / (SELECT COUNT(*) FROM subtasks a
+                WHERE a.task_id = t.id AND a.status <> 'cancelled' AND a.weight_mode = 'auto') END`;
+
+/** A task's approved fraction, 0–1 (alias `t`): Done is 1, else its approved subtasks' share. */
+const TASK_APPROVED_FRACTION_SQL = `
+  CASE WHEN t.status = 'done' THEN 1
+       ELSE COALESCE((SELECT SUM(CASE WHEN s.status = 'done' THEN ${SUBTASK_WEIGHT_SQL} ELSE 0 END)
+                             / NULLIF(SUM(${SUBTASK_WEIGHT_SQL}), 0)
+                        FROM subtasks s
+                       WHERE s.task_id = t.id AND s.status <> 'cancelled'), 0) END`;
+
 export const PROJECT_CREDITED_SQL = `
-  (SELECT COALESCE(SUM(CASE WHEN t.status = 'done' THEN ${EFFECTIVE_WEIGHT_SQL} ELSE 0 END), 0)
+  (SELECT COALESCE(SUM((${EFFECTIVE_WEIGHT_SQL}) * (${TASK_APPROVED_FRACTION_SQL})), 0)
      FROM tasks t
     WHERE t.project_id = p.id)`;

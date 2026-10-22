@@ -12,6 +12,8 @@ import * as projectTasks from "@/app/api/projects/[id]/tasks/route";
 import * as project from "@/app/api/projects/[id]/route";
 import * as approval from "@/app/api/tasks/[id]/approval/route";
 import * as levels from "@/app/api/designation-levels/route";
+import * as subtaskFiles from "@/app/api/subtasks/[id]/attachments/route";
+import * as taskFiles from "@/app/api/tasks/[id]/attachments/route";
 import { fetchTasks } from "@/lib/tasks";
 
 /**
@@ -143,6 +145,31 @@ describe("review before it counts", () => {
     expect((await act(owner, theirs, "request_changes")).status).toBe(400);
     const r = await act(owner, theirs, "request_changes", "Use last quarter's numbers");
     expect(r.body.subtask).toMatchObject({ status: "in_progress", changes_requested: "Use last quarter's numbers" });
+  });
+
+  it("carries files with the change request, on the subtask and in its task's list", async () => {
+    const form = new FormData();
+    form.append("file", new Blob(["marked up"], { type: "text/plain" }), "markup.txt");
+    actAs(owner);
+    const up = await call<{ attachment: { subtask_id: number; filename: string } }>(subtaskFiles.POST, {
+      method: "POST",
+      id: theirs,
+      body: form,
+    });
+    expect(up.status).toBe(201);
+    expect(up.body.attachment).toMatchObject({ subtask_id: theirs, filename: "markup.txt" });
+
+    // The assignee sees it on the subtask; the task lists it, labelled.
+    actAs(doer);
+    const onSubtask = await call<{ attachments: { filename: string }[] }>(subtaskFiles.GET, { id: theirs });
+    expect(onSubtask.body.attachments.map((a) => a.filename)).toEqual(["markup.txt"]);
+    const onTask = await call<{ attachments: { filename: string; subtask_id: number | null }[] }>(taskFiles.GET, { id: taskId });
+    expect(onTask.body.attachments.find((a) => a.filename === "markup.txt")?.subtask_id).toBe(theirs);
+
+    // Someone outside the project can neither read nor add.
+    actAs(outsider);
+    expect((await call(subtaskFiles.GET, { id: theirs })).status).toBe(403);
+    expect((await call(subtaskFiles.POST, { method: "POST", id: theirs, body: form })).status).toBe(403);
   });
 
   it("counts approved work only, by weight", async () => {

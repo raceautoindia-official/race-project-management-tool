@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useId, useMemo, useState } from "react";
 import { HealthBadge } from "@/components/work/kit";
+import ScheduleTrack from "./ScheduleTrack";
 import { scheduleHealth } from "@/lib/work-engine";
 import { todayIST } from "@/lib/work-dates";
 import type { ProjectProgressRow } from "@/lib/work-views";
@@ -135,11 +136,8 @@ function ProgressRow({ row: r, today }: { row: ProjectProgressRow; today: string
         </Link>
         <HealthBadge approved={r.percent} start={r.start_date} due={r.due_date} />
       </div>
-      <div className="relative h-3 w-full rounded bg-slate-100" role="img" aria-label={`${r.name}: ${summary}`} title={summary}>
-        {r.percent > 0 && <div className="h-full rounded bg-indigo-600" style={{ width: `${r.percent}%` }} />}
-        {expected !== null && (
-          <div className="absolute -top-1 h-5 w-0.5 bg-slate-800" style={{ left: `calc(${Math.min(99.5, expected)}% - 1px)` }} />
-        )}
+      <div title={summary}>
+        <ScheduleTrack variant="compact" approved={r.percent} start={r.start_date} due={r.due_date} />
       </div>
       <p className="mt-1 flex flex-wrap gap-x-2 text-xs text-slate-500">
         <span>
@@ -148,7 +146,7 @@ function ProgressRow({ row: r, today }: { row: ProjectProgressRow; today: string
           {behind > 0 && <> · {behind} points behind</>}
         </span>
         <span>
-          · {r.done_count}/{r.task_count} tasks done
+          · {r.done_count}/{r.task_count} tasks approved
         </span>
         {r.review_count > 0 && <span className="text-amber-700">· {r.review_count} waiting for review</span>}
         {r.overdue_count > 0 && <span className="text-red-600">· {r.overdue_count} overdue</span>}

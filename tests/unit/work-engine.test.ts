@@ -5,6 +5,7 @@ import {
   projectProgress,
   rebalance,
   scheduleHealth,
+  forecast,
   subtaskSubmitOutcome,
   taskProgress,
   taskStatusAfterSubtaskChange,
@@ -114,13 +115,28 @@ describe("progress counts approved work only", () => {
     expect(taskProgress("done", [auto(1)])).toEqual({ approved: 100, pending: 0 });
   });
 
-  it("moves the project only when a task is approved, by its weight", () => {
+  it("moves the project when a task is approved, by its weight", () => {
     const p = projectProgress([
       { id: 1, weight: 60, weight_mode: "manual", status: "done" },
       { id: 2, weight: 40, weight_mode: "manual", status: "review" },
     ]);
     expect(p).toEqual({ approved: 60, pending: 40 });
     expect(projectProgress([])).toEqual({ approved: 0, pending: 0 });
+  });
+
+  it("moves the project as soon as a subtask is approved", () => {
+    // Task 2 is worth 40% of the project; half of its subtasks are approved
+    // and a quarter waits for review → +20% approved, +10% pending.
+    const p = projectProgress([
+      { id: 1, weight: 60, weight_mode: "manual", status: "todo", progress: { approved: 0, pending: 0 } },
+      { id: 2, weight: 40, weight_mode: "manual", status: "in_progress", progress: { approved: 50, pending: 25 } },
+    ]);
+    expect(p.approved).toBeCloseTo(20, 5);
+    expect(p.pending).toBeCloseTo(10, 5);
+    // A Done task is 100% whatever its subtasks say.
+    expect(
+      projectProgress([{ id: 1, weight: 100, weight_mode: "manual", status: "done", progress: { approved: 40, pending: 0 } }])
+    ).toEqual({ approved: 100, pending: 0 });
   });
 });
 
@@ -156,6 +172,31 @@ describe("schedule health", () => {
     expect(scheduleHealth(0, "2026-11-01", "2026-11-21", "2026-10-11").health).toBe("not_started");
     expect(scheduleHealth(100, null, null, "2026-10-11").health).toBe("done");
     expect(scheduleHealth(20, "2026-10-01", null, "2026-10-11").health).toBe("no_dates");
+  });
+});
+
+describe("forecast", () => {
+  // 1–20 Oct is 20 days; on the 10th, 10 of them are used.
+  it("projects the finish from the pace so far", () => {
+    const onPace = forecast(50, "2026-10-01", "2026-10-20", "2026-10-10");
+    expect(onPace).toMatchObject({ kind: "projected", eta: "2026-10-20", daysLate: 0, elapsedDays: 10, totalDays: 20, daysLeft: 10 });
+    expect(onPace.timePct).toBe(50);
+    const slow = forecast(25, "2026-10-01", "2026-10-20", "2026-10-10");
+    expect(slow).toMatchObject({ kind: "projected", eta: "2026-11-09", daysLate: 20 });
+    const fast = forecast(80, "2026-10-01", "2026-10-20", "2026-10-10");
+    expect(fast.daysLate).toBeLessThan(0);
+  });
+
+  it("says why there is no forecast", () => {
+    expect(forecast(100, "2026-10-01", "2026-10-20", "2026-10-10").kind).toBe("done");
+    expect(forecast(30, null, "2026-10-20", "2026-10-10").kind).toBe("no_start");
+    expect(forecast(0, "2026-11-01", "2026-11-20", "2026-10-10")).toMatchObject({ kind: "not_started", elapsedDays: 0, timePct: 0 });
+    expect(forecast(0, "2026-10-01", "2026-10-20", "2026-10-10").kind).toBe("no_pace");
+  });
+
+  it("still projects without a due date, and caps time used once it is overdue", () => {
+    expect(forecast(50, "2026-10-01", null, "2026-10-10")).toMatchObject({ kind: "projected", eta: "2026-10-20", daysLate: null, timePct: null });
+    expect(forecast(50, "2026-10-01", "2026-10-05", "2026-10-10")).toMatchObject({ timePct: 100, daysLeft: -5 });
   });
 });
 

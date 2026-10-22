@@ -7,7 +7,6 @@ import LabelChip from "@/components/LabelChip";
 import Avatar from "@/components/Avatar";
 import Calendar from "@/components/Calendar";
 import ExportButton from "@/components/ExportButton";
-import { StatusBar } from "@/components/ProgressBar";
 import { apiFetch, isConflict } from "@/lib/api-client";
 import { useToast } from "@/components/ToastProvider";
 import { projectPercent, projectUnitsOf, statusCounts } from "@/lib/progress";
@@ -40,7 +39,8 @@ import ProjectGallery from "./ProjectGallery";
 import TaskRequestsPanel from "./TaskRequestsPanel";
 import ProjectStatusBanner from "./ProjectStatusBanner";
 import ProjectTree from "@/components/work/ProjectTree";
-import { HealthBadge, ProgressLegend, WorkProgress, shortDate } from "@/components/work/kit";
+import { ProgressLegend, WorkProgress, shortDate } from "@/components/work/kit";
+import ScheduleTrack from "@/components/work/ScheduleTrack";
 import { projectProgress } from "@/lib/work-engine";
 
 interface PickUser {
@@ -177,12 +177,18 @@ export default function ProjectBoard({
 
   const total = tasks.length;
   const done = tasks.filter((t) => t.status === "done").length;
-  // Weighted, approved work only: a task counts toward the project once it
-  // is approved (Done); tasks waiting for review show as pending.
+  // Weighted, approved work only: each task adds its approved share (its
+  // approved subtasks) by its weight; work waiting for review shows as pending.
   const units = projectUnitsOf(tasks);
   const pct = projectPercent(units);
   const projectProg = projectProgress(
-    tasks.map((t) => ({ id: t.id, status: t.status, weight: Number(t.weight ?? 0), weight_mode: t.weight_mode === "manual" ? "manual" : "auto" }))
+    tasks.map((t) => ({
+      id: t.id,
+      status: t.status,
+      weight: Number(t.weight ?? 0),
+      weight_mode: t.weight_mode === "manual" ? "manual" : "auto",
+      progress: { approved: Number(t.progress_approved ?? 0), pending: Number(t.progress_pending ?? 0) },
+    }))
   );
   const myTaskCount = tasks.filter((t) => t.assignee_id === currentUser.id).length;
   const roleLine =
@@ -408,24 +414,34 @@ export default function ProjectBoard({
         </Link>
       </div>
 
-      <div className="mb-6 overflow-hidden rounded-2xl bg-gradient-to-br from-violet-600 via-violet-700 to-fuchsia-800 shadow-lg shadow-slate-900/10">
-        <div className="p-5 sm:p-6">
+      <div className="mb-6 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+        <div className="h-1.5 bg-gradient-to-r from-violet-500 via-fuchsia-500 to-pink-500" aria-hidden />
+        <div className="bg-gradient-to-br from-violet-50 to-white p-5 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold text-white sm:text-3xl">{project.name}</h1>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">{project.name}</h1>
               <DepartmentBadge name={project.department} />
               <ProjectStatusBadge status={project.status} />
               {project.approval_status !== "approved" && (
                 <RequestStatusBadge status={project.approval_status} />
               )}
             </div>
-            <p className="mt-1 max-w-[65ch] text-sm text-slate-300">
+            <p className="mt-1 max-w-[70ch] text-sm text-slate-600">
               {project.description || "No description"}
             </p>
-            {project.owner_name && (
-              <p className="mt-1 text-xs text-slate-400">Owner: {project.owner_name}</p>
-            )}
+            <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+              {project.owner_name && (
+                <span className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500">Owner</span>
+                  <Avatar name={project.owner_name} size="sm" />
+                  <span className="font-medium text-slate-800">{project.owner_name}</span>
+                </span>
+              )}
+              <span className="figure rounded-full bg-white px-2.5 py-0.5 text-xs text-slate-600 ring-1 ring-slate-200">
+                📅 {shortDate(project.start_date)} → {shortDate(project.due_date)}
+              </span>
+            </div>
           </div>
           <div className="flex flex-wrap gap-2">
             {canManageWritable && (
@@ -498,31 +514,44 @@ export default function ProjectBoard({
             )}
           </div>
         </div>
+        </div>
 
-        <div className="mt-4">
-          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-300">
-            <span>
-              <span className="figure text-sm font-semibold text-white">{pct}%</span>{" "}
-              complete (approved) · {done}/{total} tasks approved
+        {/* How far along (approved work only), and the schedule as a picture. */}
+        <div className="grid gap-4 border-t border-slate-100 p-5 sm:p-6 lg:grid-cols-2">
+          <div className="rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200">
+            <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
+              <p>
+                <span className="figure text-4xl font-bold text-slate-900">{pct}%</span>
+                <span className="ml-2 text-sm text-slate-600">complete (approved)</span>
+              </p>
               {projectProg.pending > 0.5 && (
-                <span className="text-amber-200"> · {Math.round(projectProg.pending)}% waiting for review</span>
+                <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-800 ring-1 ring-amber-200">
+                  + {Math.round(projectProg.pending)}% waiting for review
+                </span>
               )}
-            </span>
-            <span className="flex items-center gap-2">
-              <span className="figure">{shortDate(project.start_date)} → {shortDate(project.due_date)}</span>
-              <HealthBadge approved={pct} start={project.start_date} due={project.due_date} />
-            </span>
+            </div>
+            <WorkProgress approved={projectProg.approved} pending={projectProg.pending} size="lg" label="Project progress" />
+            <div className="mt-2">
+              <ProgressLegend />
+            </div>
+            <dl className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <Figure label="Approved" value={`${done}/${total}`} tone="bg-emerald-50 ring-emerald-200 text-emerald-700" />
+              <Figure label="In review" value={counts.review} tone="bg-amber-50 ring-amber-200 text-amber-700" />
+              <Figure label="In progress" value={counts.in_progress} tone="bg-indigo-50 ring-indigo-200 text-indigo-700" />
+              <Figure label="To do" value={counts.todo} tone="bg-slate-100 ring-slate-200 text-slate-600" />
+            </dl>
             {totalEst > 0 && (
-              <span className="figure">
-                {spentSum}h logged / {totalEst}h estimated
-              </span>
+              <p className="figure mt-3 text-xs text-slate-600">
+                ⏱ {spentSum}h logged / {totalEst}h estimated
+              </p>
             )}
           </div>
-          <WorkProgress approved={projectProg.approved} pending={projectProg.pending} size="lg" label="Project progress" />
-          <div className="mt-2">
-            <StatusBar counts={counts} />
-          </div>
-        </div>
+          <ScheduleTrack
+            approved={projectProg.approved}
+            pending={projectProg.pending}
+            start={project.start_date}
+            due={project.due_date}
+          />
         </div>
       </div>
 
@@ -1105,6 +1134,16 @@ function ListView({
           )}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/** One coloured count in the project header. */
+function Figure({ label, value, tone }: { label: string; value: React.ReactNode; tone: string }) {
+  return (
+    <div className={`rounded-lg px-3 py-2 ring-1 ring-inset ${tone}`}>
+      <dt className="text-[11px] font-semibold uppercase tracking-wide">{label}</dt>
+      <dd className="figure text-lg font-bold text-slate-900">{value}</dd>
     </div>
   );
 }

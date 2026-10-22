@@ -29,6 +29,7 @@ import {
 } from "./kit";
 import { taskProgress } from "@/lib/work-engine";
 import { SPEC_LABELS, type SpecKey } from "@/lib/workflow";
+import { FileLinks, FilesField, filesOk, noteWithFiles, uploadFiles } from "./AttachFiles";
 
 type Action = "start" | "submit" | "approve" | "request_changes" | "reopen" | "cancel" | "restore";
 
@@ -118,13 +119,16 @@ export default function SubtasksPanel({
     onTaskChanged();
   }
 
-  async function act(s: SubtaskDto, action: Action, note?: string) {
+  async function act(s: SubtaskDto, action: Action, note?: string, files: File[] = []) {
     setBusy(s.id);
     try {
       const res = await apiFetch<{ status: string; taskStatus: string }>(`/api/subtasks/${s.id}/actions`, {
         method: "POST",
-        body: JSON.stringify({ action, note }),
+        body: JSON.stringify({ action, note: note === undefined ? undefined : noteWithFiles(note, files) }),
       });
+      // The note went through; now the files that go with it.
+      const failed = files.length ? await uploadFiles(`/api/subtasks/${s.id}/attachments`, files) : [];
+      if (failed.length) toast(`Sent back, but these files didn't upload: ${failed.join(", ")}`, "error");
       const message: Record<Action, string> = {
         start: "Started",
         submit: res.status === "done" ? "Done and approved" : "Sent to the task owner for review",
@@ -277,6 +281,11 @@ export default function SubtasksPanel({
                     {s.changes_requested && s.status === "in_progress" && (
                       <span className="block truncate text-xs text-orange-700">↩ Changes requested: {s.changes_requested}</span>
                     )}
+                    {s.attachment_count > 0 && (
+                      <span className="mr-2 inline-block rounded bg-indigo-50 px-1.5 text-[11px] font-medium text-indigo-700" title="Files on this subtask — open it to see them">
+                        📎 {s.attachment_count}
+                      </span>
+                    )}
                   </button>
                   {!compact && (
                     <span className="w-28">
@@ -326,6 +335,8 @@ export default function SubtasksPanel({
                     reviewerName={taskOwnerName}
                     mayShape={mayShape}
                     mayReopen={mayReopen}
+                    mayAttach={!readOnly && (mayWork || mayReview || mayShape)}
+                    onFilesChanged={() => void load()}
                     busy={busy === s.id}
                     onPatch={(body, msg) => patch(s, body, msg)}
                     onAct={(a) => act(s, a)}
@@ -369,9 +380,9 @@ export default function SubtasksPanel({
       <RequestChanges
         subtask={changesFor}
         onClose={() => setChangesFor(null)}
-        onSend={async (note) => {
+        onSend={async (note, files) => {
           if (!changesFor) return;
-          await act(changesFor, "request_changes", note);
+          await act(changesFor, "request_changes", note, files);
           setChangesFor(null);
         }}
       />
@@ -414,6 +425,8 @@ function SubtaskDetails({
   reviewerName,
   mayShape,
   mayReopen,
+  mayAttach,
+  onFilesChanged,
   busy,
   onPatch,
   onAct,
@@ -424,6 +437,9 @@ function SubtaskDetails({
   reviewerName: string | null;
   mayShape: boolean;
   mayReopen: boolean;
+  /** May add files (the assignee, the reviewer, the task's managers). */
+  mayAttach: boolean;
+  onFilesChanged: () => void;
   busy: boolean;
   onPatch: (body: Record<string, unknown>, msg?: string) => void;
   onAct: (a: Action) => void;
@@ -468,6 +484,7 @@ function SubtaskDetails({
           </dd>
         </div>
       </dl>
+      <SubtaskFiles subtaskId={s.id} count={s.attachment_count} mayAttach={mayAttach} onChanged={onFilesChanged} />
       {mayShape ? (
         <>
           <label className="block text-xs font-medium text-slate-600">
@@ -623,8 +640,69 @@ function AddSubtask({
   );
 }
 
-function RequestChanges({ subtask, onClose, onSend }: { subtask: SubtaskDto | null; onClose: () => void; onSend: (note: string) => Promise<void> }) {
+/** A subtask's files: what was handed in, and anything sent back with a change request. */
+function SubtaskFiles({ subtaskId, count, mayAttach, onChanged }: { subtaskId: number; count: number; mayAttach: boolean; onChanged: () => void }) {
+  const { toast } = useToast();
+  const [files, setFiles] = useState<{ id: number; filename: string; size_bytes: number; uploader_name?: string | null }[] | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  useEffect(() => {
+    if (count === 0) return;
+    let live = true;
+    apiFetch<{ attachments: { id: number; filename: string; size_bytes: number; uploader_name?: string | null }[] }>(`/api/subtasks/${subtaskId}/attachments`)
+      .then((r) => live && setFiles(r.attachments))
+      .catch(() => live && setFiles([]));
+    return () => {
+      live = false;
+    };
+  }, [subtaskId, count]);
+
+  if (count === 0 && !mayAttach) return null;
+  return (
+    <div className="rounded-lg bg-white p-2.5 ring-1 ring-slate-200">
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <span className="text-xs font-medium text-slate-500">Files{count > 0 ? ` (${count})` : ""}</span>
+        {mayAttach && (
+          <label className="cursor-pointer rounded-lg px-2 py-0.5 text-xs font-medium text-indigo-700 hover:bg-indigo-50">
+            {uploading ? "Uploading…" : "📎 Add a file"}
+            <input
+              type="file"
+              multiple
+              className="sr-only"
+              disabled={uploading}
+              onChange={async (e) => {
+                const picked = Array.from(e.target.files ?? []);
+                e.target.value = "";
+                if (!picked.length) return;
+                if (!filesOk(picked)) {
+                  toast("Each file must be under 10 MB", "error");
+                  return;
+                }
+                setUploading(true);
+                const failed = await uploadFiles(`/api/subtasks/${subtaskId}/attachments`, picked);
+                setUploading(false);
+                toast(failed.length ? `These didn't upload: ${failed.join(", ")}` : picked.length === 1 ? "File added" : `${picked.length} files added`, failed.length ? "error" : undefined);
+                onChanged();
+              }}
+            />
+          </label>
+        )}
+      </div>
+      {count === 0 ? (
+        <p className="text-xs text-slate-400">No files yet.</p>
+      ) : files === null ? (
+        <p className="text-xs text-slate-400">Loading files…</p>
+      ) : (
+        <FileLinks files={files} />
+      )}
+    </div>
+  );
+}
+
+function RequestChanges({ subtask, onClose, onSend }: { subtask: SubtaskDto | null; onClose: () => void; onSend: (note: string, files: File[]) => Promise<void> }) {
   const [note, setNote] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
+  const [sending, setSending] = useState(false);
   return (
     <Modal open={!!subtask} onClose={onClose} title="Request changes">
       <p className="mb-3 text-sm text-slate-600">
@@ -640,20 +718,24 @@ function RequestChanges({ subtask, onClose, onSend }: { subtask: SubtaskDto | nu
         className={`${inputCls} w-full`}
         placeholder="e.g. Please add the missing vendor GST numbers before resubmitting."
       />
+      <FilesField files={files} onChange={setFiles} />
       <div className="mt-4 flex justify-end gap-2">
         <button type="button" onClick={onClose} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50">
           Cancel
         </button>
         <button
           type="button"
-          disabled={!note.trim()}
+          disabled={!note.trim() || !filesOk(files) || sending}
           onClick={async () => {
-            await onSend(note.trim());
+            setSending(true);
+            await onSend(note.trim(), files);
+            setSending(false);
             setNote("");
+            setFiles([]);
           }}
           className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
         >
-          Send back
+          {sending ? "Sending…" : files.length ? `Send back with ${files.length === 1 ? "1 file" : `${files.length} files`}` : "Send back"}
         </button>
       </div>
     </Modal>

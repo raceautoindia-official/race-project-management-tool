@@ -14,7 +14,7 @@ export function ProgressBar({
   label?: string;
 }) {
   const pct = Math.max(0, Math.min(100, Math.round(value)));
-  const bar = tone === "green" ? "bg-green-500" : "bg-indigo-500";
+  const bar = tone === "green" ? "bg-gradient-to-r from-emerald-400 to-green-500" : "bg-gradient-to-r from-indigo-500 to-violet-500";
   return (
     <div
       className={`h-2 w-full overflow-hidden rounded-full bg-slate-100 ${className}`}

@@ -72,8 +72,8 @@ before the merge on this branch, or whatever is on the server today).
   - The owner's own subtasks are approved as soon as they're marked complete.
   - When every subtask is approved, the task goes for review by itself. "Send for review"
     still works too.
-- **Progress counts approved work only, by weight.** A task counts toward its project once
-  it's approved (Done). Some projects will show a lower percentage than before; the
+- **Progress counts approved work only, by weight.** Each approved subtask moves its task,
+  and each task moves its project by its weight (a Done task counts in full). Some projects will show a lower percentage than before; the
   progress report from the rehearsal shows which and why.
 - **Members can't add work to an approved task**: ask the project owner or a lead to reopen
   it.

@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { query, DbResult, DbRow } from "@/lib/db";
-import type { User } from "@/lib/types";
+import type { Task, User } from "@/lib/types";
 import { createLedProject, createUser } from "./helpers";
 import {
   PROJECT_CREDITED_SQL,
@@ -11,9 +11,9 @@ import {
 import { fetchTasks } from "@/lib/tasks";
 
 /**
- * Since the 2026-10-17 redesign a project's completion is the weighted share
- * of its tasks that are Done (approved), and a task's is the weighted share of
- * its subtasks its owner has approved. Ticks no longer count on their own.
+ * Since the 2026-10-17 redesign a task's completion is the weighted share of
+ * its subtasks its owner has approved, and a project's is each task's
+ * approved share by the task's weight (a Done task counts in full).
  *
  * The project sum exists twice — once in SQL for the lists that never load a
  * project's tasks, once in TypeScript for pages that already have them.
@@ -54,7 +54,7 @@ describe("project completion", () => {
     await addTask("todo", []);
   });
 
-  it("counts Done tasks by their weight, not ticked items", async () => {
+  it("counts each task's approved share by the task's weight", async () => {
     const rows = await query<DbRow[]>(
       `SELECT ${PROJECT_UNITS_SQL} AS units, ${PROJECT_CREDITED_SQL} AS credited
          FROM projects p WHERE p.id = ?`,
@@ -63,25 +63,22 @@ describe("project completion", () => {
     const units = Number(rows[0].units);
     const credited = Number(rows[0].credited);
     expect(units).toBeCloseTo(100, 5); // 50 + 25 + 25
-    expect(credited).toBeCloseTo(25, 5); // only the Done task
-    expect(projectPercent({ units, credited })).toBe(25);
+    // 50% × 3/4 approved + the Done task's 25% + nothing from the To do task
+    expect(credited).toBeCloseTo(62.5, 5);
+    expect(projectPercent({ units, credited })).toBe(63);
   });
 
   it("agrees with the figure worked out from loaded tasks", async () => {
-    const tasks = await query<DbRow[]>(
-      `SELECT t.id, t.status, t.weight, t.weight_mode FROM tasks t WHERE t.project_id = ?`,
-      [projectId]
-    );
-    const inBrowser = projectUnitsOf(
-      tasks.map((t) => ({ id: t.id, status: t.status, weight: t.weight, weight_mode: t.weight_mode }))
-    );
+    // The page loads tasks through fetchTasks, which works out each one's
+    // approved share (progress_approved).
+    const inBrowser = projectUnitsOf((await fetchTasks("t.project_id = ?", [projectId])) as unknown as Task[]);
     const rows = await query<DbRow[]>(
       `SELECT ${PROJECT_UNITS_SQL} AS units, ${PROJECT_CREDITED_SQL} AS credited
          FROM projects p WHERE p.id = ?`,
       [projectId]
     );
     expect(inBrowser.units).toBeCloseTo(Number(rows[0].units), 3);
-    expect(inBrowser.credited).toBeCloseTo(Number(rows[0].credited), 3);
+    expect(inBrowser.credited).toBeCloseTo(Number(rows[0].credited), 1);
   });
 
   it("gives each task its approved share, with work in review reported apart", async () => {

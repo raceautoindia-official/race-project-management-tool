@@ -1179,6 +1179,11 @@ export default function TaskDetailModal({
                   {fmtBytes(Number(a.size_bytes))}
                   {a.uploader_name ? ` · ${a.uploader_name}` : ""}
                 </span>
+                {a.subtask_title && (
+                  <span className="truncate rounded bg-indigo-50 px-1.5 text-[11px] font-medium text-indigo-700" title="Added on this subtask">
+                    {a.subtask_title}
+                  </span>
+                )}
                 {!readOnly && (canManage || a.uploaded_by === currentUser.id) && (
                   <button
                     onClick={() => deleteAttachment(a.id)}

@@ -6,12 +6,15 @@ import Modal from "@/components/Modal";
 import { useToast } from "@/components/ToastProvider";
 import { apiFetch } from "@/lib/api-client";
 import { reviewsChanged } from "./review-count";
+import { FilesField, filesOk, noteWithFiles, uploadFiles } from "./AttachFiles";
 
 /**
  * Approve / Request changes for one item waiting for my review.
  *   subtask → POST /api/subtasks/:id/actions  { action: approve | request_changes, note }
  *   task    → POST /api/tasks/:id/approval    { decision: approve | reject, note }
- * Sending back always asks for a note, so the person knows what to change.
+ * Sending back always asks for a note, so the person knows what to change,
+ * and can carry files (a marked-up drawing, a screenshot) — uploaded to the
+ * subtask or task once the note has gone through.
  * Afterwards the page reloads its data (router.refresh) and the nav badge updates.
  */
 export default function ReviewActions({
@@ -31,24 +34,29 @@ export default function ReviewActions({
   const [busy, setBusy] = useState(false);
   const [asking, setAsking] = useState(false);
   const [note, setNote] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
 
   async function decide(approve: boolean) {
     setBusy(true);
     try {
+      const sentNote = noteWithFiles(note.trim(), approve ? [] : files);
       if (kind === "subtask") {
         await apiFetch(`/api/subtasks/${id}/actions`, {
           method: "POST",
-          body: JSON.stringify(approve ? { action: "approve" } : { action: "request_changes", note: note.trim() }),
+          body: JSON.stringify(approve ? { action: "approve" } : { action: "request_changes", note: sentNote }),
         });
       } else {
         await apiFetch(`/api/tasks/${id}/approval`, {
           method: "POST",
-          body: JSON.stringify({ decision: approve ? "approve" : "reject", note: note.trim() || undefined }),
+          body: JSON.stringify({ decision: approve ? "approve" : "reject", note: sentNote || undefined }),
         });
       }
-      toast(approve ? `Approved — “${title}” now counts toward progress` : `Sent back with your note`);
+      const failed = !approve && files.length ? await uploadFiles(`/api/${kind === "subtask" ? "subtasks" : "tasks"}/${id}/attachments`, files) : [];
+      if (failed.length) toast(`Sent back, but these files didn't upload: ${failed.join(", ")}`, "error");
+      else toast(approve ? `Approved — “${title}” now counts toward progress` : `Sent back with your note${files.length ? " and files" : ""}`);
       setAsking(false);
       setNote("");
+      setFiles([]);
       reviewsChanged();
       router.refresh();
     } catch (e) {
@@ -84,7 +92,7 @@ export default function ReviewActions({
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            if (note.trim()) decide(false);
+            if (note.trim() && filesOk(files)) decide(false);
           }}
         >
           <p className="mb-3 text-sm text-slate-600">
@@ -104,6 +112,7 @@ export default function ReviewActions({
             autoFocus
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
           />
+          <FilesField files={files} onChange={setFiles} />
           <div className="mt-4 flex justify-end gap-2">
             <button
               type="button"
@@ -115,7 +124,7 @@ export default function ReviewActions({
             </button>
             <button
               type="submit"
-              disabled={busy || !note.trim()}
+              disabled={busy || !note.trim() || !filesOk(files)}
               className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
             >
               {busy ? "Sending…" : "Send back"}

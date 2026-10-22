@@ -67,9 +67,9 @@ export function SectionCard({
 }
 
 /**
- * The band. One per page, dark, with the page's name, what it is for, and
- * the action that belongs to it — then a signal rule under it so the eye
- * knows where the page proper starts.
+ * The page header. One per page: its name, what it is for, the action that
+ * belongs to it and the numbers that matter — a light card in the section's
+ * colour (components/PageBand.tsx).
  */
 export function PageHeader(props: {
   title: string;

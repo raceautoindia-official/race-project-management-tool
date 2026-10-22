@@ -7,6 +7,7 @@ import TaskDetailModal from "@/components/project/TaskDetailModal";
 import TaskFormModal from "@/components/project/TaskFormModal";
 import { TaskStatusBadge } from "@/components/Badge";
 import TaskActions from "./TaskActions";
+import ScheduleTrack from "./ScheduleTrack";
 import type { Label, ProjectMember, Role, Task, TaskStatus } from "@/lib/types";
 import { DateRange, PersonLine, ProgressLegend, WorkProgress, weightLabel } from "./kit";
 
@@ -96,7 +97,9 @@ export default function TaskPageView({
         <span className="truncate text-slate-700">{task.title}</span>
       </nav>
 
-      <section className="mb-5 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+      <section className="mb-5 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+        <div className="h-1.5 bg-gradient-to-r from-indigo-500 via-violet-500 to-fuchsia-500" aria-hidden />
+        <div className="bg-gradient-to-br from-indigo-50 to-white p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Task</p>
@@ -135,16 +138,22 @@ export default function TaskPageView({
           </div>
         </dl>
 
-        <div className="mt-5 rounded-xl bg-slate-50 p-4">
+        </div>
+
+        <div className="grid gap-4 border-t border-slate-100 p-5 lg:grid-cols-2">
+        <div className="rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200">
           <p className="mb-2">
-            <span className="figure text-2xl font-semibold text-slate-900">{Math.round(approved)}%</span>
+            <span className="figure text-4xl font-bold text-slate-900">{Math.round(approved)}%</span>
             <span className="ml-2 text-sm text-slate-500">complete (approved)</span>
             {pending > 0.5 && <span className="ml-2 text-sm text-amber-700">+ {Math.round(pending)}% waiting for review</span>}
           </p>
           <WorkProgress approved={approved} pending={pending} size="lg" label="Task progress" />
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
             <ProgressLegend />
-            <span className="text-xs text-slate-600">{next}</span>
+            {/* With subtasks still open, the actions below already say what happens next. */}
+            {!(hasSubtasks && (task.status === "todo" || task.status === "in_progress")) && (
+              <span className="text-xs text-slate-600">{next}</span>
+            )}
           </div>
           <div className="mt-3 border-t border-slate-200 pt-3">
             <TaskActions
@@ -158,8 +167,10 @@ export default function TaskPageView({
             />
           </div>
         </div>
+        <ScheduleTrack approved={approved} pending={pending} start={task.start_date} due={task.due_date} />
+        </div>
 
-        <p className="mt-3 rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-900">
+        <p className="mx-5 mb-5 rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-900">
           <span aria-hidden>💡 </span>
           {role}
         </p>
