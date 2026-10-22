@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { signIn } from "./helpers";
 import { USERS } from "./users";
 
-// The daily / weekly planner: written by the person, read by their lead.
+// Work Updates (the daily / weekly planner, at /planner): written by the person, read by their lead.
 
 let sam: Page;
 let admin: Page;
@@ -85,7 +85,7 @@ test("it downloads as a spreadsheet", async () => {
     sam.waitForEvent("download"),
     sam.getByRole("link", { name: /Download mine/ }).click(),
   ]);
-  expect(download.suggestedFilename()).toMatch(/^planner-day-.*\.xlsx$/);
+  expect(download.suggestedFilename()).toMatch(/^work-updates-day-.*\.xlsx$/);
 
   await admin.goto("/planner");
   const [teamFile] = await Promise.all([

@@ -59,7 +59,7 @@ export default async function PlannerPage({
   return (
     <AppShell user={user}>
       <PageHeader
-        title="Planner"
+        title="Work Updates"
         subtitle={
           canSeeOthers
             ? "What you mean to do, and how it went — yours, and your team's."

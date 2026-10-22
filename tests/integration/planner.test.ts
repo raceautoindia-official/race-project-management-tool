@@ -161,7 +161,7 @@ describe("downloading it", () => {
     });
     expect(res.status).toBe(200);
     expect(res.res.headers.get("content-type")).toContain("spreadsheetml");
-    expect(res.res.headers.get("content-disposition")).toContain("planner-day-2026-10-01");
+    expect(res.res.headers.get("content-disposition")).toContain("work-updates-day-2026-10-01");
     const body = await res.res.arrayBuffer();
     // A real xlsx is a zip, which starts "PK".
     expect(Buffer.from(body.slice(0, 2)).toString()).toBe("PK");

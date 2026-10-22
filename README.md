@@ -299,7 +299,7 @@ pm-app/
   per 15 minutes (per server process).
 - User-supplied text is HTML-escaped in emails and CSV cells can't run as spreadsheet formulas.
 
-### Planner (Planner in the sidebar)
+### Work Updates (at /planner)
 
 Three tabs.
 

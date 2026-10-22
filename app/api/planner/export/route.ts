@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
       const forUser = asked ? Number(asked) : user.id;
       if (!Number.isInteger(forUser) || forUser <= 0) throw new ApiError(400, "Invalid userId");
       if (!(await canReadPlanner(user, forUser))) {
-        throw forbidden("That planner is not yours to read");
+        throw forbidden("Those work updates are not yours to read");
       }
       const from = params.get("from") ?? date;
       const to = params.get("to") ?? date;
@@ -56,14 +56,14 @@ export async function GET(req: NextRequest) {
         throw new ApiError(400, "Expected from and to as YYYY-MM-DD");
       }
       rows = await plannerRange(forUser, period, from, to);
-      title = `planner-${period}-${from}-to-${to}`;
+      title = `work-updates-${period}-${from}-to-${to}`;
     }
 
     // The daily sheet carries what the app recorded as well as what was
     // typed: a download of the day is only half the day without it.
     const daily = period === "day";
     const wb = new ExcelJS.Workbook();
-    const ws = wb.addWorksheet(daily ? "Daily summary" : "Weekly planner");
+    const ws = wb.addWorksheet(daily ? "Daily summary" : "Weekly plan");
     ws.addRow(
       daily
         ? ["Date", "Person", "Employee ID", "Recorded", "Plan", "How it went", "Last updated"]

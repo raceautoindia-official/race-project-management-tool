@@ -38,7 +38,7 @@ const NAV_GROUPS: { label: string; links: NavItem[]; adminOnly?: boolean }[] = [
       { href: "/dashboard", label: "My Work", icon: "▦" },
       { href: "/reviews", label: "Reviews", icon: "✓" },
       { href: "/projects", label: "Projects", icon: "▢" },
-      { href: "/planner", label: "Planner", icon: "🗓" },
+      { href: "/planner", label: "Work Updates", icon: "🗓" },
       { href: "/calendar", label: "Calendar", icon: "▤" },
     ],
   },

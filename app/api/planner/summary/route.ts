@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
     const forUser = asked ? Number(asked) : user.id;
     if (!Number.isInteger(forUser) || forUser <= 0) throw new ApiError(400, "Invalid userId");
     if (!(await canReadPlanner(user, forUser))) {
-      throw forbidden("That planner is not yours to read");
+      throw forbidden("Those work updates are not yours to read");
     }
 
     if (params.get("period") === "week") {

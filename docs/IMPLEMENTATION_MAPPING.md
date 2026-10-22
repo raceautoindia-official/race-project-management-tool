@@ -68,7 +68,7 @@ columns, `approval_status`, `task_dependencies`, `task_requests`, `users.departm
 
 | Group | Items | Notes |
 |---|---|---|
-| **Work** | My Work *(new home)*, Reviews *(badge)*, Projects, Planner, Calendar | My Work absorbs My Tasks (`/my-tasks` keeps working and redirects). The admin Dashboard content moves to Reports › Overview, and `/dashboard` keeps working. |
+| **Work** | My Work *(new home)*, Reviews *(badge)*, Projects, Work Updates *(was Planner; still /planner)*, Calendar | My Work absorbs My Tasks (`/my-tasks` keeps working and redirects). The admin Dashboard content moves to Reports › Overview, and `/dashboard` keeps working. |
 | **People** | Team, Work hours | unchanged |
 | **Tools** | Meetings, Reminders, Credentials | unchanged |
 | **Insight** | Reports *(new; progress only, no hours)* | |

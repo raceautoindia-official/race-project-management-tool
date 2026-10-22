@@ -182,7 +182,7 @@ export default function PlannerView({
           than reading as three separate links. */}
       <div
         role="tablist"
-        aria-label="Planner"
+        aria-label="Work updates"
         className="mb-4 inline-flex rounded-xl bg-slate-100 p-1"
       >
         {(

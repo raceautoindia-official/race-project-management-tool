@@ -4,7 +4,7 @@
  * Twelve places to be, and no way to tell them apart at a glance is a tool
  * you navigate by reading. Each section owns a hue: its icon in the rail,
  * the band at the top of its page, and the tint on anything that belongs to
- * it. After a week nobody reads the labels — amber is the planner, pink is
+ * it. After a week nobody reads the labels — amber is Work Updates, pink is
  * the team.
  */
 
