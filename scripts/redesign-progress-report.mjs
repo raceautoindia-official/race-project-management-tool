@@ -1,6 +1,7 @@
 // Before/after report for the 2026-10-17 redesign: each project's progress
 // under the old rule (checklist units, ticks count at once) and the new rule
-// (weighted roll-up; a task counts only once approved = Done).
+// (weighted roll-up of approved work: each task's approved subtasks count by
+// weight, and each task counts toward its project by its weight; Done = 100%).
 //   node scripts/redesign-progress-report.mjs <database>
 // Read-only. Uses MYSQL_* from .env.local.
 import fs from "node:fs";
@@ -18,7 +19,26 @@ const c = await mysql.createConnection({
 });
 const [projects] = await c.query("SELECT id, name, status, approval_status, start_date, due_date FROM projects ORDER BY id");
 const [tasks] = await c.query("SELECT id, project_id, status, weight, weight_mode FROM tasks");
-const [subs] = await c.query("SELECT task_id, is_done, status, assignee_id FROM subtasks");
+const [subs] = await c.query("SELECT task_id, is_done, status, assignee_id, weight, weight_mode FROM subtasks");
+
+// The same arithmetic as lib/work-engine.ts effectiveWeights(): manual
+// weights as set, auto ones share what is left, cancelled ones get nothing.
+function effective(items, cancelled = () => false) {
+  const live = items.filter((x) => !cancelled(x));
+  const manual = live.filter((x) => x.weight_mode === "manual").reduce((n, x) => n + Number(x.weight), 0);
+  const autos = live.filter((x) => x.weight_mode !== "manual").length;
+  const share = autos ? Math.max(0, 100 - manual) / autos : 0;
+  return items.map((x) => (cancelled(x) ? 0 : x.weight_mode === "manual" ? Number(x.weight) : share));
+}
+/** A task's approved fraction, 0–1: Done is 1, else its approved subtasks by weight. */
+function taskApproved(t) {
+  if (t.status === "done") return 1;
+  const items = subs.filter((x) => x.task_id === t.id);
+  const w = effective(items, (x) => x.status === "cancelled");
+  const total = w.reduce((n, x) => n + x, 0);
+  if (!total) return 0;
+  return items.reduce((n, x, i) => n + (x.status === "done" ? w[i] : 0), 0) / total;
+}
 
 const pct = (n) => `${Math.round(n)}%`.padStart(5);
 console.log(`Database: ${db}\n`);
@@ -34,11 +54,13 @@ for (const p of projects) {
     credited += t.status === "done" ? u : items.filter((s) => s.is_done).length;
   }
   const oldPct = units ? (credited / units) * 100 : 0;
-  // New: even weights (all auto after the migration); a task counts when Done.
+  // New: each task's approved share, by the task's weight.
   const done = ts.filter((t) => t.status === "done").length;
-  const newPct = ts.length ? (done / ts.length) * 100 : 0;
+  const tw = effective(ts);
+  const twTotal = tw.reduce((n, x) => n + x, 0);
+  const newPct = twTotal ? (ts.reduce((n, t, i) => n + tw[i] * taskApproved(t), 0) / twTotal) * 100 : 0;
   const note = [];
-  if (Math.abs(oldPct - newPct) >= 10) note.push(newPct < oldPct ? "drops: ticked items in unapproved tasks no longer count" : "rises: small tasks now weigh the same as big ones");
+  if (Math.abs(oldPct - newPct) >= 10) note.push(`${newPct < oldPct ? "drops" : "rises"}: each task now counts by its weight, not by how many items it has`);
   if (!p.due_date) note.push("no due date yet");
   console.log(p.name.slice(0, 41).padEnd(42), pct(oldPct), pct(newPct), `  ${String(done).padStart(4)}/${String(ts.length).padEnd(4)}       ${note.join("; ")}`);
 }
