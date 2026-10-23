@@ -118,9 +118,9 @@ function Section({
 }) {
   return (
     <div>
-      <h2 className="mb-2 text-sm font-semibold text-slate-500">{title}</h2>
+      <h2 className="mb-2 text-sm font-semibold text-slate-600">{title}</h2>
       {list.length === 0 ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">
+        <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
           {empty}
         </div>
       ) : (
@@ -152,13 +152,13 @@ function Section({
                     {r.title}
                   </span>
                   {r.recurrence !== "none" && (
-                    <span className="text-xs text-slate-400">↻ {r.recurrence}</span>
+                    <span className="text-xs text-slate-500">↻ {r.recurrence}</span>
                   )}
                 </div>
                 <div className="mt-0.5 text-sm text-indigo-600">
                   {formatIst(r.scheduled_at)}
                 </div>
-                <div className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-slate-400">
+                <div className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-slate-500">
                   <span>🔔 {offsetLabel(r.reminder_minutes)}</span>
                   {r.notify_email && <span>✉ email</span>}
                   {r.notify_push && <span>📱 push</span>}

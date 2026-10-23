@@ -1,4 +1,10 @@
 import { z } from "zod";
+import {
+  missingSpecFields,
+  specBodyKey,
+  specFromBody,
+} from "./workflow";
+import type { WorkType } from "./types";
 
 // Coerce "" / undefined / null to null, otherwise a positive int id.
 export const optionalId = z.preprocess(
@@ -15,11 +21,62 @@ export const optionalDate = z.preprocess(
     .nullable()
 );
 
+/**
+ * A date range has to run forwards. Checked only when both ends are in the
+ * same request: a partial update that touches one date cannot be compared
+ * against the other without reading the stored row.
+ */
+function checkDateOrder(
+  d: { startDate?: string | null; dueDate?: string | null },
+  ctx: z.RefinementCtx
+) {
+  if (d.startDate && d.dueDate && d.dueDate < d.startDate) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["dueDate"],
+      message: "The end date can't be before the start date",
+    });
+  }
+}
+
 export const optionalText = z
   .string()
   .max(5000)
   .optional()
   .nullable();
+
+
+// Spec text: blank → null, otherwise trimmed text.
+const specText = z
+  .preprocess(
+    (v) => (typeof v === "string" ? v.trim() || null : v ?? null),
+    z.string().max(5000).nullable()
+  )
+  .optional();
+
+const specShape = {
+  existingBehavior: specText,
+  expectedBehavior: specText,
+  acceptanceCriteria: specText,
+  reason: specText,
+  scope: specText,
+  features: specText,
+  flow: specText,
+  rules: specText,
+};
+
+/** Issues for the required spec fields of `taskType` that are blank. */
+function specIssues(d: { taskType?: WorkType } & Record<string, unknown>) {
+  return missingSpecFields(d.taskType, specFromBody(d)).map((f) => ({
+    code: "custom" as const,
+    path: [specBodyKey(f.key)],
+    message: `${f.label} is required`,
+  }));
+}
+
+const specTypeField = z.enum(["correction", "feature"], {
+  error: "Choose a type: existing work correction or new feature",
+});
 
 // ---- Auth ----
 // Credentials are federated to the parent Attendance app: users sign in with
@@ -33,21 +90,75 @@ export const loginSchema = z.object({
 // password schemas of its own.
 
 // ---- Projects ----
-export const createProjectSchema = z.object({
-  name: z.string().min(1).max(150),
-  description: optionalText,
-  status: z.enum(["active", "completed", "archived"]).optional(),
-  ownerId: optionalId.optional(),
-  memberIds: z.array(z.coerce.number().int().positive()).optional(),
-});
+/** Free text, because the list of departments belongs to Attendance. */
+const departmentField = z
+  .string()
+  .trim()
+  .max(100)
+  .nullish()
+  .transform((v) => (v ? v : null));
+
+export const createProjectSchema = z
+  .object({
+    name: z.string().min(1).max(150),
+    description: optionalText,
+    department: departmentField,
+    status: z.enum(["active", "completed", "archived"]).optional(),
+    ownerId: optionalId.optional(),
+    memberIds: z.array(z.coerce.number().int().positive()).optional(),
+    // Non-admins request a project: the nominated lead approves it.
+    leadId: optionalId.optional(),
+    startDate: optionalDate.optional(),
+    dueDate: optionalDate.optional(),
+  })
+  .superRefine(checkDateOrder);
+
+/**
+ * The two fields PM decides about a person. Everything else about who they
+ * are comes from Attendance and is read-only here.
+ *
+ * Blank is a real answer for both: it clears a job title, and it hands the
+ * department back to Attendance.
+ */
+export const updateUserProfileSchema = z
+  .object({
+    department: departmentField,
+    designation: z
+      .string()
+      .trim()
+      .max(120)
+      .nullish()
+      .transform((v) => (v ? v : null)),
+  })
+  .refine((d) => Object.keys(d).length > 0, { message: "Nothing to change" });
+
+/** Approve / reject a pending request. A rejection must say why. */
+export const decisionSchema = z
+  .object({
+    decision: z.enum(["approve", "reject"]),
+    note: z.string().trim().max(1000).optional().nullable(),
+  })
+  .superRefine((d, ctx) => {
+    if (d.decision === "reject" && !d.note) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["note"],
+        message: "Give a reason for rejecting",
+      });
+    }
+  });
 
 export const updateProjectSchema = z
   .object({
     name: z.string().min(1).max(150).optional(),
     description: optionalText,
+    department: departmentField,
     status: z.enum(["active", "completed", "archived"]).optional(),
     ownerId: optionalId.optional(),
+    startDate: optionalDate.optional(),
+    dueDate: optionalDate.optional(),
   })
+  .superRefine(checkDateOrder)
   .refine((d) => Object.keys(d).length > 0, {
     message: "No fields to update",
   });
@@ -66,25 +177,53 @@ export const optionalHours = z.preprocess(
   z.coerce.number().min(0).max(9999).nullable()
 );
 
-export const createTaskSchema = z.object({
-  title: z.string().min(1).max(200),
-  description: optionalText,
-  status: z.enum(["todo", "in_progress", "review", "done"]).optional(),
-  priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
-  estimatedHours: optionalHours.optional(),
-  assigneeId: optionalId.optional(),
-  dueDate: optionalDate.optional(),
-  startDate: optionalDate.optional(),
-  labelIds: labelIdsField,
-  // #7 — additional / follow-up work raised after a task or project completed.
-  parentTaskId: optionalId.optional(),
-  isAdditional: z.boolean().optional(),
-});
+// Tasks created by an admin/lead: one of the two spec types, with the
+// requester and assigned owner mandatory (the creator is the approver).
+export const createTaskSchema = z
+  .object({
+    // A plain task is a plain task. "Order new bearings" has no existing
+    // behaviour to correct and no acceptance criteria to meet, and demanding
+    // them was turning one line of work into a form. A correction or a
+    // feature still owes its specification — see the refinement below.
+    taskType: z.enum(["general", "correction", "feature"]).optional().default("general"),
+    title: z.string().trim().min(1, "Title is required").max(200),
+    description: optionalText,
+    ...specShape,
+    requestedById: optionalId.optional(),
+    status: z.enum(["todo", "in_progress", "review", "done"]).optional(),
+    priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
+    estimatedHours: optionalHours.optional(),
+    assigneeId: optionalId.optional(),
+    dueDate: optionalDate.optional(),
+    startDate: optionalDate.optional(),
+    labelIds: labelIdsField,
+    // #7 — additional / follow-up work raised after a task or project completed.
+    parentTaskId: optionalId.optional(),
+    isAdditional: z.boolean().optional(),
+  })
+  .superRefine((d, ctx) => {
+    specIssues(d).forEach((i) => ctx.addIssue(i));
+    // Specified work is work someone has agreed to do: a correction or a
+    // feature names its owner. A plain task may wait to be picked up.
+    if (d.taskType !== "general" && d.assigneeId == null) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["assigneeId"],
+        message: "An assigned owner is required",
+      });
+    }
+    checkDateOrder(d, ctx);
+  });
 
+// Required spec fields are checked in the route against the merged task, so a
+// partial update cannot blank them out.
 export const updateTaskSchema = z
   .object({
-    title: z.string().min(1).max(200).optional(),
+    title: z.string().trim().min(1).max(200).optional(),
     description: optionalText,
+    taskType: specTypeField.optional(),
+    ...specShape,
+    requestedById: optionalId.optional(),
     status: z.enum(["todo", "in_progress", "review", "done"]).optional(),
     priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
     estimatedHours: optionalHours.optional(),
@@ -93,9 +232,59 @@ export const updateTaskSchema = z
     startDate: optionalDate.optional(),
     labelIds: labelIdsField,
   })
+  .superRefine(checkDateOrder)
   .refine((d) => Object.keys(d).length > 0, {
     message: "No fields to update",
   });
+
+// ---- Task requests (raised by members, approved by a lead) ----
+export const createTaskRequestSchema = z
+  .object({
+    taskType: specTypeField,
+    title: z.string().trim().min(1, "Title is required").max(200),
+    // How urgent it is and how long it should take are stated by the person
+    // asking for the work, who is usually closer to it than the approver.
+    priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
+    estimatedHours: optionalHours.optional(),
+    startDate: optionalDate.optional(),
+    dueDate: optionalDate.optional(),
+    ...specShape,
+  })
+  .superRefine((d, ctx) => {
+    specIssues(d).forEach((i) => ctx.addIssue(i));
+    checkDateOrder(d, ctx);
+  });
+
+/** Approving a request turns it into a task, so it needs an assigned owner. */
+export const taskRequestDecisionSchema = z
+  .object({
+    decision: z.enum(["approve", "reject"]),
+    note: z.string().trim().max(1000).optional().nullable(),
+    assigneeId: optionalId.optional(),
+    // Priority, effort and dates belong to the requester. Anything sent here
+    // is ignored rather than honoured — approving is not the moment to
+    // quietly rewrite what someone asked for.
+  })
+  .superRefine((d, ctx) => {
+    if (d.decision === "approve" && !d.assigneeId) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["assigneeId"],
+        message: "Choose an assigned owner to approve this request",
+      });
+    }
+    if (d.decision === "reject" && !d.note) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["note"],
+        message: "Give a reason for rejecting",
+      });
+    }
+  });
+
+export const signOffSchema = z.object({
+  note: z.string().trim().max(1000).optional().nullable(),
+});
 
 // ---- Reminders / scheduled activities (Wave 11) ----
 export const createReminderSchema = z.object({
@@ -160,22 +349,75 @@ export const createLabelSchema = z.object({
 });
 
 // ---- Subtasks ----
-export const createSubtaskSchema = z.object({
-  title: z.string().min(1).max(255),
-});
+// A subtask is a piece of work: an assignee, dates and a description. Leaving
+// assigneeId out gives it to the task's owner; null leaves it unassigned.
+export const createSubtaskSchema = z
+  .object({
+    title: z.string().trim().min(1).max(255),
+    description: optionalText,
+    assigneeId: optionalId.optional(),
+    startDate: optionalDate.optional(),
+    dueDate: optionalDate.optional(),
+  })
+  .superRefine(checkDateOrder);
 
 export const updateSubtaskSchema = z
   .object({
-    title: z.string().min(1).max(255).optional(),
+    title: z.string().trim().min(1).max(255).optional(),
+    description: optionalText,
+    assigneeId: optionalId.optional(),
+    startDate: optionalDate.optional(),
+    dueDate: optionalDate.optional(),
+    // Kept for older screens: ticking = "mark complete", unticking = reopen.
     is_done: z.boolean().optional(),
   })
+  .superRefine(checkDateOrder)
   .refine((d) => Object.keys(d).length > 0, {
     message: "No fields to update",
   });
 
+/** The review flow on a subtask. Sending work back must say what to change. */
+export const subtaskActionSchema = z
+  .object({
+    action: z.enum(["start", "submit", "approve", "request_changes", "reopen", "cancel", "restore"]),
+    note: z.string().trim().max(1000).optional().nullable(),
+  })
+  .superRefine((d, ctx) => {
+    if (d.action === "request_changes" && !d.note) {
+      ctx.addIssue({ code: "custom", path: ["note"], message: "Say what needs to change" });
+    }
+  });
+
+/** New weights for a set of siblings, or a reset to an even split. */
+export const weightsSchema = z.union([
+  z.object({ reset: z.literal(true) }),
+  z.object({
+    weights: z
+      .array(z.object({ id: z.coerce.number().int().positive(), weight: z.coerce.number() }))
+      .min(1),
+  }),
+]);
+
+/** Admin: give a job title a seniority level (1 = most junior). */
+export const designationLevelSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+  level: z.preprocess(
+    (v) => (v === "" || v === undefined || v === null ? null : v),
+    z.coerce.number().int().min(1).max(20).nullable()
+  ),
+});
+
 // ---- Profile ----
 export const updateProfileSchema = z.object({
   name: z.string().min(1).max(120),
+  /** E.164-ish; blank clears it. Checked properly in lib/whatsapp.ts. */
+  phone: z
+    .string()
+    .max(20)
+    .regex(/^\+?[\d\s()-]*$/, "Use digits, spaces and + only")
+    .optional()
+    .nullable(),
+  whatsappOptIn: z.boolean().optional(),
 });
 
 // ---- Comments ----
@@ -210,6 +452,10 @@ export const createMeetingSchema = z.object({
   ),
   recurrence: z.enum(["none", "daily", "weekly", "monthly"]).optional(),
   attendeeIds: z.array(z.coerce.number().int().positive()).optional(),
+  durationMinutes: z.coerce.number().int().min(5).max(720).optional(),
+  /** "room" creates a room in the meetings app; "link" uses videoUrl; "none". */
+  video: z.enum(["none", "room", "link"]).optional(),
+  videoUrl: z.string().max(500).optional().nullable(),
 });
 
 // ---- Recurring tasks + project templates (Wave 12) ----
@@ -226,9 +472,60 @@ export const createRecurringTaskSchema = z.object({
 export const saveTemplateSchema = z.object({
   name: z.string().min(1).max(200),
   description: optionalText,
+  /** Defaults to the author's own department. */
+  department: departmentField,
   projectId: z.coerce.number().int().positive(),
+});
+
+/** A task template: the New task form, saved with a name. */
+export const saveTaskTemplateSchema = z.object({
+  name: z.string().min(1).max(200),
+  department: departmentField,
+  /** The task it is copied from. */
+  taskId: z.coerce.number().int().positive(),
 });
 
 export const instantiateTemplateSchema = z.object({
   name: z.string().min(1).max(150),
+});
+
+// ---- Admin credentials vault (website logins) ----
+/** A named field on a login: "Account ID", "Registered email". */
+const credentialExtraField = z.object({
+  label: z.string().min(1).max(60),
+  value: z.string().max(500),
+});
+
+const credentialFields = {
+  name: z.string().min(1).max(200),
+  url: z.string().max(500).optional().nullable(),
+  // Required: a password with no user to go with it is half an answer.
+  username: z.string().min(1).max(255),
+  /** Stored encrypted. Long enough for a generated passphrase. */
+  password: z.string().min(1).max(500),
+  notes: z.string().max(2000).optional().nullable(),
+  projectId: optionalId.optional(),
+  /** Who can see it: admins only, everyone on its project, or named people. */
+  visibility: z.enum(["admins", "project", "people"]).optional(),
+  userIds: z.array(z.coerce.number().int().positive()).max(200).optional(),
+  /** Anything else the site asks for, named by whoever saved it. */
+  fields: z.array(credentialExtraField).max(20).optional(),
+};
+
+export const credentialSchema = z.object(credentialFields);
+
+/**
+ * An edit sends only what changed. A blank password means "leave it as it
+ * is": the form cannot show the stored one, so it cannot send it back.
+ */
+export const credentialUpdateSchema = z.object({
+  name: credentialFields.name.optional(),
+  url: credentialFields.url,
+  username: credentialFields.username.optional(),
+  password: z.string().max(500).optional(),
+  notes: credentialFields.notes,
+  projectId: optionalId.optional(),
+  visibility: credentialFields.visibility,
+  userIds: credentialFields.userIds,
+  fields: credentialFields.fields,
 });

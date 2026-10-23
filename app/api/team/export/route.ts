@@ -1,4 +1,3 @@
-import { NextRequest } from "next/server";
 import ExcelJS from "exceljs";
 import { requireUser } from "@/lib/auth";
 import { errorResponse, forbidden } from "@/lib/http";
@@ -9,11 +8,14 @@ export const dynamic = "force-dynamic";
 
 /** GET /api/team/export — team performance report (.xlsx). Admin/lead only;
  *  scoped exactly like the /team page. */
-export async function GET(_req: NextRequest) {
+export async function GET() {
   try {
     const user = await requireUser();
     const { scope, members } = await getTeamPerformance(user);
-    if (scope === "self") {
+    // Seeing who you work with is not the same as taking away a spreadsheet
+    // of their performance — that stays with admins and the leads
+    // accountable for it.
+    if (scope !== "all" && scope !== "led") {
       throw forbidden("Only an admin or project lead can export the team report");
     }
 

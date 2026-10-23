@@ -3,33 +3,46 @@ import { requirePageUser } from "@/lib/page-guard";
 import { query, DbRow } from "@/lib/db";
 import AppShell from "@/components/AppShell";
 import ProjectBoard from "@/components/project/ProjectBoard";
-import { attachTaskMeta } from "@/lib/tasks";
-import type { Label, Milestone, ProjectMember, Task } from "@/lib/types";
+import { fetchTaskRequests, fetchTasks } from "@/lib/tasks";
+import type {
+  Label,
+  Milestone,
+  ProjectMember,
+  Task,
+  TaskRequest,
+} from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-const TASK_SELECT = `
-  t.id, t.project_id, t.title, t.description, t.status, t.priority,
-  t.estimated_hours, t.spent_hours, t.is_additional, t.parent_task_id,
-  t.assignee_id, t.created_by, t.due_date, t.start_date, t.created_at, t.updated_at,
-  a.name AS assignee_name, c.name AS creator_name,
-  (SELECT COUNT(*) FROM task_comments tc WHERE tc.task_id = t.id) AS comment_count
-`;
-
 export default async function ProjectDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  /**
+   * ?task=12 opens that task straight away — what notifications link to —
+   * and &focus=blockers scrolls to the part the notification was about.
+   */
+  searchParams: Promise<{ task?: string; focus?: string; subtask?: string }>;
 }) {
   const user = await requirePageUser();
   const { id } = await params;
+  const search = await searchParams;
+  const openTaskId = Number(search.task);
+  const focus = search.focus === "blockers" ? "blockers" : null;
+  const openSubtaskId = Number(search.subtask);
   const projectId = Number(id);
   if (!Number.isInteger(projectId)) notFound();
 
   const projectRows = await query<DbRow[]>(
-    `SELECT p.id, p.name, p.description, p.status, p.owner_id, u.name AS owner_name
+    `SELECT p.id, p.name, p.description, p.department, p.status, p.start_date, p.due_date,
+            p.approval_status, p.owner_id,
+            p.requested_by, p.requested_at, p.decided_at, p.decision_note,
+            u.name AS owner_name, rq.name AS requester_name, dc.name AS decider_name
      FROM projects p
      LEFT JOIN users u ON u.id = p.owner_id
+     LEFT JOIN users rq ON rq.id = p.requested_by
+     LEFT JOIN users dc ON dc.id = p.decided_by
      WHERE p.id = ? LIMIT 1`,
     [projectId]
   );
@@ -47,22 +60,17 @@ export default async function ProjectDetailPage({
   if (user.role !== "admin" && !projectRole) {
     redirect("/projects");
   }
-  const canManage = user.role === "admin" || projectRole === "lead";
+  // The owner runs the project (always a lead too; checked here as well).
+  const canManage =
+    user.role === "admin" || projectRole === "lead" || project.owner_id === user.id;
 
-  const taskRows = await query<DbRow[]>(
-    `SELECT ${TASK_SELECT}
-     FROM tasks t
-     LEFT JOIN users a ON a.id = t.assignee_id
-     LEFT JOIN users c ON c.id = t.created_by
-     WHERE t.project_id = ?
-     ORDER BY t.created_at DESC`,
-    [projectId]
-  );
-  await attachTaskMeta(taskRows);
-  const tasks = taskRows.map((t) => ({
-    ...t,
-    comment_count: Number(t.comment_count),
-  })) as unknown as Task[];
+  const tasks = (await fetchTasks("t.project_id = ?", [projectId])) as unknown as Task[];
+
+  // Leads/admins review every task request; members see the ones they raised.
+  const requests = (await fetchTaskRequests(
+    canManage ? "r.project_id = ?" : "r.project_id = ? AND r.requested_by = ?",
+    canManage ? [projectId] : [projectId, user.id]
+  )) as unknown as TaskRequest[];
 
   const labelRows = await query<DbRow[]>(
     `SELECT id, project_id, name, color FROM labels WHERE project_id = ? ORDER BY name`,
@@ -71,7 +79,8 @@ export default async function ProjectDetailPage({
   const labels = labelRows as unknown as Label[];
 
   const memberRows = await query<DbRow[]>(
-    `SELECT pm.id, pm.project_id, pm.user_id, pm.role_in_project, u.name, u.email
+    `SELECT pm.id, pm.project_id, pm.user_id, pm.role_in_project, u.name, u.email,
+            u.department, u.designation
      FROM project_members pm
      JOIN users u ON u.id = pm.user_id
      WHERE pm.project_id = ?
@@ -94,27 +103,56 @@ export default async function ProjectDetailPage({
   let allUsers: DbRow[] = [];
   if (canManage) {
     allUsers = await query<DbRow[]>(
-      `SELECT id, name, email FROM users WHERE is_active = TRUE ORDER BY name`
+      `SELECT id, name, email, department, designation FROM users WHERE is_active = TRUE ORDER BY name`
     );
   }
 
   return (
     <AppShell user={user}>
+      {/* Keyed by the linked task so arriving from a notification remounts
+          the board: a client-side navigation to the same page would
+          otherwise keep the old state and open nothing. */}
       <ProjectBoard
+        key={Number.isInteger(openTaskId) ? `task-${openTaskId}-${focus ?? ""}` : "board"}
         project={{
           id: project.id,
           name: project.name,
           description: project.description,
+          department: (project.department as string | null) ?? null,
           status: project.status,
           owner_id: project.owner_id,
           owner_name: project.owner_name,
+          approval_status: project.approval_status,
+          requested_by: project.requested_by,
+          requester_name: project.requester_name,
+          requested_at: project.requested_at,
+          decider_name: project.decider_name,
+          decided_at: project.decided_at,
+          decision_note: project.decision_note,
+          start_date: (project.start_date as string | null) ?? null,
+          due_date: (project.due_date as string | null) ?? null,
         }}
         initialTasks={tasks}
         initialMembers={members}
         initialLabels={labels}
         initialMilestones={milestones}
-        allUsers={allUsers.map((u) => ({ id: u.id, name: u.name, email: u.email }))}
-        currentUser={{ id: user.id, role: user.role }}
+        initialRequests={requests}
+        openTaskId={Number.isInteger(openTaskId) ? openTaskId : null}
+        focus={focus}
+        openSubtaskId={Number.isInteger(openSubtaskId) ? openSubtaskId : null}
+        allUsers={allUsers.map((u) => ({
+          id: u.id,
+          name: u.name,
+          email: u.email,
+          department: u.department ?? null,
+          designation: u.designation ?? null,
+        }))}
+        currentUser={{
+          id: user.id,
+          role: user.role,
+          name: user.name,
+          department: user.department,
+        }}
         canManage={canManage}
       />
     </AppShell>

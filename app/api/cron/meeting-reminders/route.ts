@@ -3,7 +3,7 @@ import { query, DbRow } from "@/lib/db";
 import { json, errorResponse } from "@/lib/http";
 import { assertCron } from "@/lib/cron";
 import { notify } from "@/lib/activity";
-import { sendEmail, emailLayout, appBaseUrl } from "@/lib/mailer";
+import { sendEmail, emailLayout, appBaseUrl, escapeHtml } from "@/lib/mailer";
 import { formatIst } from "@/lib/tz";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
     const base = appBaseUrl();
 
     const due = await query<DbRow[]>(
-      `SELECT m.id, m.title, m.description, m.location, m.start_time,
+      `SELECT m.id, m.title, m.description, m.location, m.video_url, m.start_time,
               p.name AS project_name
          FROM meetings m
          LEFT JOIN projects p ON p.id = m.project_id
@@ -44,16 +44,20 @@ export async function POST(req: NextRequest) {
       );
 
       const whenIst = formatIst(String(m.start_time));
-      const where = m.location ? `<p>Where: ${m.location}</p>` : "";
-      const proj = m.project_name ? `<p>Project: ${m.project_name}</p>` : "";
+      const where = m.location ? `<p>Where: ${escapeHtml(m.location)}</p>` : "";
+      const proj = m.project_name ? `<p>Project: ${escapeHtml(m.project_name)}</p>` : "";
       await sendEmail({
         to: attendees.map((a) => a.email),
         subject: `Reminder: ${m.title} at ${whenIst}`,
         html: emailLayout(
           "Upcoming meeting",
-          `<p><strong>${m.title}</strong> starts at <strong>${whenIst}</strong> (IST).</p>
-           ${proj}${where}
-           ${m.description ? `<p>${m.description}</p>` : ""}
+          `<p><strong>${escapeHtml(m.title)}</strong> starts at <strong>${escapeHtml(whenIst)}</strong> (IST).</p>
+           ${proj}${where}${
+             m.video_url
+               ? `<p><a href="${escapeHtml(m.video_url)}">Join the video call →</a></p>`
+               : ""
+           }
+           ${m.description ? `<p>${escapeHtml(m.description)}</p>` : ""}
            <p><a href="${base}/meetings">View in PMApp →</a></p>`
         ),
       });

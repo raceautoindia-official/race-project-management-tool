@@ -1,17 +1,17 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ProjectStatusBadge } from "@/components/Badge";
+import { ProjectStatusBadge, RequestStatusBadge } from "@/components/Badge";
 import LabelChip from "@/components/LabelChip";
 import Avatar from "@/components/Avatar";
 import Calendar from "@/components/Calendar";
 import ExportButton from "@/components/ExportButton";
-import { StatusBar } from "@/components/ProgressBar";
-import { apiFetch } from "@/lib/api-client";
+import { apiFetch, isConflict } from "@/lib/api-client";
 import { useToast } from "@/components/ToastProvider";
-import { statusCounts } from "@/lib/progress";
+import { projectPercent, projectUnitsOf, statusCounts } from "@/lib/progress";
 import { formatDate, isOverdue } from "@/lib/format";
+import { projectLockReason } from "@/lib/workflow";
 import {
   TASK_STATUSES,
   TASK_STATUS_LABELS,
@@ -19,8 +19,10 @@ import {
   type Milestone,
   type ProjectMember,
   type ProjectStatus,
+  type RequestStatus,
   type Role,
   type Task,
+  type TaskRequest,
   type TaskPriority,
   type TaskStatus,
 } from "@/lib/types";
@@ -28,24 +30,45 @@ import TaskCard from "./TaskCard";
 import TaskFormModal from "./TaskFormModal";
 import TaskDetailModal from "./TaskDetailModal";
 import MembersModal from "./MembersModal";
+import { DepartmentBadge } from "@/components/DepartmentField";
 import EditProjectModal from "./EditProjectModal";
 import ImportTasksModal from "./ImportTasksModal";
 import TimelineView from "./TimelineView";
 import RecurringTasksModal from "./RecurringTasksModal";
+import ProjectGallery from "./ProjectGallery";
+import TaskRequestsPanel from "./TaskRequestsPanel";
+import ProjectStatusBanner from "./ProjectStatusBanner";
+import ProjectTree from "@/components/work/ProjectTree";
+import { ProgressLegend, WorkProgress, shortDate } from "@/components/work/kit";
+import ScheduleTrack from "@/components/work/ScheduleTrack";
+import { projectProgress } from "@/lib/work-engine";
 
 interface PickUser {
   id: number;
   name: string;
   email: string;
+  department?: string | null;
+  designation?: string | null;
 }
 
 interface ProjectInfo {
   id: number;
   name: string;
   description: string | null;
+  /** Whose work this is; every task in here counts to it. */
+  department: string | null;
   status: ProjectStatus;
   owner_id: number | null;
   owner_name: string | null;
+  approval_status: RequestStatus;
+  requested_by: number | null;
+  requester_name: string | null;
+  requested_at: string | null;
+  decider_name: string | null;
+  decided_at: string | null;
+  decision_note: string | null;
+  start_date?: string | null;
+  due_date?: string | null;
 }
 
 const PRIORITY_ORDER: Record<TaskPriority, number> = {
@@ -55,7 +78,17 @@ const PRIORITY_ORDER: Record<TaskPriority, number> = {
   low: 3,
 };
 
-type ViewMode = "board" | "list" | "timeline" | "calendar";
+type ViewMode = "tree" | "board" | "list" | "timeline" | "calendar";
+
+const VIEW_KEY = "pm-project-view";
+
+const VIEW_LABELS: Record<ViewMode, string> = {
+  tree: "Tasks & subtasks",
+  board: "Board",
+  list: "List",
+  timeline: "Timeline",
+  calendar: "Calendar",
+};
 
 export default function ProjectBoard({
   project: initialProject,
@@ -63,6 +96,10 @@ export default function ProjectBoard({
   initialMembers,
   initialLabels,
   initialMilestones,
+  initialRequests,
+  openTaskId = null,
+  focus = null,
+  openSubtaskId = null,
   allUsers,
   currentUser,
   canManage,
@@ -72,8 +109,15 @@ export default function ProjectBoard({
   initialMembers: ProjectMember[];
   initialLabels: Label[];
   initialMilestones: Milestone[];
+  initialRequests: TaskRequest[];
+  /** Opened as soon as the page loads (a notification linked straight to it). */
+  openTaskId?: number | null;
+  /** The part of that task the notification was about. */
+  focus?: "blockers" | null;
+  /** The subtask a notification was about, expanded in the opened task. */
+  openSubtaskId?: number | null;
   allUsers: PickUser[];
-  currentUser: { id: number; role: Role };
+  currentUser: { id: number; role: Role; name: string; department?: string | null };
   canManage: boolean;
 }) {
   const { toast } = useToast();
@@ -84,13 +128,39 @@ export default function ProjectBoard({
   const [milestones, setMilestones] = useState<Milestone[]>(initialMilestones);
   const [newMs, setNewMs] = useState("");
   const [newMsDate, setNewMsDate] = useState("");
-  const [view, setView] = useState<ViewMode>("board");
+  const [view, setViewState] = useState<ViewMode>("tree");
+  // The view each person last used comes back next time (per browser).
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(VIEW_KEY) as ViewMode | null;
+      // Read after mount so the server render and the first client render match.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (saved && saved in VIEW_LABELS) setViewState(saved);
+    } catch {
+      // Storage blocked: the default view is fine.
+    }
+  }, []);
+  function setView(v: ViewMode) {
+    setViewState(v);
+    try {
+      localStorage.setItem(VIEW_KEY, v);
+    } catch {
+      // ignore
+    }
+  }
+  const [requests, setRequests] = useState<TaskRequest[]>(initialRequests);
+  const [raiseOpen, setRaiseOpen] = useState(false);
 
   const [formOpen, setFormOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [followUpParent, setFollowUpParent] = useState<Task | null>(null);
-  const [detailTask, setDetailTask] = useState<Task | null>(null);
-  const [detailOpen, setDetailOpen] = useState(false);
+  // A notification links to the task, not just the board it sits on, so the
+  // thing someone was told about is what they see.
+  const linkedTask = openTaskId
+    ? (initialTasks.find((t) => t.id === openTaskId) ?? null)
+    : null;
+  const [detailTask, setDetailTask] = useState<Task | null>(linkedTask);
+  const [detailOpen, setDetailOpen] = useState(Boolean(linkedTask));
   const [membersOpen, setMembersOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -107,11 +177,41 @@ export default function ProjectBoard({
 
   const total = tasks.length;
   const done = tasks.filter((t) => t.status === "done").length;
-  const pct = total ? Math.round((done / total) * 100) : 0;
+  // Weighted, approved work only: each task adds its approved share (its
+  // approved subtasks) by its weight; work waiting for review shows as pending.
+  const units = projectUnitsOf(tasks);
+  const pct = projectPercent(units);
+  const projectProg = projectProgress(
+    tasks.map((t) => ({
+      id: t.id,
+      status: t.status,
+      weight: Number(t.weight ?? 0),
+      weight_mode: t.weight_mode === "manual" ? "manual" : "auto",
+      progress: { approved: Number(t.progress_approved ?? 0), pending: Number(t.progress_pending ?? 0) },
+    }))
+  );
+  const myTaskCount = tasks.filter((t) => t.assignee_id === currentUser.id).length;
+  const roleLine =
+    project.owner_id === currentUser.id
+      ? "You own this project: add tasks and give each one an owner, set how much each counts (weights), and approve finished tasks."
+      : canManage
+        ? "You manage this project: add tasks, set weights and approve finished tasks."
+        : myTaskCount > 0
+          ? `You own ${myTaskCount === 1 ? "a task" : `${myTaskCount} tasks`} here: split ${myTaskCount === 1 ? "it" : "them"} into subtasks for people, then approve each one when it's done.`
+          : "Work on the subtasks assigned to you and mark them complete — the task owner reviews them. You can follow everything else here.";
+  const people = members.map((m) => ({ user_id: m.user_id, name: m.name, department: m.department ?? null, designation: m.designation ?? null }));
   const counts = statusCounts(tasks);
   const totalEst = tasks.reduce((s, t) => s + Number(t.estimated_hours ?? 0), 0);
   const spentSum = tasks.reduce((s, t) => s + Number(t.spent_hours ?? 0), 0);
   const isAdmin = currentUser.role === "admin";
+  // Pending/rejected requests and completed projects are read-only for everyone.
+  const lockReason = projectLockReason(project);
+  const writable = !lockReason;
+  const canManageWritable = canManage && writable;
+  const readyToComplete =
+    tasks.length > 0 &&
+    tasks.every((t) => t.signed_off_at) &&
+    !requests.some((r) => r.status === "pending");
 
   function upsertTask(task: Task) {
     setTasks((ts) =>
@@ -129,6 +229,10 @@ export default function ProjectBoard({
   async function moveTask(id: number, status: TaskStatus) {
     const current = tasks.find((t) => t.id === id);
     if (!current || current.status === status) return;
+    if (lockReason || current.signed_off_at) {
+      toast(lockReason ?? "This task is signed off and read-only.", "error");
+      return;
+    }
     // Members submit for review; only a lead/admin marks Done.
     if (status === "done" && !canManage) {
       toast("Move it to Review to submit — a lead will mark it Done.", "error");
@@ -144,6 +248,7 @@ export default function ProjectBoard({
       upsertTask(res.task);
     } catch (e) {
       setTasks(snapshot);
+      if (isConflict(e)) void reloadTasks();
       toast(e instanceof Error ? e.message : "Could not move task", "error");
     }
   }
@@ -168,6 +273,40 @@ export default function ProjectBoard({
   function openDetail(task: Task) {
     setDetailTask(task);
     setDetailOpen(true);
+  }
+
+  async function reloadRequests() {
+    try {
+      const res = await apiFetch<{ requests: TaskRequest[] }>(
+        `/api/projects/${project.id}/requests`
+      );
+      setRequests(res.requests);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not refresh requests", "error");
+    }
+  }
+
+  /** Open a task's detail (e.g. from an approved request), loading it if needed. */
+  async function openTaskById(taskId: number) {
+    const known = tasks.find((t) => t.id === taskId);
+    if (known) return openDetail(known);
+    try {
+      const res = await apiFetch<{ task: Task }>(`/api/tasks/${taskId}`);
+      upsertTask(res.task);
+      openDetail(res.task);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not open the task", "error");
+    }
+  }
+
+  /** One task moved (a subtask changed its status or progress). */
+  async function reloadTask(taskId: number) {
+    try {
+      const res = await apiFetch<{ task: Task }>(`/api/tasks/${taskId}`);
+      upsertTask(res.task);
+    } catch {
+      // The panel already said what went wrong.
+    }
   }
 
   async function reloadTasks() {
@@ -269,185 +408,220 @@ export default function ProjectBoard({
 
   return (
     <div>
-      <div className="mb-2 text-sm text-slate-400">
-        <Link href="/projects" className="hover:text-indigo-600">
+      <div className="mb-2 text-sm text-slate-500">
+        <Link href="/projects" className="inline-block py-1 text-slate-600 hover:text-indigo-600">
           ← Projects
         </Link>
       </div>
 
-      <div className="mb-6 rounded-xl border border-slate-200 bg-white p-5">
+      <div className="mb-6 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+        <div className="h-1.5 bg-gradient-to-r from-violet-500 via-fuchsia-500 to-pink-500" aria-hidden />
+        <div className="bg-gradient-to-br from-violet-50 to-white p-5 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold text-slate-900">{project.name}</h1>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">{project.name}</h1>
+              <DepartmentBadge name={project.department} />
               <ProjectStatusBadge status={project.status} />
+              {project.approval_status !== "approved" && (
+                <RequestStatusBadge status={project.approval_status} />
+              )}
             </div>
-            <p className="mt-1 max-w-2xl text-sm text-slate-500">
+            <p className="mt-1 max-w-[70ch] text-sm text-slate-600">
               {project.description || "No description"}
             </p>
-            {project.owner_name && (
-              <p className="mt-1 text-xs text-slate-400">Owner: {project.owner_name}</p>
-            )}
+            <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+              {project.owner_name && (
+                <span className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500">Owner</span>
+                  <Avatar name={project.owner_name} size="sm" />
+                  <span className="font-medium text-slate-800">{project.owner_name}</span>
+                </span>
+              )}
+              <span className="figure rounded-full bg-white px-2.5 py-0.5 text-xs text-slate-600 ring-1 ring-slate-200">
+                📅 {shortDate(project.start_date)} → {shortDate(project.due_date)}
+              </span>
+            </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            {canManage && (
+            {canManageWritable && (
               <button
                 onClick={openCreate}
-                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
               >
                 + New task
+              </button>
+            )}
+            {writable && !canManage && (
+              <button
+                onClick={() => setRaiseOpen(true)}
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
+              >
+                + Raise request
               </button>
             )}
             <ExportButton href={`/api/projects/${project.id}/tasks/export`} />
             <a
               href={`/api/projects/${project.id}/tasks/xlsx`}
-              className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+              className="on-band rounded-lg border px-3 py-1.5 text-sm font-medium band-sheet"
             >
               Export Excel
             </a>
-            {canManage && (
+            {canManageWritable && (
               <>
                 <a
                   href={`/api/projects/${project.id}/tasks/template`}
-                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                  className="on-band rounded-lg border px-3 py-1.5 text-sm font-medium band-sheet"
                 >
                   Template
                 </a>
                 <button
                   onClick={() => setImportOpen(true)}
-                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                  className="on-band rounded-lg border px-3 py-1.5 text-sm font-medium band-in"
                 >
                   Import Excel
                 </button>
                 <button
                   onClick={() => setRecurringOpen(true)}
-                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                  className="on-band rounded-lg border px-3 py-1.5 text-sm font-medium band-set"
                 >
                   Recurring
                 </button>
                 <button
                   onClick={() => setMembersOpen(true)}
-                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                  className="on-band rounded-lg border px-3 py-1.5 text-sm font-medium band-people"
                 >
                   Members ({members.length})
                 </button>
-                {isAdmin && (
-                  <button
-                    onClick={saveAsTemplate}
-                    disabled={savingTemplate}
-                    className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40"
-                  >
-                    Save as template
-                  </button>
-                )}
                 <button
                   onClick={() => setEditOpen(true)}
-                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                  className="on-band rounded-lg border px-3 py-1.5 text-sm font-medium band-edit"
                 >
                   Edit project
                 </button>
               </>
             )}
-          </div>
-        </div>
-
-        <div className="mt-4">
-          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-            <span>
-              {done}/{total} tasks done ({pct}%)
-            </span>
-            {totalEst > 0 && (
-              <span>
-                {spentSum}h logged / {totalEst}h estimated
-              </span>
+            {/* Anyone on the project may write its shape down — the people
+                doing the work know it best. Only an admin deletes one. */}
+            {project.approval_status === "approved" && (
+              <button
+                onClick={saveAsTemplate}
+                disabled={savingTemplate}
+                className="on-band rounded-lg border px-3 py-1.5 text-sm font-medium band-in disabled:opacity-40"
+              >
+                Save as template
+              </button>
             )}
           </div>
-          <StatusBar counts={counts} />
+        </div>
+        </div>
+
+        {/* How far along (approved work only), and the schedule as a picture. */}
+        <div className="grid gap-4 border-t border-slate-100 p-5 sm:p-6 lg:grid-cols-2">
+          <div className="rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200">
+            <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
+              <p>
+                <span className="figure text-4xl font-bold text-slate-900">{pct}%</span>
+                <span className="ml-2 text-sm text-slate-600">complete (approved)</span>
+              </p>
+              {projectProg.pending > 0.5 && (
+                <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-800 ring-1 ring-amber-200">
+                  + {Math.round(projectProg.pending)}% waiting for review
+                </span>
+              )}
+            </div>
+            <WorkProgress approved={projectProg.approved} pending={projectProg.pending} size="lg" label="Project progress" />
+            <div className="mt-2">
+              <ProgressLegend />
+            </div>
+            <dl className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <Figure label="Approved" value={`${done}/${total}`} tone="bg-emerald-50 ring-emerald-200 text-emerald-700" />
+              <Figure label="In review" value={counts.review} tone="bg-amber-50 ring-amber-200 text-amber-700" />
+              <Figure label="In progress" value={counts.in_progress} tone="bg-indigo-50 ring-indigo-200 text-indigo-700" />
+              <Figure label="To do" value={counts.todo} tone="bg-slate-100 ring-slate-200 text-slate-600" />
+            </dl>
+            {totalEst > 0 && (
+              <p className="figure mt-3 text-xs text-slate-600">
+                ⏱ {spentSum}h logged / {totalEst}h estimated
+              </p>
+            )}
+          </div>
+          <ScheduleTrack
+            approved={projectProg.approved}
+            pending={projectProg.pending}
+            start={project.start_date}
+            due={project.due_date}
+          />
         </div>
       </div>
 
-      {(milestones.length > 0 || canManage) && (
-        <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4">
-          <div className="mb-2 text-sm font-semibold text-slate-700">Milestones</div>
-          {milestones.length === 0 ? (
-            <p className="text-xs text-slate-400">No milestones yet.</p>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {milestones.map((m) => (
-                <span
-                  key={m.id}
-                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${
-                    m.is_done
-                      ? "border-green-200 bg-green-50 text-green-700"
-                      : "border-slate-200 text-slate-600"
-                  }`}
-                >
-                  {canManage ? (
-                    <input
-                      type="checkbox"
-                      checked={m.is_done}
-                      onChange={() => toggleMilestone(m)}
-                      className="h-3 w-3"
-                    />
-                  ) : (
-                    <span>{m.is_done ? "✓" : "◆"}</span>
-                  )}
-                  <span className={m.is_done ? "line-through" : ""}>{m.name}</span>
-                  {m.due_date && (
-                    <span className="text-slate-400">· {formatDate(m.due_date)}</span>
-                  )}
-                  {canManage && (
-                    <button
-                      onClick={() => deleteMilestone(m.id)}
-                      className="text-slate-300 hover:text-red-500"
-                      aria-label="Remove milestone"
-                    >
-                      ✕
-                    </button>
-                  )}
-                </span>
-              ))}
-            </div>
-          )}
-          {canManage && (
-            <div className="mt-3 flex flex-wrap gap-2">
-              <input
-                value={newMs}
-                onChange={(e) => setNewMs(e.target.value)}
-                placeholder="New milestone…"
-                className="min-w-40 flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
-              />
-              <input
-                type="date"
-                value={newMsDate}
-                onChange={(e) => setNewMsDate(e.target.value)}
-                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
-              />
-              <button
-                onClick={addMilestone}
-                disabled={!newMs.trim()}
-                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-              >
-                Add
-              </button>
-            </div>
-          )}
-        </div>
-      )}
+      <ProjectStatusBanner
+        project={project}
+        currentUser={currentUser}
+        canManage={canManage}
+        readyToComplete={readyToComplete}
+        onProjectChange={(patch) => setProject((prev) => ({ ...prev, ...patch }))}
+      />
+
+      <TaskRequestsPanel
+        projectId={project.id}
+        requests={requests}
+        onRequestsChange={setRequests}
+        members={members}
+        currentUserId={currentUser.id}
+        isAdmin={isAdmin}
+        canManage={canManage}
+        writable={writable}
+        raiseOpen={raiseOpen}
+        onRaiseOpenChange={setRaiseOpen}
+        onTaskCreated={upsertTask}
+        onOpenTask={openTaskById}
+        onStale={() => {
+          void reloadRequests();
+          void reloadTasks();
+        }}
+      />
 
       <div className="mb-4 inline-flex rounded-lg border border-slate-200 bg-white p-1 text-sm">
-        {(["board", "list", "timeline", "calendar"] as ViewMode[]).map((v) => (
+        {(["tree", "board", "list", "timeline", "calendar"] as ViewMode[]).map((v) => (
           <button
             key={v}
             onClick={() => setView(v)}
-            className={`rounded-md px-3 py-1.5 font-medium capitalize ${
+            aria-pressed={view === v}
+            className={`rounded-md px-3 py-1.5 font-medium ${
               view === v ? "bg-indigo-600 text-white" : "text-slate-600"
             }`}
           >
-            {v}
+            {VIEW_LABELS[v]}
           </button>
         ))}
       </div>
+      {view === "tree" && (
+        <div className="mb-3 space-y-2">
+          <p className="rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-900">
+            <span aria-hidden>💡 </span>
+            {roleLine}
+          </p>
+          <ProgressLegend />
+        </div>
+      )}
+
+      {view === "tree" && (
+        <ProjectTree
+          projectId={project.id}
+          projectName={project.name}
+          tasks={tasks}
+          people={people}
+          currentUser={currentUser}
+          isManager={canManage}
+          writable={writable}
+          onOpen={openDetail}
+          onTaskChanged={(id) => void reloadTask(id)}
+          onWeightsSaved={() => void reloadTasks()}
+          projectOwnerName={project.owner_name}
+          onTaskAdded={() => void reloadTasks()}
+        />
+      )}
 
       {view === "board" && (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -467,7 +641,7 @@ export default function ProjectBoard({
                   <span className="text-sm font-semibold text-slate-700">
                     {TASK_STATUS_LABELS[status]}
                   </span>
-                  <span className="rounded-full bg-white px-2 text-xs font-medium text-slate-500">
+                  <span className="rounded-full bg-white px-2 text-xs font-medium text-slate-600">
                     {colTasks.length}
                   </span>
                 </div>
@@ -476,7 +650,7 @@ export default function ProjectBoard({
                     <TaskCard key={t.id} task={t} onOpen={openDetail} onDragStart={setDraggedId} />
                   ))}
                   {colTasks.length === 0 && (
-                    <p className="px-1 py-4 text-center text-xs text-slate-400">Drop tasks here</p>
+                    <p className="px-1 py-4 text-center text-xs text-slate-500">Drop tasks here</p>
                   )}
                 </div>
               </div>
@@ -502,7 +676,7 @@ export default function ProjectBoard({
           toggleSort={toggleSort}
           sortKey={sortKey}
           sortDir={sortDir}
-          canManage={canManage}
+          canManage={canManageWritable}
           projectId={project.id}
           onBulkDone={reloadTasks}
         />
@@ -513,6 +687,88 @@ export default function ProjectBoard({
       )}
 
       {view === "calendar" && <Calendar tasks={tasks} onSelect={openDetail} />}
+
+      <div className="mt-6">
+      {(milestones.length > 0 || canManageWritable) && (
+        <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4">
+          <div className="mb-2 text-sm font-semibold text-slate-700">Milestones</div>
+          {milestones.length === 0 ? (
+            <p className="text-xs text-slate-500">No milestones yet.</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {milestones.map((m) => (
+                <span
+                  key={m.id}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${
+                    m.is_done
+                      ? "border-green-200 bg-green-50 text-green-700"
+                      : "border-slate-200 text-slate-600"
+                  }`}
+                >
+                  {canManageWritable ? (
+                    <input
+                      type="checkbox"
+                      checked={m.is_done}
+                      onChange={() => toggleMilestone(m)}
+                      className="h-3 w-3"
+                    />
+                  ) : (
+                    <span>{m.is_done ? "✓" : "◆"}</span>
+                  )}
+                  <span className={m.is_done ? "line-through" : ""}>{m.name}</span>
+                  {m.due_date && (
+                    <span className="text-slate-500">· {formatDate(m.due_date)}</span>
+                  )}
+                  {canManageWritable && (
+                    <button
+                      onClick={() => deleteMilestone(m.id)}
+                      className="rounded px-1 text-slate-500 hover:bg-red-50 hover:text-red-600"
+                      aria-label="Remove milestone"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </span>
+              ))}
+            </div>
+          )}
+          {canManageWritable && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              <input
+                value={newMs}
+                onChange={(e) => setNewMs(e.target.value)}
+                placeholder="New milestone…"
+                className="min-w-40 flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+              />
+              <input
+                type="date"
+                aria-label="Milestone due date"
+                value={newMsDate}
+                onChange={(e) => setNewMsDate(e.target.value)}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+              />
+              <button
+                onClick={addMilestone}
+                disabled={!newMs.trim()}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+              >
+                Add
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="mb-4">
+        <ProjectGallery
+          projectId={project.id}
+          currentUserId={currentUser.id}
+          canManage={canManage}
+          readOnly={!writable}
+        />
+      </div>
+
+      </div>
 
       <TaskFormModal
         key={`taskform-${
@@ -530,16 +786,22 @@ export default function ProjectBoard({
         labels={labels}
         task={editingTask}
         parentTask={followUpParent}
+        currentUserId={currentUser.id}
+        myDepartment={currentUser.department}
         onSaved={upsertTask}
         onLabelCreated={(l) => setLabels((prev) => [...prev, l])}
       />
       <TaskDetailModal
-        key={`taskdetail-${detailTask?.id ?? "none"}`}
+        key={`taskdetail-${detailTask?.id ?? "none"}-${detailOpen ? "open" : "closed"}`}
         open={detailOpen}
         onClose={() => setDetailOpen(false)}
         task={detailTask}
+        focus={detailTask?.id === openTaskId ? focus : null}
+        openSubtaskId={detailTask?.id === openTaskId ? openSubtaskId : null}
+        projectOwnerName={project.owner_name}
         currentUser={currentUser}
         canManage={canManage}
+        projectReadOnlyReason={lockReason}
         members={members}
         projectTasks={tasks.map((t) => ({
           id: t.id,
@@ -551,7 +813,7 @@ export default function ProjectBoard({
         onChanged={upsertTask}
         onDeleted={removeTask}
       />
-      {canManage && (
+      {canManageWritable && (
         <ImportTasksModal
           open={importOpen}
           onClose={() => setImportOpen(false)}
@@ -559,8 +821,10 @@ export default function ProjectBoard({
           onImported={reloadTasks}
         />
       )}
-      {canManage && (
+      {canManageWritable && (
         <RecurringTasksModal
+          // Remount per opening so it starts in its loading state.
+          key={recurringOpen ? "recurring-open" : "recurring-closed"}
           open={recurringOpen}
           onClose={() => setRecurringOpen(false)}
           projectId={project.id}
@@ -568,7 +832,7 @@ export default function ProjectBoard({
           canManage={canManage}
         />
       )}
-      {canManage && (
+      {canManageWritable && (
         <>
           <MembersModal
             open={membersOpen}
@@ -580,6 +844,8 @@ export default function ProjectBoard({
             onChanged={setMembers}
           />
           <EditProjectModal
+            // Remount per opening so a cancelled change isn't resubmitted later.
+            key={editOpen ? "edit-open" : "edit-closed"}
             open={editOpen}
             onClose={() => setEditOpen(false)}
             project={project}
@@ -637,6 +903,8 @@ function ListView({
   const selectClass =
     "rounded-lg border border-slate-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none";
   const arrow = (k: string) => (sortKey === k ? (sortDir === "asc" ? " ▲" : " ▼") : "");
+  // Signed-off tasks are read-only, so they can't take part in bulk actions.
+  const selectable = tasks.filter((t) => !t.signed_off_at);
 
   function toggleSel(id: number) {
     setSelected((prev) => {
@@ -767,7 +1035,7 @@ function ListView({
           </button>
           <button
             onClick={() => setSelected(new Set())}
-            className="text-xs text-slate-500 hover:text-slate-700"
+            className="text-xs text-slate-600 hover:text-slate-700"
           >
             Clear
           </button>
@@ -775,16 +1043,17 @@ function ListView({
       )}
 
       <table className="w-full text-left text-sm">
-        <thead className="text-xs uppercase tracking-wide text-slate-400">
+        <thead className="text-xs uppercase tracking-wide text-slate-500">
           <tr>
             {canManage && (
               <th className="w-8 px-3 py-2">
                 <input
                   type="checkbox"
-                  checked={tasks.length > 0 && selected.size === tasks.length}
+                  aria-label="Select all open tasks"
+                  checked={selectable.length > 0 && selected.size === selectable.length}
                   onChange={(e) =>
                     setSelected(
-                      e.target.checked ? new Set(tasks.map((t) => t.id)) : new Set()
+                      e.target.checked ? new Set(selectable.map((t) => t.id)) : new Set()
                     )
                   }
                 />
@@ -808,7 +1077,7 @@ function ListView({
         <tbody className="divide-y divide-slate-100">
           {tasks.length === 0 ? (
             <tr>
-              <td colSpan={canManage ? 6 : 5} className="px-4 py-8 text-center text-slate-400">
+              <td colSpan={canManage ? 6 : 5} className="px-4 py-8 text-center text-slate-500">
                 No tasks match these filters.
               </td>
             </tr>
@@ -819,6 +1088,8 @@ function ListView({
                   <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"
+                      aria-label={`Select ${t.title}`}
+                      disabled={Boolean(t.signed_off_at)}
                       checked={selected.has(t.id)}
                       onChange={() => toggleSel(t.id)}
                     />
@@ -834,7 +1105,12 @@ function ListView({
                     </div>
                   )}
                 </td>
-                <td className="px-4 py-2 text-slate-600">{TASK_STATUS_LABELS[t.status]}</td>
+                <td className="px-4 py-2 text-slate-600">
+                  {TASK_STATUS_LABELS[t.status]}
+                  {t.signed_off_at && (
+                    <span className="ml-1.5 text-xs font-medium text-emerald-700">🔒 Signed off</span>
+                  )}
+                </td>
                 <td className="px-4 py-2 capitalize text-slate-600">{t.priority}</td>
                 <td className="px-4 py-2 text-slate-600">
                   {t.assignee_name ? (
@@ -858,6 +1134,16 @@ function ListView({
           )}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/** One coloured count in the project header. */
+function Figure({ label, value, tone }: { label: string; value: React.ReactNode; tone: string }) {
+  return (
+    <div className={`rounded-lg px-3 py-2 ring-1 ring-inset ${tone}`}>
+      <dt className="text-[11px] font-semibold uppercase tracking-wide">{label}</dt>
+      <dd className="figure text-lg font-bold text-slate-900">{value}</dd>
     </div>
   );
 }

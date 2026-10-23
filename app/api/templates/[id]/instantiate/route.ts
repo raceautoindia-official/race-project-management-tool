@@ -17,6 +17,8 @@ interface TemplateData {
     priority: string;
     estimated_hours: number | null;
     labelNames?: string[];
+    /** Subtask titles (templates saved since the 2026-10-17 redesign). */
+    subtasks?: string[];
   }[];
   milestones?: { name: string }[];
 }
@@ -45,9 +47,11 @@ export async function POST(req: NextRequest, { params }: Params) {
     try {
       await conn.beginTransaction();
       const [pRes] = await conn.execute(
-        `INSERT INTO projects (name, description, status, owner_id)
-         VALUES (?, NULL, 'active', ?)`,
-        [name, admin.id]
+        // A template carries no department: it is a shape of work, not a
+        // team's work. The project lands where whoever created it belongs.
+        `INSERT INTO projects (name, description, department, status, owner_id)
+         VALUES (?, NULL, ?, 'active', ?)`,
+        [name, admin.department ?? null, admin.id]
       );
       const projectId = (pRes as DbResult).insertId;
       await conn.execute(
@@ -68,8 +72,9 @@ export async function POST(req: NextRequest, { params }: Params) {
       for (const t of data.tasks ?? []) {
         const [tRes] = await conn.execute(
           `INSERT INTO tasks
-             (project_id, title, description, status, priority, estimated_hours, created_by)
-           VALUES (?, ?, ?, 'todo', ?, ?, ?)`,
+             (project_id, title, description, status, priority, estimated_hours, created_by,
+              requested_by, request_approved_by, request_approved_at)
+           VALUES (?, ?, ?, 'todo', ?, ?, ?, ?, ?, UTC_TIMESTAMP())`,
           [
             projectId,
             t.title,
@@ -77,9 +82,18 @@ export async function POST(req: NextRequest, { params }: Params) {
             t.priority ?? "medium",
             t.estimated_hours ?? null,
             admin.id,
+            admin.id,
+            admin.id,
           ]
         );
         const taskId = (tRes as DbResult).insertId;
+        // Unassigned for now: whoever owns the task gives them out.
+        for (const [i, title] of (t.subtasks ?? []).entries()) {
+          await conn.execute(
+            `INSERT INTO subtasks (task_id, title, position, created_by) VALUES (?, ?, ?, ?)`,
+            [taskId, String(title).slice(0, 255), i, admin.id]
+          );
+        }
         for (const ln of t.labelNames ?? []) {
           const lid = labelIdByName.get(ln);
           if (lid) {

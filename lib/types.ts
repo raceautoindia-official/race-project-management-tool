@@ -4,6 +4,10 @@ export type ProjectRole = "lead" | "member";
 export type TaskStatus = "todo" | "in_progress" | "review" | "done";
 export type TaskPriority = "low" | "medium" | "high" | "urgent";
 export type ApprovalStatus = "none" | "pending" | "approved" | "rejected";
+/** A requested project / raised task request awaiting a lead's decision. */
+export type RequestStatus = "pending" | "approved" | "rejected";
+/** How a piece of work was specified. `general` = legacy / imported / recurring. */
+export type WorkType = "general" | "correction" | "feature";
 
 export const TASK_STATUSES: TaskStatus[] = [
   "todo",
@@ -34,6 +38,13 @@ export interface User {
   id: number;
   name: string;
   email: string;
+  /** Mobile number for WhatsApp alerts (E.164-ish, as typed). */
+  phone?: string | null;
+  whatsapp_opt_in?: boolean;
+  /** Mirrored from the Attendance app; PM never sets it. */
+  department?: string | null;
+  /** Their job title, likewise from Attendance. */
+  designation?: string | null;
   role: Role;
   is_active: boolean;
   must_change_password: boolean;
@@ -52,6 +63,8 @@ export interface Project {
   id: number;
   name: string;
   description: string | null;
+  /** Whose work this is. Its tasks count to the same department. */
+  department?: string | null;
   status: ProjectStatus;
   owner_id: number | null;
   owner_name?: string | null;
@@ -60,7 +73,36 @@ export interface Project {
   member_count?: number;
   task_count?: number;
   done_count?: number;
+  /** Checklist items across the project, and how many are ticked. */
+  progress_units?: number;
+  progress_done?: number;
+  /** YYYY-MM-DD. Either can be unset. */
+  start_date?: string | null;
+  due_date?: string | null;
   role_in_project?: ProjectRole;
+  // Project request → lead approval.
+  approval_status?: RequestStatus;
+  requested_by?: number | null;
+  requester_name?: string | null;
+  requested_at?: string | null;
+  decided_by?: number | null;
+  decider_name?: string | null;
+  decided_at?: string | null;
+  decision_note?: string | null;
+}
+
+/** The structured spec of a correction / new-feature piece of work. */
+export interface SpecColumns {
+  // Existing work correction
+  existing_behavior?: string | null;
+  expected_behavior?: string | null;
+  acceptance_criteria?: string | null;
+  reason?: string | null;
+  scope?: string | null;
+  // New feature
+  features?: string | null;
+  flow?: string | null;
+  rules?: string | null;
 }
 
 export interface ProjectMember {
@@ -70,14 +112,34 @@ export interface ProjectMember {
   role_in_project: ProjectRole;
   name: string;
   email: string;
+  /** For pickers: who they are in the company. */
+  department?: string | null;
+  designation?: string | null;
 }
 
-export interface Task {
+export interface Task extends SpecColumns {
   id: number;
   project_id: number;
   project_name?: string;
+  /** Its project's department. Tasks do not have one of their own. */
+  department?: string | null;
   title: string;
   description: string | null;
+  task_type?: WorkType;
+  // Approval trail: who requested → who approved → who signed off (then locked).
+  request_id?: number | null;
+  requested_by?: number | null;
+  requester_name?: string | null;
+  requested_at?: string | null;
+  request_approved_by?: number | null;
+  request_approver_name?: string | null;
+  request_approved_at?: string | null;
+  signed_off_by?: number | null;
+  signer_name?: string | null;
+  /** Who marked it Done (approved its completion). */
+  done_by_name?: string | null;
+  signed_off_at?: string | null;
+  signoff_note?: string | null;
   status: TaskStatus;
   outstanding?: boolean;
   approval_status?: ApprovalStatus;
@@ -101,6 +163,35 @@ export interface Task {
   labels?: Label[];
   subtask_total?: number;
   subtask_done?: number;
+  /** Share of the project's progress (redesign 2026-10-17). */
+  weight?: number;
+  weight_mode?: "auto" | "manual";
+  position?: number;
+  /** Weighted % of subtasks approved, and finished-but-unreviewed. */
+  progress_approved?: number;
+  progress_pending?: number;
+}
+
+/** A task raised by a project member, waiting for a lead to approve it. */
+export interface TaskRequest extends SpecColumns {
+  id: number;
+  project_id: number;
+  task_type: Exclude<WorkType, "general">;
+  title: string;
+  /** Urgency and effort as stated by whoever asked for the work. */
+  priority: TaskPriority;
+  estimated_hours: number | null;
+  start_date: string | null;
+  due_date: string | null;
+  status: RequestStatus;
+  requested_by: number | null;
+  requester_name?: string | null;
+  requested_at: string;
+  decided_by: number | null;
+  decider_name?: string | null;
+  decided_at: string | null;
+  decision_note: string | null;
+  task_id: number | null;
 }
 
 export interface Label {
@@ -116,6 +207,8 @@ export interface Subtask {
   title: string;
   is_done: boolean;
   position: number;
+  /** The spec field this came from, or null when typed on the task. */
+  source?: string | null;
 }
 
 export interface Comment {
@@ -145,6 +238,9 @@ export interface Attachment {
   created_at: string;
   uploaded_by: number | null;
   uploader_name?: string | null;
+  /** Set when the file was added on a subtask (e.g. sent back with a change request). */
+  subtask_id?: number | null;
+  subtask_title?: string | null;
 }
 
 export interface ActivityItem {
@@ -210,7 +306,11 @@ export interface Meeting {
   project_id: number | null;
   project_name?: string | null;
   location: string | null;
+  /** Video call join link (a room in the meetings app, or a pasted link). */
+  video_url?: string | null;
+  video_room_id?: string | null;
   start_time: string;
+  duration_minutes?: number;
   reminder_minutes: number | null;
   reminder_sent?: boolean;
   recurrence?: Recurrence;
@@ -244,8 +344,14 @@ export interface ProjectTemplate {
   id: number;
   name: string;
   description: string | null;
+  /** The department whose template it is. Everyone may still use it. */
+  department?: string | null;
   created_by: number | null;
   created_by_name?: string | null;
   task_count?: number;
+  label_count?: number;
+  milestone_count?: number;
+  /** The task titles, so a card can show what is actually in it. */
+  task_titles?: string[] | string | null;
   created_at?: string;
 }

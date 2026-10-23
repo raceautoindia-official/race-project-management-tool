@@ -2,13 +2,14 @@ import { NextRequest } from "next/server";
 import { query, DbRow, DbResult } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { json, errorResponse, ApiError } from "@/lib/http";
-import { assertProjectManage } from "@/lib/rbac";
+import { assertProjectManage, assertProjectWritable } from "@/lib/rbac";
 import { logActivity } from "@/lib/activity";
 import {
   parseTasksWorkbook,
   STATUS_VALUES,
   PRIORITY_VALUES,
 } from "@/lib/excel";
+import { makeRoomForTask } from "@/lib/subtasks";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const { id } = await params;
     const projectId = Number(id);
     if (!Number.isInteger(projectId)) throw new ApiError(400, "Invalid id");
-    await assertProjectManage(user, projectId);
+    assertProjectWritable(await assertProjectManage(user, projectId));
 
     const form = await req.formData().catch(() => null);
     const file = form?.get("file");
@@ -103,11 +104,13 @@ export async function POST(req: NextRequest, { params }: Params) {
           ? r.estimatedHours
           : null;
 
+      await makeRoomForTask(projectId);
       await query<DbResult>(
         `INSERT INTO tasks
            (project_id, title, description, status, priority, estimated_hours,
-            assignee_id, created_by, due_date)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            assignee_id, created_by, due_date,
+            requested_by, request_approved_by, request_approved_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP())`,
         [
           projectId,
           r.title.slice(0, 200),
@@ -118,6 +121,9 @@ export async function POST(req: NextRequest, { params }: Params) {
           assigneeId,
           user.id,
           dueDate,
+          // The importing admin/lead requested and approved these tasks.
+          user.id,
+          user.id,
         ]
       );
       created++;

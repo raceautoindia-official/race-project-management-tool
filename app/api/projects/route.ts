@@ -1,19 +1,25 @@
 import { NextRequest } from "next/server";
 import { pool, query, DbRow, DbResult } from "@/lib/db";
-import { requireUser, requireAdmin } from "@/lib/auth";
-import { json, errorResponse, getPagination } from "@/lib/http";
+import { requireUser } from "@/lib/auth";
+import { json, errorResponse, getPagination, badRequest } from "@/lib/http";
 import { createProjectSchema } from "@/lib/validation";
-import { logActivity } from "@/lib/activity";
+import { logActivity, notify } from "@/lib/activity";
+import { PROJECT_UNITS_SQL, PROJECT_CREDITED_SQL } from "@/lib/progress";
+import { sendEmail, emailLayout, appBaseUrl, escapeHtml } from "@/lib/mailer";
 
 export const dynamic = "force-dynamic";
 
 const PROJECT_SELECT = `
-  p.id, p.name, p.description, p.status, p.owner_id,
+  p.id, p.name, p.description, p.department, p.status, p.start_date, p.due_date,
+  p.approval_status, p.owner_id,
+  p.requested_by, p.requested_at, p.decided_by, p.decided_at, p.decision_note,
   p.created_at, p.updated_at,
-  u.name AS owner_name,
+  u.name AS owner_name, rq.name AS requester_name,
   (SELECT COUNT(*) FROM project_members pm WHERE pm.project_id = p.id) AS member_count,
   (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id) AS task_count,
-  (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'done') AS done_count
+  (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'done') AS done_count,
+  ${PROJECT_UNITS_SQL} AS progress_units,
+  ${PROJECT_CREDITED_SQL} AS progress_done
 `;
 
 export async function GET(req: NextRequest) {
@@ -22,6 +28,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const search = (searchParams.get("search") ?? "").trim();
     const status = searchParams.get("status") ?? "";
+    const department = (searchParams.get("department") ?? "").trim();
     const { page, pageSize, offset } = getPagination(searchParams);
 
     const where: string[] = [];
@@ -38,9 +45,19 @@ export async function GET(req: NextRequest) {
       where.push("p.name LIKE ?");
       params.push(`%${search}%`);
     }
+    // "none" is a real answer, not a missing one: the projects nobody has
+    // placed in a department yet are the ones worth finding.
+    if (department === "none") {
+      where.push("(p.department IS NULL OR p.department = '')");
+    } else if (department) {
+      where.push("p.department = ?");
+      params.push(department);
+    }
     if (["active", "completed", "archived"].includes(status)) {
       where.push("p.status = ?");
       params.push(status);
+    } else if (status === "pending") {
+      where.push("p.approval_status = 'pending'");
     } else if (status !== "all") {
       where.push("p.status <> 'archived'");
     }
@@ -50,6 +67,7 @@ export async function GET(req: NextRequest) {
       `SELECT ${PROJECT_SELECT}
        FROM projects p
        LEFT JOIN users u ON u.id = p.owner_id
+       LEFT JOIN users rq ON rq.id = p.requested_by
        ${whereSql}
        ORDER BY p.created_at DESC
        LIMIT ${pageSize} OFFSET ${offset}`,
@@ -66,6 +84,8 @@ export async function GET(req: NextRequest) {
         member_count: Number(r.member_count),
         task_count: Number(r.task_count),
         done_count: Number(r.done_count),
+        progress_units: Number(r.progress_units),
+        progress_done: Number(r.progress_done),
       })),
       total: Number(countRows[0]?.total ?? 0),
       page,
@@ -76,22 +96,83 @@ export async function GET(req: NextRequest) {
   }
 }
 
+/**
+ * POST /api/projects
+ *   admin  → creates an approved project directly (as before).
+ *   others → REQUESTS a project: it is created `pending` with the nominated
+ *            lead (`leadId`) as owner/lead and the requester as a member, and
+ *            stays read-only until that lead or an admin approves it.
+ */
 export async function POST(req: NextRequest) {
   try {
-    const admin = await requireAdmin();
+    const user = await requireUser();
     const body = await req.json().catch(() => ({}));
     const data = createProjectSchema.parse(body);
+    const isAdmin = user.role === "admin";
 
-    const ownerId = data.ownerId ?? admin.id;
+    let ownerId: number;
+    if (isAdmin) {
+      ownerId = data.ownerId ?? user.id;
+    } else {
+      if (!data.leadId) {
+        throw badRequest("Choose the lead who should approve this project");
+      }
+      if (data.leadId === user.id) {
+        throw badRequest("Choose someone else as lead — a request can't be self-approved");
+      }
+      // The approver must already be a lead (of an approved project) or an admin.
+      const lead = await query<DbRow[]>(
+        `SELECT u.id FROM users u
+          WHERE u.id = ? AND u.is_active = TRUE
+            AND (u.role = 'admin' OR EXISTS (
+              SELECT 1 FROM project_members pm
+                JOIN projects p ON p.id = pm.project_id AND p.approval_status = 'approved'
+               WHERE pm.user_id = u.id AND pm.role_in_project = 'lead'))
+          LIMIT 1`,
+        [data.leadId]
+      );
+      if (!lead.length) {
+        throw badRequest("Choose an admin or an existing project lead to approve this project");
+      }
+      ownerId = data.leadId;
+    }
+
+    // Work belongs to the department of whoever raised it, unless they say
+    // otherwise. Nobody has to answer a question they already know.
+    const department = data.department ?? user.department ?? null;
+
     const conn = await pool.getConnection();
+    let projectId: number;
     try {
       await conn.beginTransaction();
       const [res] = await conn.execute(
-        `INSERT INTO projects (name, description, status, owner_id)
-         VALUES (?, ?, ?, ?)`,
-        [data.name, data.description ?? null, data.status ?? "active", ownerId]
+        isAdmin
+          ? `INSERT INTO projects
+               (name, description, department, status, approval_status, owner_id,
+                requested_by, requested_at, decided_by, decided_at, start_date, due_date)
+             VALUES (?, ?, ?, ?, 'approved', ?, ?, UTC_TIMESTAMP(), ?, UTC_TIMESTAMP(),
+                     COALESCE(?, CURRENT_DATE()), ?)`
+          : `INSERT INTO projects
+               (name, description, department, status, approval_status, owner_id,
+                requested_by, requested_at, start_date, due_date)
+             VALUES (?, ?, ?, 'active', 'pending', ?, ?, UTC_TIMESTAMP(),
+                     COALESCE(?, CURRENT_DATE()), ?)`,
+        // A project with no start date given starts today.
+        isAdmin
+          ? [
+              data.name,
+              data.description ?? null,
+              department,
+              data.status ?? "active",
+              ownerId,
+              user.id,
+              user.id,
+              data.startDate ?? null,
+              data.dueDate ?? null,
+            ]
+          : [data.name, data.description ?? null, department, ownerId, user.id, data.startDate ?? null, data.dueDate ?? null]
       );
-      const projectId = (res as DbResult).insertId;
+      projectId = (res as DbResult).insertId;
 
       // Owner is always a project lead.
       await conn.execute(
@@ -101,7 +182,13 @@ export async function POST(req: NextRequest) {
         [projectId, ownerId]
       );
 
-      const memberIds = (data.memberIds ?? []).filter((id) => id !== ownerId);
+      // Whoever starts a project says who is working on it. A requester is
+      // always on their own project, and the owner is already its lead, so
+      // neither needs naming twice.
+      const proposed = data.memberIds ?? [];
+      const memberIds = [
+        ...new Set(isAdmin ? proposed : [user.id, ...proposed]),
+      ].filter((id) => id !== ownerId);
       for (const memberId of memberIds) {
         await conn.execute(
           `INSERT IGNORE INTO project_members (project_id, user_id, role_in_project)
@@ -110,22 +197,66 @@ export async function POST(req: NextRequest) {
         );
       }
       await conn.commit();
-
-      await logActivity({
-        userId: admin.id,
-        action: "project.created",
-        entityType: "project",
-        entityId: projectId,
-        metadata: { name: data.name },
-      });
-
-      return json({ project: { id: projectId, ...data, owner_id: ownerId } }, 201);
     } catch (e) {
       await conn.rollback();
       throw e;
     } finally {
       conn.release();
     }
+
+    await logActivity({
+      userId: user.id,
+      action: isAdmin ? "project.created" : "project.requested",
+      entityType: "project",
+      entityId: projectId,
+      metadata: isAdmin ? { name: data.name } : { name: data.name, leadId: ownerId },
+    });
+
+    if (!isAdmin) {
+      const link = `/projects/${projectId}`;
+      await notify(
+        ownerId,
+        "project_requested",
+        `${user.name} requested project "${data.name}" — awaiting your approval`,
+        link
+      );
+      const [lead] = await query<DbRow[]>(`SELECT email FROM users WHERE id = ?`, [ownerId]);
+      await sendEmail({
+        to: [lead?.email],
+        subject: `Project approval requested: ${data.name}`,
+        html: emailLayout(
+          "Project approval requested",
+          `<p><strong>${escapeHtml(user.name)}</strong> requested a new project <strong>${escapeHtml(data.name)}</strong> and nominated you as lead.</p>
+           <p><a href="${appBaseUrl()}${link}">Review the request →</a></p>`
+        ),
+      });
+      const admins = await query<DbRow[]>(
+        `SELECT id FROM users WHERE role = 'admin' AND is_active = TRUE AND id NOT IN (?, ?)`,
+        [user.id, ownerId]
+      );
+      for (const a of admins) {
+        await notify(
+          a.id,
+          "project_requested",
+          `${user.name} requested project "${data.name}" — awaiting approval`,
+          link
+        );
+      }
+    }
+
+    return json(
+      {
+        project: {
+          id: projectId,
+          name: data.name,
+          description: data.description ?? null,
+          department,
+          owner_id: ownerId,
+          approval_status: isAdmin ? "approved" : "pending",
+        },
+      },
+      201
+    );
   } catch (err) {
     return errorResponse(err);
   }

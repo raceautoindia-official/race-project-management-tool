@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { signSession, setSessionCookie } from "@/lib/auth";
 import { json, errorResponse, ApiError } from "@/lib/http";
 import { loginSchema } from "@/lib/validation";
-import { checkRateLimit, clearRateLimit } from "@/lib/ratelimit";
+import { ACCOUNT_MAX_ATTEMPTS, checkRateLimit, clearRateLimit } from "@/lib/ratelimit";
 import { logActivity } from "@/lib/activity";
 import {
   findEmployeeByEmpId,
@@ -27,7 +27,13 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const { emp_id, pin } = loginSchema.parse(body);
 
-    const rl = checkRateLimit(`login:${ip}:${emp_id}`);
+    // Two budgets: per client + account, and per account alone (so rotating
+    // X-Forwarded-For or IPs can't brute-force one account's PIN).
+    const account = emp_id.trim().toUpperCase();
+    const ipKey = `login:${ip}:${account}`;
+    const accountKey = `login-account:${account}`;
+    const perAccount = checkRateLimit(accountKey, ACCOUNT_MAX_ATTEMPTS);
+    const rl = perAccount.ok ? checkRateLimit(ipKey) : perAccount;
     if (!rl.ok) {
       throw new ApiError(
         429,
@@ -54,7 +60,8 @@ export async function POST(req: NextRequest) {
       throw new ApiError(403, "This account has been deactivated");
     }
 
-    clearRateLimit(`login:${ip}:${emp_id}`);
+    clearRateLimit(ipKey);
+    clearRateLimit(accountKey);
 
     // 3. Mirror the employee into pm_app.users (JIT provisioning).
     const pmUserId = await provisionPmUser(employee);

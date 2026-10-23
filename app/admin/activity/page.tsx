@@ -147,7 +147,7 @@ export default async function AdminActivityPage({
         {/* Right: activity log */}
         <div className="lg:col-span-2">
           <form method="get" className="mb-4 flex flex-wrap gap-2">
-            <select name="userId" defaultValue={userId} className={inputClass}>
+            <select name="userId" aria-label="Filter by person" defaultValue={userId} className={inputClass}>
               <option value="">All users</option>
               {userList.map((u) => (
                 <option key={u.id} value={u.id}>
@@ -155,7 +155,7 @@ export default async function AdminActivityPage({
                 </option>
               ))}
             </select>
-            <select name="action" defaultValue={action} className={inputClass}>
+            <select name="action" aria-label="Filter by action" defaultValue={action} className={inputClass}>
               <option value="">All actions</option>
               {distinctActions.map((a) => (
                 <option key={a.action} value={a.action}>
@@ -163,7 +163,7 @@ export default async function AdminActivityPage({
                 </option>
               ))}
             </select>
-            <select name="entityType" defaultValue={entityType} className={inputClass}>
+            <select name="entityType" aria-label="Filter by type" defaultValue={entityType} className={inputClass}>
               <option value="">All entities</option>
               <option value="user">User</option>
               <option value="project">Project</option>
@@ -181,7 +181,7 @@ export default async function AdminActivityPage({
             </button>
             <Link
               href="/admin/activity"
-              className="rounded-lg px-3 py-2 text-sm font-medium text-slate-500 hover:text-slate-700"
+              className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:text-slate-700"
             >
               Reset
             </Link>
@@ -189,7 +189,7 @@ export default async function AdminActivityPage({
 
           <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
             <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-4 py-3">When</th>
                   <th className="px-4 py-3">User</th>
@@ -201,14 +201,14 @@ export default async function AdminActivityPage({
               <tbody className="divide-y divide-slate-100">
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
+                    <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
                       No activity matches these filters.
                     </td>
                   </tr>
                 ) : (
                   rows.map((r) => (
                     <tr key={r.id} className="hover:bg-slate-50">
-                      <td className="whitespace-nowrap px-4 py-3 text-slate-500">
+                      <td className="whitespace-nowrap px-4 py-3 text-slate-600">
                         {formatDateTime(r.created_at)}
                       </td>
                       <td className="px-4 py-3 text-slate-700">
@@ -221,7 +221,7 @@ export default async function AdminActivityPage({
                         {r.entity_type}
                         {r.entity_id ? ` #${r.entity_id}` : ""}
                       </td>
-                      <td className="max-w-xs truncate px-4 py-3 text-xs text-slate-400">
+                      <td className="max-w-xs truncate px-4 py-3 text-xs text-slate-500">
                         {summarizeMetadata(r.metadata)}
                       </td>
                     </tr>
@@ -231,7 +231,7 @@ export default async function AdminActivityPage({
             </table>
           </div>
 
-          <div className="mt-4 flex items-center justify-between text-sm text-slate-500">
+          <div className="mt-4 flex items-center justify-between text-sm text-slate-600">
             <span>
               {Number(total)} entr{Number(total) === 1 ? "y" : "ies"} · page {page} of {totalPages}
             </span>
@@ -241,14 +241,14 @@ export default async function AdminActivityPage({
                   Previous
                 </Link>
               ) : (
-                <span className="rounded-lg border border-slate-200 px-3 py-1.5 text-slate-300">Previous</span>
+                <span aria-disabled="true" className="rounded-lg border border-slate-200 px-3 py-1.5 text-slate-500">Previous</span>
               )}
               {page < totalPages ? (
                 <Link href={pageHref(page + 1)} className="rounded-lg border border-slate-300 px-3 py-1.5 hover:bg-slate-50">
                   Next
                 </Link>
               ) : (
-                <span className="rounded-lg border border-slate-200 px-3 py-1.5 text-slate-300">Next</span>
+                <span aria-disabled="true" className="rounded-lg border border-slate-200 px-3 py-1.5 text-slate-500">Next</span>
               )}
             </div>
           </div>
