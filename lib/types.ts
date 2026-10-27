@@ -176,8 +176,11 @@ export interface Task extends SpecColumns {
 export interface TaskRequest extends SpecColumns {
   id: number;
   project_id: number;
-  task_type: Exclude<WorkType, "general">;
+  task_type: WorkType;
   title: string;
+  /** A quick request's description and steps (one per line). */
+  description?: string | null;
+  steps?: string | null;
   /** Urgency and effort as stated by whoever asked for the work. */
   priority: TaskPriority;
   estimated_hours: number | null;

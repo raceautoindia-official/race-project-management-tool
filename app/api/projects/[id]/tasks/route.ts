@@ -61,10 +61,10 @@ async function isProjectMember(projectId: number, userId: number): Promise<boole
 }
 
 /**
- * POST — an admin/lead creates a task directly. It must be an existing-work
- * correction or a new feature (with that type's required fields), name who
- * requested it and an assigned owner; the creator is recorded as approver.
- * Members raise tasks via /requests instead.
+ * POST — an admin/lead creates a task directly: a plain task (with optional
+ * steps, each becoming a subtask), or a correction / new feature with that
+ * type's required fields and an assigned owner. The creator is recorded as
+ * approver. Members ask for tasks via /requests instead.
  */
 export async function POST(req: NextRequest, { params }: Params) {
   try {
@@ -139,9 +139,9 @@ export async function POST(req: NextRequest, { params }: Params) {
       await syncTaskLabels(result.insertId, projectId, data.labelIds);
     }
 
-    // The checklist starts as what the task's own specification says "done"
-    // means, so progress is measured against what was asked for.
-    await seedChecklistFromSpec(result.insertId, data.taskType, spec);
+    // The subtasks start as what the task itself says "done" means — its
+    // specification's points, or a plain task's steps.
+    await seedChecklistFromSpec(result.insertId, data.taskType, spec, data.steps);
 
     await logActivity({
       userId: user.id,

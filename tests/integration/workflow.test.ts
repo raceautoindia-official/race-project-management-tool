@@ -1008,3 +1008,104 @@ describe("a blocker is raised by whoever is stuck, and confirmed by a lead", () 
     expect(refused.status).toBe(403);
   });
 });
+
+describe("quick work: a title and a list of steps", () => {
+  let pid: number;
+
+  beforeAll(async () => {
+    pid = await createLedProject(lead, "Quick work");
+    await query(`INSERT INTO project_members (project_id, user_id) VALUES (?, ?), (?, ?)`, [pid, sam.id, pid, alice.id]);
+  });
+
+  const subtasksOf = (taskId: number) =>
+    query<DbRow[]>(`SELECT title, source, assignee_id FROM subtasks WHERE task_id = ? ORDER BY position`, [taskId]);
+
+  it("a manager's quick task starts with its steps as subtasks for the owner", async () => {
+    actAs(lead);
+    const made = await call<{ task: Task }>(projectTasks.POST, {
+      method: "POST",
+      id: pid,
+      body: { title: "Replace the conveyor belt", assigneeId: sam.id, steps: "Get quotes\nBook the shutdown\nget quotes" },
+    });
+    expect(made.status).toBe(201);
+    expect(made.body.task.task_type).toBe("general");
+    const items = await subtasksOf(made.body.task.id);
+    expect(items.map((i) => ({ ...i }))).toEqual([
+      { title: "Get quotes", source: null, assignee_id: sam.id },
+      { title: "Book the shutdown", source: null, assignee_id: sam.id },
+    ]);
+  });
+
+  it("a member can't create a task directly, quick or not", async () => {
+    actAs(alice);
+    const refused = await call<Json>(projectTasks.POST, {
+      method: "POST",
+      id: pid,
+      body: { title: "Just do it", steps: "One" },
+    });
+    expect(refused.status).toBe(403);
+  });
+
+  it("a member's quick request keeps its description and steps, and they arrive as subtasks", async () => {
+    actAs(alice);
+    const raised = await call<{ request: TaskRequest }>(projectRequests.POST, {
+      method: "POST",
+      id: pid,
+      body: {
+        title: "Order safety gloves",
+        description: "Size L, for the night shift",
+        steps: "- Count what is left\n- Order 50 pairs",
+        priority: "high",
+      },
+    });
+    expect(raised.status).toBe(201);
+    expect(raised.body.request).toMatchObject({
+      task_type: "general",
+      description: "Size L, for the night shift",
+      steps: "- Count what is left\n- Order 50 pairs",
+      priority: "high",
+      status: "pending",
+    });
+
+    actAs(lead);
+    const decided = await call<{ task: Task }>(requestDecision.POST, {
+      method: "POST",
+      id: raised.body.request.id,
+      body: { decision: "approve", assigneeId: sam.id },
+    });
+    expect(decided.status).toBe(200);
+    expect(decided.body.task).toMatchObject({
+      task_type: "general",
+      description: "Size L, for the night shift",
+      requested_by: alice.id,
+    });
+    const items = await subtasksOf(decided.body.task.id);
+    expect(items.map((i) => ({ ...i }))).toEqual([
+      { title: "Count what is left", source: null, assignee_id: sam.id },
+      { title: "Order 50 pairs", source: null, assignee_id: sam.id },
+    ]);
+  });
+
+  it("a request with only a title is still a request", async () => {
+    actAs(alice);
+    const raised = await call<{ request: TaskRequest }>(projectRequests.POST, {
+      method: "POST",
+      id: pid,
+      body: { title: "Fix the gate latch" },
+    });
+    expect(raised.status).toBe(201);
+    expect(raised.body.request.task_type).toBe("general");
+    expect(raised.body.request.steps).toBeNull();
+  });
+
+  it("a specified request keeps no stray steps", async () => {
+    actAs(alice);
+    const raised = await call<{ request: TaskRequest }>(projectRequests.POST, {
+      method: "POST",
+      id: pid,
+      body: { ...feature, title: "Feature with steps", steps: "Should not stay" },
+    });
+    expect(raised.status).toBe(201);
+    expect(raised.body.request.steps).toBeNull();
+  });
+});

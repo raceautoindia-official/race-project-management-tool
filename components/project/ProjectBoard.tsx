@@ -28,6 +28,7 @@ import {
 } from "@/lib/types";
 import TaskCard from "./TaskCard";
 import TaskFormModal from "./TaskFormModal";
+import type { NewWorkDraft } from "./new-work";
 import TaskDetailModal from "./TaskDetailModal";
 import MembersModal from "./MembersModal";
 import { DepartmentBadge } from "@/components/DepartmentField";
@@ -149,9 +150,10 @@ export default function ProjectBoard({
     }
   }
   const [requests, setRequests] = useState<TaskRequest[]>(initialRequests);
-  const [raiseOpen, setRaiseOpen] = useState(false);
 
   const [formOpen, setFormOpen] = useState(false);
+  // What was typed in the inline "+ Add task" row, carried into the full form.
+  const [draft, setDraft] = useState<NewWorkDraft | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [followUpParent, setFollowUpParent] = useState<Task | null>(null);
   // A notification links to the task, not just the board it sits on, so the
@@ -253,9 +255,10 @@ export default function ProjectBoard({
     }
   }
 
-  function openCreate() {
+  function openCreate(from: NewWorkDraft | null = null) {
     setEditingTask(null);
     setFollowUpParent(null);
+    setDraft(from);
     setFormOpen(true);
   }
   function openEdit(task: Task) {
@@ -444,20 +447,14 @@ export default function ProjectBoard({
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            {canManageWritable && (
+            {/* One way in for everyone: a manager's task is created, a
+                member's goes to a lead for approval. */}
+            {writable && (
               <button
-                onClick={openCreate}
+                onClick={() => openCreate()}
                 className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
               >
                 + New task
-              </button>
-            )}
-            {writable && !canManage && (
-              <button
-                onClick={() => setRaiseOpen(true)}
-                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
-              >
-                + Raise request
               </button>
             )}
             <ExportButton href={`/api/projects/${project.id}/tasks/export`} />
@@ -564,7 +561,6 @@ export default function ProjectBoard({
       />
 
       <TaskRequestsPanel
-        projectId={project.id}
         requests={requests}
         onRequestsChange={setRequests}
         members={members}
@@ -572,8 +568,6 @@ export default function ProjectBoard({
         isAdmin={isAdmin}
         canManage={canManage}
         writable={writable}
-        raiseOpen={raiseOpen}
-        onRaiseOpenChange={setRaiseOpen}
         onTaskCreated={upsertTask}
         onOpenTask={openTaskById}
         onStale={() => {
@@ -620,6 +614,8 @@ export default function ProjectBoard({
           onWeightsSaved={() => void reloadTasks()}
           projectOwnerName={project.owner_name}
           onTaskAdded={() => void reloadTasks()}
+          onRequested={(r) => setRequests((prev) => [r, ...prev])}
+          onMoreOptions={openCreate}
         />
       )}
 
@@ -780,6 +776,7 @@ export default function ProjectBoard({
         onClose={() => {
           setFormOpen(false);
           setFollowUpParent(null);
+          setDraft(null);
         }}
         projectId={project.id}
         members={members}
@@ -788,7 +785,10 @@ export default function ProjectBoard({
         parentTask={followUpParent}
         currentUserId={currentUser.id}
         myDepartment={currentUser.department}
+        canManage={canManage}
+        draft={draft}
         onSaved={upsertTask}
+        onRequested={(r) => setRequests((prev) => [r, ...prev])}
         onLabelCreated={(l) => setLabels((prev) => [...prev, l])}
       />
       <TaskDetailModal

@@ -239,6 +239,44 @@ describe("a task's checklist comes from its own specification", () => {
   });
 });
 
+describe("a quick task's steps become its subtasks", () => {
+  const blank = {
+    existing_behavior: null,
+    expected_behavior: null,
+    acceptance_criteria: null,
+    reason: null,
+    scope: null,
+    features: null,
+    flow: null,
+    rules: null,
+  };
+
+  it("makes one subtask per step, written however people write lists", async () => {
+    const { checklistFromSteps } = await import("@/lib/workflow");
+    expect(checklistFromSteps("1. Get quotes\n- Pick a vendor\n\n• Raise the PO")).toEqual([
+      { title: "Get quotes", source: null },
+      { title: "Pick a vendor", source: null },
+      { title: "Raise the PO", source: null },
+    ]);
+  });
+
+  it("drops repeats and keeps to the same limit as a specification", async () => {
+    const { checklistFromSteps } = await import("@/lib/workflow");
+    expect(checklistFromSteps("Call them\ncall them")).toEqual([{ title: "Call them", source: null }]);
+    const many = Array.from({ length: 80 }, (_, i) => `Step ${i}`).join("\n");
+    expect(checklistFromSteps(many)).toHaveLength(50);
+    expect(checklistFromSteps(null)).toEqual([]);
+  });
+
+  it("uses the steps for a plain task and the specification otherwise", async () => {
+    const { checklistFor } = await import("@/lib/workflow");
+    const spec = { ...blank, features: "Export CSV" };
+    expect(checklistFor("general", spec, "Order bearings")).toEqual([{ title: "Order bearings", source: null }]);
+    // A feature's subtasks come from its specification; stray steps are ignored.
+    expect(checklistFor("feature", spec, "Order bearings")).toEqual([{ title: "Export CSV", source: "features" }]);
+  });
+});
+
 describe("an existing task can be brought up to its specification", () => {
   const spec = (over: Record<string, unknown> = {}) =>
     ({

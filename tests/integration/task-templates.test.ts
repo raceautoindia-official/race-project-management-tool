@@ -124,3 +124,27 @@ describe("task templates", () => {
     expect(gone.status).toBe(200);
   });
 });
+
+describe("a plain task's template carries its subtasks as steps", () => {
+  it("saves them in order, leaving out cancelled ones", async () => {
+    const owner = await createUser("Steps owner");
+    const pid = await createLedProject(owner, "Steps template");
+    const res = (await query<DbResult>(
+      `INSERT INTO tasks (project_id, title, task_type, created_by) VALUES (?, 'Monthly stock check', 'general', ?)`,
+      [pid, owner.id]
+    )) as unknown as DbResult;
+    await query(
+      `INSERT INTO subtasks (task_id, title, position, status) VALUES (?, 'Count the shelves', 0, 'todo'), (?, 'Old step', 1, 'cancelled'), (?, 'Update the sheet', 2, 'done')`,
+      [res.insertId, res.insertId, res.insertId]
+    );
+    actAs(owner);
+    const saved = await call<{ template: { id: number } }>(taskTemplates.POST, {
+      method: "POST",
+      body: { taskId: res.insertId, name: "Stock check" },
+    });
+    expect(saved.status).toBe(201);
+    const [row] = await query<DbRow[]>(`SELECT data FROM task_templates WHERE id = ?`, [saved.body.template.id]);
+    const data = typeof row.data === "string" ? JSON.parse(row.data) : row.data;
+    expect(data.steps).toBe("Count the shelves\nUpdate the sheet");
+  });
+});

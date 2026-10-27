@@ -144,8 +144,9 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE TABLE IF NOT EXISTS task_requests (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
   project_id          INT NOT NULL,
-  task_type           ENUM('correction','feature') NOT NULL,
+  task_type           ENUM('correction','feature','general') NOT NULL,
   title               VARCHAR(200) NOT NULL,
+  description         TEXT NULL,
   existing_behavior   TEXT NULL,
   expected_behavior   TEXT NULL,
   acceptance_criteria TEXT NULL,
@@ -154,6 +155,8 @@ CREATE TABLE IF NOT EXISTS task_requests (
   features            TEXT NULL,
   flow                TEXT NULL,
   rules               TEXT NULL,
+  -- A quick (general) request's steps, one per line: its subtasks once approved.
+  steps               TEXT NULL,
   -- Urgency and effort, stated by whoever asked for the work.
   priority            ENUM('low','medium','high','urgent') NOT NULL DEFAULT 'medium',
   estimated_hours     DECIMAL(6,2) NULL,

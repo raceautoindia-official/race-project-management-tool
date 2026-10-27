@@ -6,7 +6,7 @@ import { assertProjectManage, assertProjectWritable } from "@/lib/rbac";
 import { taskRequestDecisionSchema } from "@/lib/validation";
 import { logActivity, notify } from "@/lib/activity";
 import { fetchTaskRequests, fetchTasks } from "@/lib/tasks";
-import { checklistFromSpec, SPEC_KEYS } from "@/lib/workflow";
+import { checklistFor, SPEC_KEYS } from "@/lib/workflow";
 import type { SpecColumns, WorkType } from "@/lib/types";
 import { makeRoomForTask } from "@/lib/subtasks";
 
@@ -79,15 +79,16 @@ export async function POST(req: NextRequest, { params }: Params) {
       if (data.decision === "approve") {
         const [res] = await conn.execute(
           `INSERT INTO tasks
-             (project_id, title, task_type, ${SPEC_KEYS.join(", ")},
+             (project_id, title, description, task_type, ${SPEC_KEYS.join(", ")},
               status, priority, estimated_hours, assignee_id, created_by,
               due_date, start_date, request_id,
               requested_by, request_approved_by, request_approved_at)
-           VALUES (?, ?, ?, ${SPEC_KEYS.map(() => "?").join(", ")},
+           VALUES (?, ?, ?, ?, ${SPEC_KEYS.map(() => "?").join(", ")},
                    'todo', ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP())`,
           [
             projectId,
             request.title,
+            request.description ?? null,
             request.task_type,
             ...SPEC_KEYS.map((k) => request[k] ?? null),
             // The requester said how urgent it is and how long it should
@@ -106,12 +107,14 @@ export async function POST(req: NextRequest, { params }: Params) {
         );
         taskId = (res as DbResult).insertId;
 
-        // The checklist starts as what the request itself said "done" means.
-        // Inside the transaction, on the same connection, so a task never
-        // exists with half a checklist.
-        const items = checklistFromSpec(
+        // The subtasks start as what the request itself said "done" means:
+        // its specification's points, or a quick request's steps. Inside the
+        // transaction, on the same connection, so a task never exists with
+        // half a checklist.
+        const items = checklistFor(
           request.task_type as WorkType,
-          Object.fromEntries(SPEC_KEYS.map((k) => [k, request[k] ?? null])) as SpecColumns
+          Object.fromEntries(SPEC_KEYS.map((k) => [k, request[k] ?? null])) as SpecColumns,
+          request.steps ?? null
         );
         if (items.length) {
           await conn.execute(
