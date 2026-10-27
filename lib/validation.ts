@@ -485,9 +485,22 @@ export const saveTaskTemplateSchema = z.object({
   taskId: z.coerce.number().int().positive(),
 });
 
-export const instantiateTemplateSchema = z.object({
-  name: z.string().min(1).max(150),
-});
+/**
+ * A project from a template takes the same answers as a blank one — who runs
+ * it, who is on it, its department, description and dates — so choosing a
+ * template never throws away what the form already says.
+ */
+export const instantiateTemplateSchema = z
+  .object({
+    name: z.string().min(1).max(150),
+    description: optionalText,
+    department: departmentField,
+    ownerId: optionalId.optional(),
+    memberIds: z.array(z.coerce.number().int().positive()).optional(),
+    startDate: optionalDate.optional(),
+    dueDate: optionalDate.optional(),
+  })
+  .superRefine(checkDateOrder);
 
 // ---- Admin credentials vault (website logins) ----
 /** A named field on a login: "Account ID", "Registered email". */

@@ -354,4 +354,51 @@ describe("templates keep the shape of the work", () => {
       { title: "Step two", assignee_id: null },
     ]);
   });
+
+  it("keeps the form's manager, people, department, description and dates", async () => {
+    const templates = await import("@/app/api/templates/route");
+    const instantiate = await import("@/app/api/templates/[id]/instantiate/route");
+    actAs(admin);
+    const saved = await call<{ template: { id: number } }>(templates.POST, {
+      method: "POST",
+      body: { name: "Shape with people", projectId },
+    });
+    const made = await call<{ project: { id: number } }>(instantiate.POST, {
+      method: "POST",
+      id: saved.body.template.id,
+      body: {
+        name: "Run by the lead",
+        description: "Why it exists",
+        department: "Quality",
+        ownerId: lead.id,
+        memberIds: [doer.id, lead.id],
+        startDate: "2026-11-02",
+        dueDate: "2026-11-30",
+      },
+    });
+    expect(made.status).toBe(201);
+    const id = made.body.project.id;
+    const [p] = await query<DbRow[]>(
+      `SELECT owner_id, description, department, DATE_FORMAT(start_date, '%Y-%m-%d') s, DATE_FORMAT(due_date, '%Y-%m-%d') d
+         FROM projects WHERE id = ?`,
+      [id]
+    );
+    expect({ ...p }).toEqual({ owner_id: lead.id, description: "Why it exists", department: "Quality", s: "2026-11-02", d: "2026-11-30" });
+    const members = await query<DbRow[]>(`SELECT user_id, role_in_project FROM project_members WHERE project_id = ? ORDER BY user_id`, [id]);
+    // The owner leads (once, not also as a member); the person named is a member; the admin isn't added.
+    expect(members.map((m) => ({ ...m }))).toEqual(
+      [
+        { user_id: lead.id, role_in_project: "lead" },
+        { user_id: doer.id, role_in_project: "member" },
+      ].sort((a, b) => a.user_id - b.user_id)
+    );
+
+    // Dates out of order are refused, as for a blank project.
+    const bad = await call(instantiate.POST, {
+      method: "POST",
+      id: saved.body.template.id,
+      body: { name: "Backwards", startDate: "2026-11-30", dueDate: "2026-11-02" },
+    });
+    expect(bad.status).toBe(400);
+  });
 });

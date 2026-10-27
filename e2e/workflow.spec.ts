@@ -50,6 +50,21 @@ test("a member requests a project and nominates a lead", async () => {
   await expect(leadSelect.locator("option", { hasText: USERS.alice.name })).toHaveCount(0);
   await expect(leadSelect.locator("option", { hasText: USERS.sam.name })).toHaveCount(0);
   await chooseManager(leadSelect, USERS.lead.name);
+
+  // The people picker: the manager and the requester are shown as already on
+  // it; typing finds someone, Enter adds them without submitting the form,
+  // and Backspace takes them off again.
+  const people = dialog.getByRole("combobox", { name: "Add people to the project" });
+  await expect(dialog.getByText("Manager — approves it")).toBeVisible();
+  await expect(dialog.getByText("You — requester")).toBeVisible();
+  await people.fill("Sam");
+  await people.press("Enter");
+  await expect(dialog.getByRole("button", { name: `Remove ${USERS.sam.name}` })).toBeVisible();
+  await expect(dialog).toBeVisible(); // still open: Enter did not submit
+  await people.fill(""); // clear the search text
+  await people.press("Backspace"); // empty box: takes Sam off
+  await expect(dialog.getByRole("button", { name: `Remove ${USERS.sam.name}` })).toHaveCount(0);
+
   await dialog.getByRole("button", { name: "Create project" }).click();
 
   await expect(alice).toHaveURL(/\/projects\/\d+$/);
