@@ -30,9 +30,16 @@ export async function POST(req: NextRequest, { params }: Params) {
     const { id } = await params;
     const tId = Number(id);
     if (!Number.isInteger(tId)) throw new ApiError(400, "Invalid id");
-    const { name } = instantiateTemplateSchema.parse(
-      await req.json().catch(() => ({}))
-    );
+    const input = instantiateTemplateSchema.parse(await req.json().catch(() => ({})));
+    const { name } = input;
+
+    // Whoever the form named runs it (the admin by default); they must be
+    // someone who can still sign in.
+    const ownerId = input.ownerId ?? admin.id;
+    if (ownerId !== admin.id) {
+      const owner = await query<DbRow[]>(`SELECT id FROM users WHERE id = ? AND is_active = TRUE LIMIT 1`, [ownerId]);
+      if (!owner.length) throw new ApiError(400, "The project manager you chose can't be found or has left");
+    }
 
     const rows = await query<DbRow[]>(
       `SELECT data FROM project_templates WHERE id = ? LIMIT 1`,
@@ -48,17 +55,34 @@ export async function POST(req: NextRequest, { params }: Params) {
       await conn.beginTransaction();
       const [pRes] = await conn.execute(
         // A template carries no department: it is a shape of work, not a
-        // team's work. The project lands where whoever created it belongs.
-        `INSERT INTO projects (name, description, department, status, owner_id)
-         VALUES (?, NULL, ?, 'active', ?)`,
-        [name, admin.department ?? null, admin.id]
+        // team's work. The project lands where the form says, or where
+        // whoever created it belongs. No start date given means today.
+        `INSERT INTO projects (name, description, department, status, owner_id, start_date, due_date)
+         VALUES (?, ?, ?, 'active', ?, COALESCE(?, CURRENT_DATE()), ?)`,
+        [
+          name,
+          input.description ?? null,
+          input.department ?? admin.department ?? null,
+          ownerId,
+          input.startDate ?? null,
+          input.dueDate ?? null,
+        ]
       );
       const projectId = (pRes as DbResult).insertId;
+      // The owner leads it; the people the form named are on it.
       await conn.execute(
         `INSERT INTO project_members (project_id, user_id, role_in_project)
          VALUES (?, ?, 'lead')`,
-        [projectId, admin.id]
+        [projectId, ownerId]
       );
+      for (const memberId of new Set(input.memberIds ?? [])) {
+        if (memberId === ownerId) continue;
+        await conn.execute(
+          `INSERT IGNORE INTO project_members (project_id, user_id, role_in_project)
+           VALUES (?, ?, 'member')`,
+          [projectId, memberId]
+        );
+      }
 
       const labelIdByName = new Map<string, number>();
       for (const l of data.labels ?? []) {
