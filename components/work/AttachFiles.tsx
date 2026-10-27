@@ -111,15 +111,22 @@ export function sizeLabel(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** Download links for files already attached (a subtask's, a task's). */
-export function FileLinks({ files }: { files: { id: number; filename: string; size_bytes: number; uploader_name?: string | null }[] }) {
+/** Download links for files already attached (a subtask's, a task's, a request's). */
+export function FileLinks({
+  files,
+  base = "/api/attachments",
+}: {
+  files: { id: number; filename: string; size_bytes: number; uploader_name?: string | null }[];
+  /** Where each file downloads from; a request's files have their own route. */
+  base?: string;
+}) {
   if (!files.length) return null;
   return (
     <ul className="flex flex-wrap gap-2">
       {files.map((a) => (
         <li key={a.id}>
           <a
-            href={`/api/attachments/${a.id}`}
+            href={`${base}/${a.id}`}
             className="inline-flex max-w-xs items-center gap-1.5 rounded-lg bg-white px-2.5 py-1 text-xs text-indigo-700 ring-1 ring-inset ring-indigo-200 hover:bg-indigo-50"
             title={a.uploader_name ? `Added by ${a.uploader_name}` : undefined}
           >

@@ -274,8 +274,8 @@ export const SPEC_LABELS: Record<SpecKey, string> = Object.fromEntries(
 /** One checklist item, and the part of the spec that asked for it. */
 export interface ChecklistSeed {
   title: string;
-  /** Which spec field this came from, so the task can group by it. */
-  source: SpecKey;
+  /** Which spec field this came from, so the task can group by it (null: a typed step). */
+  source: SpecKey | null;
 }
 
 /** One checklist item per line, with list markers and numbering removed. */
@@ -322,6 +322,38 @@ export function checklistFromSpec(
     }
   }
   return items;
+}
+
+/**
+ * Subtasks for a plain task: its steps, one per line, written in the same
+ * list style as a specification's points and held to the same limits.
+ */
+export function checklistFromSteps(steps: string | null | undefined): ChecklistSeed[] {
+  const items: ChecklistSeed[] = [];
+  const seen = new Set<string>();
+  for (const line of linesOf(steps)) {
+    const fingerprint = line.toLowerCase();
+    if (seen.has(fingerprint)) continue;
+    seen.add(fingerprint);
+    items.push({ title: line, source: null });
+    if (items.length >= MAX_CHECKLIST_ITEMS) break;
+  }
+  return items;
+}
+
+/**
+ * The subtasks new work starts with, whichever way it was described: a
+ * correction or feature by its specification's points, a plain task by its
+ * steps. One rule for the form's preview, a new task and an approved request.
+ */
+export function checklistFor(
+  type: WorkType | null | undefined,
+  spec: SpecColumns,
+  steps?: string | null
+): ChecklistSeed[] {
+  return type === "correction" || type === "feature"
+    ? checklistFromSpec(type, spec)
+    : checklistFromSteps(steps);
 }
 
 /**

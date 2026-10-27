@@ -22,6 +22,8 @@ const LATER_MIGRATIONS = [
   "2026-10-08_planner.sql",
   "2026-10-10_credential_fields.sql",
   "2026-10-17_redesign_fundamentals.sql",
+  "2026-10-27_quick_requests.sql",
+  "2026-10-28_request_attachments.sql",
 ].map((f) =>
   readFileSync(new URL(`../../db/migrations/${f}`, import.meta.url), "utf8")
 );
@@ -53,6 +55,7 @@ beforeAll(async () => {
   conn = await serverConnection(config);
   await conn.query(`
     USE pm_migrate;
+    DROP TABLE task_request_attachments;
     DROP TABLE task_requests;
     ALTER TABLE tasks
       DROP FOREIGN KEY fk_tasks_requester,

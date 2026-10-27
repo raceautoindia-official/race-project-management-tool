@@ -1,6 +1,7 @@
 import { pool, query, DbRow } from "./db";
 import type { Label, SpecColumns, WorkType } from "./types";
-import { checklistFromSpec } from "./workflow";
+import { checklistFor } from "./workflow";
+import { requestAttachmentsFor } from "./attachments";
 import { taskProgress as engineTaskProgress, type SubtaskForProgress, type TaskStatus } from "./work-engine";
 
 /**
@@ -47,8 +48,8 @@ export async function fetchTaskRequests(
   whereSql: string,
   params: unknown[]
 ): Promise<DbRow[]> {
-  return query<DbRow[]>(
-    `SELECT r.id, r.project_id, r.task_type, r.title,
+  const rows = await query<DbRow[]>(
+    `SELECT r.id, r.project_id, r.task_type, r.title, r.description, r.steps,
             r.existing_behavior, r.expected_behavior, r.acceptance_criteria,
             r.reason, r.scope, r.features, r.flow, r.rules,
             r.priority, r.estimated_hours, r.start_date, r.due_date,
@@ -63,6 +64,10 @@ export async function fetchTaskRequests(
       LIMIT 200`,
     params
   );
+  // The files that came with each request (an approved one's moved to its task).
+  const files = await requestAttachmentsFor(rows.map((r) => r.id as number));
+  for (const r of rows) r.attachments = files.get(r.id) ?? [];
+  return rows;
 }
 
 /**
@@ -169,9 +174,11 @@ export async function syncTaskLabels(
 export async function seedChecklistFromSpec(
   taskId: number,
   taskType: WorkType | null | undefined,
-  spec: SpecColumns
+  spec: SpecColumns,
+  /** A plain task's steps, one per line (ignored for a specified task). */
+  steps?: string | null
 ): Promise<number> {
-  const items = checklistFromSpec(taskType, spec);
+  const items = checklistFor(taskType, spec, steps);
   if (!items.length) return 0;
   try {
     // The spec's points are the task owner's own checklist: theirs to do.

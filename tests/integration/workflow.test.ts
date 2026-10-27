@@ -26,6 +26,8 @@ import * as timeLogs from "@/app/api/tasks/[id]/time-logs/route";
 import * as attachments from "@/app/api/tasks/[id]/attachments/route";
 import * as dependencies from "@/app/api/tasks/[id]/dependencies/route";
 import * as depDecision from "@/app/api/tasks/[id]/dependencies/decision/route";
+import * as requestFiles from "@/app/api/requests/[id]/attachments/route";
+import * as requestFile from "@/app/api/request-attachments/[id]/route";
 
 type Json = Record<string, unknown> & { error?: string };
 
@@ -1006,5 +1008,202 @@ describe("a blocker is raised by whoever is stuck, and confirmed by a lead", () 
       path: `/?dependsOnTaskId=${waitingOn}`,
     });
     expect(refused.status).toBe(403);
+  });
+});
+
+describe("quick work: a title and a list of steps", () => {
+  let pid: number;
+
+  beforeAll(async () => {
+    pid = await createLedProject(lead, "Quick work");
+    await query(`INSERT INTO project_members (project_id, user_id) VALUES (?, ?), (?, ?)`, [pid, sam.id, pid, alice.id]);
+  });
+
+  const subtasksOf = (taskId: number) =>
+    query<DbRow[]>(`SELECT title, source, assignee_id FROM subtasks WHERE task_id = ? ORDER BY position`, [taskId]);
+
+  it("a manager's quick task starts with its steps as subtasks for the owner", async () => {
+    actAs(lead);
+    const made = await call<{ task: Task }>(projectTasks.POST, {
+      method: "POST",
+      id: pid,
+      body: { title: "Replace the conveyor belt", assigneeId: sam.id, steps: "Get quotes\nBook the shutdown\nget quotes" },
+    });
+    expect(made.status).toBe(201);
+    expect(made.body.task.task_type).toBe("general");
+    const items = await subtasksOf(made.body.task.id);
+    expect(items.map((i) => ({ ...i }))).toEqual([
+      { title: "Get quotes", source: null, assignee_id: sam.id },
+      { title: "Book the shutdown", source: null, assignee_id: sam.id },
+    ]);
+  });
+
+  it("a member can't create a task directly, quick or not", async () => {
+    actAs(alice);
+    const refused = await call<Json>(projectTasks.POST, {
+      method: "POST",
+      id: pid,
+      body: { title: "Just do it", steps: "One" },
+    });
+    expect(refused.status).toBe(403);
+  });
+
+  it("a member's quick request keeps its description and steps, and they arrive as subtasks", async () => {
+    actAs(alice);
+    const raised = await call<{ request: TaskRequest }>(projectRequests.POST, {
+      method: "POST",
+      id: pid,
+      body: {
+        title: "Order safety gloves",
+        description: "Size L, for the night shift",
+        steps: "- Count what is left\n- Order 50 pairs",
+        priority: "high",
+      },
+    });
+    expect(raised.status).toBe(201);
+    expect(raised.body.request).toMatchObject({
+      task_type: "general",
+      description: "Size L, for the night shift",
+      steps: "- Count what is left\n- Order 50 pairs",
+      priority: "high",
+      status: "pending",
+    });
+
+    actAs(lead);
+    const decided = await call<{ task: Task }>(requestDecision.POST, {
+      method: "POST",
+      id: raised.body.request.id,
+      body: { decision: "approve", assigneeId: sam.id },
+    });
+    expect(decided.status).toBe(200);
+    expect(decided.body.task).toMatchObject({
+      task_type: "general",
+      description: "Size L, for the night shift",
+      requested_by: alice.id,
+    });
+    const items = await subtasksOf(decided.body.task.id);
+    expect(items.map((i) => ({ ...i }))).toEqual([
+      { title: "Count what is left", source: null, assignee_id: sam.id },
+      { title: "Order 50 pairs", source: null, assignee_id: sam.id },
+    ]);
+  });
+
+  it("a request with only a title is still a request", async () => {
+    actAs(alice);
+    const raised = await call<{ request: TaskRequest }>(projectRequests.POST, {
+      method: "POST",
+      id: pid,
+      body: { title: "Fix the gate latch" },
+    });
+    expect(raised.status).toBe(201);
+    expect(raised.body.request.task_type).toBe("general");
+    expect(raised.body.request.steps).toBeNull();
+  });
+
+  it("a specified request keeps no stray steps", async () => {
+    actAs(alice);
+    const raised = await call<{ request: TaskRequest }>(projectRequests.POST, {
+      method: "POST",
+      id: pid,
+      body: { ...feature, title: "Feature with steps", steps: "Should not stay" },
+    });
+    expect(raised.status).toBe(201);
+    expect(raised.body.request.steps).toBeNull();
+  });
+});
+
+describe("files sent with a request", () => {
+  let pid: number;
+  const upload = (name: string, text = "photo of the fault") => {
+    const form = new FormData();
+    form.append("file", new Blob([text], { type: "text/plain" }), name);
+    return form;
+  };
+  const raise = async (title: string) => {
+    actAs(alice);
+    const r = await call<{ request: TaskRequest }>(projectRequests.POST, { method: "POST", id: pid, body: { title } });
+    expect(r.status).toBe(201);
+    return r.body.request.id;
+  };
+
+  beforeAll(async () => {
+    pid = await createLedProject(lead, "Request files");
+    await query(`INSERT INTO project_members (project_id, user_id) VALUES (?, ?), (?, ?)`, [pid, sam.id, pid, alice.id]);
+  });
+
+  it("only the person who raised it adds files, and only they and the leads see them", async () => {
+    const id = await raise("Gate latch is broken");
+    actAs(alice);
+    const up = await call<{ attachment: { id: number; filename: string } }>(requestFiles.POST, {
+      method: "POST",
+      id,
+      body: upload("latch.txt"),
+    });
+    expect(up.status).toBe(201);
+    expect(up.body.attachment.filename).toBe("latch.txt");
+
+    // Sam is on the project but didn't raise it: to him it doesn't exist.
+    actAs(sam);
+    expect((await call(requestFiles.GET, { id })).status).toBe(404);
+    expect((await call(requestFiles.POST, { method: "POST", id, body: upload("x.txt") })).status).toBe(404);
+    expect((await call(requestFile.GET, { id: up.body.attachment.id })).status).toBe(404);
+
+    // The lead sees and downloads it, but it isn't theirs to add to.
+    actAs(lead);
+    const listed = await call<{ attachments: { filename: string }[] }>(requestFiles.GET, { id });
+    expect(listed.body.attachments.map((a) => a.filename)).toEqual(["latch.txt"]);
+    const file = await call(requestFile.GET, { id: up.body.attachment.id });
+    expect(file.status).toBe(200);
+    expect(await file.res.text()).toBe("photo of the fault");
+    expect((await call(requestFiles.POST, { method: "POST", id, body: upload("y.txt") })).status).toBe(403);
+
+    // And the request listing carries them, so the lead sees them before deciding.
+    const all = await call<{ requests: TaskRequest[] }>(projectRequests.GET, { id: pid });
+    const row = all.body.requests.find((r) => r.id === id)!;
+    expect(row.attachments?.map((a) => a.filename)).toEqual(["latch.txt"]);
+  });
+
+  it("approving moves the files onto the task, and then the request takes no more", async () => {
+    const id = await raise("Replace the cracked guard");
+    actAs(alice);
+    await call(requestFiles.POST, { method: "POST", id, body: upload("guard-1.txt") });
+    await call(requestFiles.POST, { method: "POST", id, body: upload("guard-2.txt") });
+
+    actAs(lead);
+    const decided = await call<{ task: Task }>(requestDecision.POST, {
+      method: "POST",
+      id,
+      body: { decision: "approve", assigneeId: sam.id },
+    });
+    expect(decided.status).toBe(200);
+    const onTask = await call<{ attachments: { filename: string; uploaded_by: number }[] }>(attachments.GET, {
+      id: decided.body.task.id,
+    });
+    expect(onTask.body.attachments.map((a) => a.filename).sort()).toEqual(["guard-1.txt", "guard-2.txt"]);
+    // Still credited to the person who sent them.
+    expect(onTask.body.attachments.every((a) => a.uploaded_by === alice.id)).toBe(true);
+    const [left] = await query<DbRow[]>(`SELECT COUNT(*) n FROM task_request_attachments WHERE request_id = ?`, [id]);
+    expect(Number(left.n)).toBe(0);
+
+    actAs(alice);
+    expect((await call(requestFiles.POST, { method: "POST", id, body: upload("late.txt") })).status).toBe(409);
+  });
+
+  it("rejecting keeps them with the request; withdrawing deletes them", async () => {
+    const rejected = await raise("Paint the whole plant");
+    const withdrawn = await raise("Never mind this one");
+    actAs(alice);
+    await call(requestFiles.POST, { method: "POST", id: rejected, body: upload("colours.txt") });
+    await call(requestFiles.POST, { method: "POST", id: withdrawn, body: upload("gone.txt") });
+
+    actAs(lead);
+    await call(requestDecision.POST, { method: "POST", id: rejected, body: { decision: "reject", note: "Not this year" } });
+    actAs(alice);
+    const kept = await call<{ attachments: unknown[] }>(requestFiles.GET, { id: rejected });
+    expect(kept.body.attachments).toHaveLength(1);
+
+    expect((await call(request.DELETE, { method: "DELETE", id: withdrawn })).status).toBe(200);
+    const [left] = await query<DbRow[]>(`SELECT COUNT(*) n FROM task_request_attachments WHERE request_id = ?`, [withdrawn]);
+    expect(Number(left.n)).toBe(0);
   });
 });

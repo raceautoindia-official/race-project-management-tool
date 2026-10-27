@@ -162,3 +162,23 @@ export async function assertTaskEdit(
     "Only an admin, the project lead, or the task's assignee can change this task"
   );
 }
+
+/**
+ * A task request, for someone allowed to see it: the person who raised it,
+ * or an admin/lead of its project — the same people who see it listed.
+ * Anyone else gets "not found" rather than learning it exists.
+ */
+export async function assertRequestVisible(
+  user: User,
+  requestId: number
+): Promise<{ request: DbRow; project: DbRow; manager: boolean }> {
+  const [request] = await query<DbRow[]>(
+    `SELECT id, project_id, title, status, requested_by FROM task_requests WHERE id = ? LIMIT 1`,
+    [requestId]
+  );
+  if (!request) throw notFound("Request not found");
+  const { project, projectRole } = await assertProjectAccess(user, request.project_id);
+  const manager = canManageProject(user, projectRole);
+  if (!manager && request.requested_by !== user.id) throw notFound("Request not found");
+  return { request, project, manager };
+}

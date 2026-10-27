@@ -162,14 +162,15 @@ try {
 
   const raise = async (title, page = member) => {
     await page.goto(`${BASE}/projects/${p2Id}`);
-    await page.getByRole("button", { name: "+ Raise request" }).click();
-    const d = page.getByRole("dialog", { name: "Raise a task request" });
+    await page.getByRole("button", { name: "+ New task" }).click();
+    const d = page.getByRole("dialog", { name: "New task" });
+    await d.getByText("Detailed", { exact: true }).click();
     await d.getByLabel(/^Title/).fill(title);
     await d.getByLabel(/^Existing behavior/).fill("Searching D-1042 finds nothing.");
     await d.getByLabel(/^Expected behavior/).fill("It finds dealer D-1042.");
     await d.getByLabel(/^Acceptance criteria/).fill("Typing D-1042 shows that dealer.");
     await d.getByLabel(/^Priority/).selectOption("high");
-    await d.getByRole("button", { name: "Raise request", exact: true }).click();
+    await d.getByRole("button", { name: "Send for approval" }).click();
     await d.waitFor({ state: "hidden", timeout: 20000 });
   };
 
@@ -397,7 +398,7 @@ try {
     must(!(await admin.getByRole("button", { name: "+ New task" }).count()), "still editable");
 
     await member.goto(`${BASE}/projects/${p2Id}`);
-    must(!(await member.getByRole("button", { name: "+ Raise request" }).count()), "member can still raise work");
+    must(!(await member.getByRole("button", { name: "+ New task" }).count()), "member can still raise work");
   });
 
   await step("5c an admin reopens it", async () => {

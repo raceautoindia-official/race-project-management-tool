@@ -197,6 +197,8 @@ export const createTaskSchema = z
     dueDate: optionalDate.optional(),
     startDate: optionalDate.optional(),
     labelIds: labelIdsField,
+    // A plain task's steps, one per line: each becomes a subtask.
+    steps: specText,
     // #7 — additional / follow-up work raised after a task or project completed.
     parentTaskId: optionalId.optional(),
     isAdditional: z.boolean().optional(),
@@ -240,8 +242,11 @@ export const updateTaskSchema = z
 // ---- Task requests (raised by members, approved by a lead) ----
 export const createTaskRequestSchema = z
   .object({
-    taskType: specTypeField,
+    // Quick (general) requests ask for plain work: a title, maybe steps.
+    taskType: z.enum(["general", "correction", "feature"]).optional().default("general"),
     title: z.string().trim().min(1, "Title is required").max(200),
+    description: optionalText,
+    steps: specText,
     // How urgent it is and how long it should take are stated by the person
     // asking for the work, who is usually closer to it than the approver.
     priority: z.enum(["low", "medium", "high", "urgent"]).optional(),

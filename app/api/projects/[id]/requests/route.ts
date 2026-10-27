@@ -39,7 +39,10 @@ export async function GET(_req: NextRequest, { params }: Params) {
   }
 }
 
-/** POST — any project member raises a correction / new-feature request. */
+/**
+ * POST — any project member asks for a task: a quick (general) one with
+ * optional steps, or a correction / new feature with its specification.
+ */
 export async function POST(req: NextRequest, { params }: Params) {
   try {
     const user = await requireUser();
@@ -56,10 +59,10 @@ export async function POST(req: NextRequest, { params }: Params) {
       // INSERT … SELECT re-checks the project is still open (it may have been
       // completed since the check above).
       `INSERT INTO task_requests
-         (project_id, task_type, title, ${SPEC_KEYS.join(", ")},
+         (project_id, task_type, title, description, ${SPEC_KEYS.join(", ")}, steps,
           priority, estimated_hours, start_date, due_date,
           status, requested_by, requested_at)
-       SELECT ?, ?, ?, ${SPEC_KEYS.map(() => "?").join(", ")}, ?, ?, ?, ?,
+       SELECT ?, ?, ?, ?, ${SPEC_KEYS.map(() => "?").join(", ")}, ?, ?, ?, ?, ?,
               'pending', ?, UTC_TIMESTAMP()
          FROM projects
         WHERE id = ? AND approval_status = 'approved' AND status <> 'completed'`,
@@ -67,7 +70,10 @@ export async function POST(req: NextRequest, { params }: Params) {
         projectId,
         data.taskType,
         data.title,
+        data.description ?? null,
         ...SPEC_KEYS.map((k) => spec[k]),
+        // Steps belong to a quick request; a specified one has its points.
+        data.taskType === "general" ? data.steps ?? null : null,
         data.priority ?? "medium",
         data.estimatedHours ?? null,
         data.startDate ?? null,

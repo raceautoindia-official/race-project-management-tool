@@ -86,8 +86,9 @@ Profile and Notifications stay where they are (avatar menu and bell).
   - **Tasks** (new default): a tree with inline add, clickable weights and review actions.
   - Board, List (with bulk actions), Timeline, Calendar.
   - About & team (members modal content).
-- **Header actions all kept:** New task, Raise request, Export CSV/Excel, Template, Import, Recurring,
-  Members, Edit, Save as template.
+- **Header actions all kept:** New task, Export CSV/Excel, Template, Import, Recurring,
+  Members, Edit, Save as template. "Raise request" was folded into New task (2026-10-27): one task
+  form with Quick and Detailed modes; a member's goes to a lead for approval, a manager's is created.
 
 ## 5. Other things that must keep working
 

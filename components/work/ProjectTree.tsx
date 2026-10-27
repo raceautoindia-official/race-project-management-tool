@@ -11,11 +11,11 @@ import { useState } from "react";
 import { TaskStatusBadge } from "@/components/Badge";
 import { isOverdue } from "@/lib/format";
 import { effectiveWeights } from "@/lib/work-engine";
-import type { Task } from "@/lib/types";
+import type { Task, TaskRequest } from "@/lib/types";
 import SubtasksPanel from "./SubtasksPanel";
 import TaskActions from "./TaskActions";
 import { useToast } from "@/components/ToastProvider";
-import { apiFetch } from "@/lib/api-client";
+import { sendNewWork, type NewWorkDraft } from "@/components/project/new-work";
 import { todayIST } from "@/lib/work-dates";
 import { PersonSelect } from "./kit";
 import { DateRange, PersonLine, WeightChip, WeightEditor, WorkProgress, type PickPerson } from "./kit";
@@ -37,6 +37,8 @@ export default function ProjectTree({
   onWeightsSaved,
   projectOwnerName = null,
   onTaskAdded,
+  onRequested,
+  onMoreOptions,
 }: {
   projectId: number;
   projectName: string;
@@ -54,6 +56,10 @@ export default function ProjectTree({
   projectOwnerName?: string | null;
   /** A task was added inline; reload the list. */
   onTaskAdded?: () => void;
+  /** A member's inline task went for approval. */
+  onRequested?: (request: TaskRequest) => void;
+  /** Open the full task form with what was typed so far. */
+  onMoreOptions?: (draft: NewWorkDraft) => void;
 }) {
   const [filter, setFilter] = useState<Filter>("all");
   const [open, setOpen] = useState<Set<number>>(new Set());
@@ -218,7 +224,16 @@ export default function ProjectTree({
         </div>
       )}
 
-      {isManager && writable && <AddTaskRow projectId={projectId} people={people} onAdded={() => onTaskAdded?.()} />}
+      {writable && (
+        <AddTaskRow
+          projectId={projectId}
+          people={people}
+          isManager={isManager}
+          onAdded={() => onTaskAdded?.()}
+          onRequested={(r) => onRequested?.(r)}
+          onMoreOptions={onMoreOptions}
+        />
+      )}
 
       <WeightEditor
         open={weightsOpen}
@@ -239,14 +254,31 @@ export default function ProjectTree({
 }
 
 /**
- * Quick add at the bottom of the list: a task's name, its owner and dates.
- * Everything else (spec, labels, requester…) stays in "+ New task".
+ * Quick add at the bottom of the list: a task's name, owner, priority and
+ * dates — the Quick task form in a row, sending the same way (a member's goes
+ * for approval). It stays open for the next one; "More options…" carries what
+ * was typed into the full form.
  */
-function AddTaskRow({ projectId, people, onAdded }: { projectId: number; people: PickPerson[]; onAdded: () => void }) {
+function AddTaskRow({
+  projectId,
+  people,
+  isManager,
+  onAdded,
+  onRequested,
+  onMoreOptions,
+}: {
+  projectId: number;
+  people: PickPerson[];
+  isManager: boolean;
+  onAdded: () => void;
+  onRequested: (request: TaskRequest) => void;
+  onMoreOptions?: (draft: NewWorkDraft) => void;
+}) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [owner, setOwner] = useState<number | null>(null);
+  const [priority, setPriority] = useState("medium");
   const [start, setStart] = useState(todayIST());
   const [due, setDue] = useState("");
   const [saving, setSaving] = useState(false);
@@ -268,14 +300,22 @@ function AddTaskRow({ projectId, people, onAdded }: { projectId: number; people:
         if (!title.trim() || badDates) return;
         setSaving(true);
         try {
-          await apiFetch(`/api/projects/${projectId}/tasks`, {
-            method: "POST",
-            body: JSON.stringify({ title: title.trim(), assigneeId: owner, startDate: start || null, dueDate: due || null }),
+          const sent = await sendNewWork(projectId, !isManager, {
+            title: title.trim(),
+            assigneeId: owner,
+            priority,
+            startDate: start || null,
+            dueDate: due || null,
           });
-          toast(`Task added${owner ? " — its owner can now split it into subtasks" : ""}`);
+          if (sent.kind === "task") {
+            toast(`Task added${owner ? " — its owner can now split it into subtasks" : ""}`);
+            onAdded();
+          } else {
+            toast("Sent for approval — a project lead will review it");
+            onRequested(sent.request);
+          }
           setTitle("");
           setDue("");
-          onAdded();
         } catch (err) {
           toast(err instanceof Error ? err.message : "Could not add the task", "error");
         } finally {
@@ -285,20 +325,31 @@ function AddTaskRow({ projectId, people, onAdded }: { projectId: number; people:
     >
       <div className="flex flex-col gap-2 sm:flex-row">
         <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder='Task, e.g. "Vendor onboarding"' aria-label="Task title" className={`${cls} sm:flex-1`} />
-        <PersonSelect people={people} value={owner} onChange={setOwner} emptyLabel="Task owner…" label="Task owner" className="sm:w-60" />
+        {isManager && (
+          <PersonSelect people={people} value={owner} onChange={setOwner} emptyLabel="Task owner…" label="Task owner" className="sm:w-60" />
+        )}
       </div>
       <div className="flex flex-wrap items-end gap-2">
         <label className="text-xs font-medium text-slate-600">
+          Priority
+          <select value={priority} onChange={(e) => setPriority(e.target.value)} className={`${cls} mt-1 block`}>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+            <option value="urgent">Urgent</option>
+          </select>
+        </label>
+        <label className="text-xs font-medium text-slate-600">
           Start date
-          <input type="date" value={start} onChange={(e) => setStart(e.target.value)} className={`${cls} mt-1 block`} />
+          <input type="date" value={start} max={due || undefined} onChange={(e) => setStart(e.target.value)} className={`${cls} mt-1 block`} />
         </label>
         <label className="text-xs font-medium text-slate-600">
           Due date
           <input type="date" value={due} min={start || undefined} onChange={(e) => setDue(e.target.value)} className={`${cls} mt-1 block`} />
         </label>
-        <div className="ml-auto flex gap-2">
+        <div className="ml-auto flex flex-wrap gap-2">
           <button type="submit" disabled={!title.trim() || badDates || saving} className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">
-            {saving ? "Adding…" : "Add task"}
+            {saving ? "Sending…" : isManager ? "Add task" : "Send for approval"}
           </button>
           <button type="button" onClick={() => setOpen(false)} className="rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-slate-100">
             Done
@@ -307,7 +358,26 @@ function AddTaskRow({ projectId, people, onAdded }: { projectId: number; people:
       </div>
       {badDates && <p className="text-xs text-red-600">The due date can&apos;t be before the start date.</p>}
       <p className="text-xs text-slate-500">
-        The task owner splits it into subtasks and approves them. Weights stay an even split. Need a specification, labels or a requester? Use “+ New task”.
+        {isManager
+          ? "The task owner splits it into subtasks and approves them."
+          : "A project lead picks who does it and approves it."}{" "}
+        {onMoreOptions && (
+          <>
+            Need steps, a specification or files?{" "}
+            <button
+              type="button"
+              onClick={() => {
+                onMoreOptions({ title: title.trim(), assigneeId: owner, priority, startDate: start, dueDate: due });
+                setTitle("");
+                setDue("");
+                setOpen(false);
+              }}
+              className="font-medium text-indigo-700 underline underline-offset-2 hover:text-indigo-900"
+            >
+              More options…
+            </button>
+          </>
+        )}
       </p>
     </form>
   );

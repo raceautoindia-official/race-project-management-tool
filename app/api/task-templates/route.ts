@@ -73,6 +73,18 @@ export async function POST(req: NextRequest) {
     for (const key of SPEC_KEYS) {
       templateData[specBodyKey(key)] = (task[key] as string | null) ?? null;
     }
+    // A plain task is described by its subtasks: they travel as its steps,
+    // so the next task made from it starts with the same list. (A specified
+    // task's subtasks come back from its specification.)
+    if (task.task_type === "general") {
+      const subtasks = await query<DbRow[]>(
+        `SELECT title FROM subtasks
+          WHERE task_id = ? AND status <> 'cancelled'
+          ORDER BY position, id`,
+        [data.taskId]
+      );
+      templateData.steps = subtasks.map((r) => String(r.title)).join("\n") || null;
+    }
 
     const department = data.department ?? author.department ?? null;
     const result = (await query<DbResult>(

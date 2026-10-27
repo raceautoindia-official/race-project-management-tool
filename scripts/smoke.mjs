@@ -89,7 +89,7 @@ try {
 
   await step("it is read-only until the lead approves", async () => {
     await member.getByText("Awaiting lead approval").waitFor({ timeout: 20000 });
-    if (await member.getByRole("button", { name: "+ Raise request" }).count()) {
+    if (await member.getByRole("button", { name: "+ New task" }).count()) {
       throw new Error("the project accepted work before approval");
     }
   });
@@ -110,13 +110,14 @@ try {
 
   await step("a member raises a task request", async () => {
     await member.goto(`${BASE}/projects/${projectId}`);
-    await member.getByRole("button", { name: "+ Raise request" }).click();
-    const dialog = member.getByRole("dialog", { name: "Raise a task request" });
+    await member.getByRole("button", { name: "+ New task" }).click();
+    const dialog = member.getByRole("dialog", { name: "New task" });
+    await dialog.getByText("Detailed", { exact: true }).click();
     await dialog.getByLabel(/^Title/).fill(TASK);
     await dialog.getByLabel(/^Existing behavior/).fill("Searching D-1042 finds nothing.");
     await dialog.getByLabel(/^Expected behavior/).fill("It finds dealer D-1042.");
     await dialog.getByLabel(/^Acceptance criteria/).fill("Typing D-1042 shows that dealer.");
-    await dialog.getByRole("button", { name: "Raise request", exact: true }).click();
+    await dialog.getByRole("button", { name: "Send for approval" }).click();
     await dialog.waitFor({ state: "hidden", timeout: 20000 });
   });
 

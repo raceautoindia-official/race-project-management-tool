@@ -8,15 +8,11 @@ import { apiFetch, isConflict } from "@/lib/api-client";
 import { useToast } from "@/components/ToastProvider";
 import { formatIst } from "@/lib/tz";
 import { formatDate } from "@/lib/format";
-import type {
-  ProjectMember,
-  SpecColumns,
-  Task,
-  TaskPriority,
-  TaskRequest,
-} from "@/lib/types";
-import { checklistFromSpec, type SpecType } from "@/lib/workflow";
-import { pickSpec, SpecView, specPayload, WorkSpecFields } from "./WorkSpec";
+import type { ProjectMember, Task, TaskPriority, TaskRequest } from "@/lib/types";
+import { checklistFor } from "@/lib/workflow";
+import { SpecView } from "./WorkSpec";
+import { pointsOf } from "./PointsInput";
+import { FileLinks } from "@/components/work/AttachFiles";
 
 const PRIORITY_WORD: Record<TaskPriority, string> = {
   low: "Low",
@@ -25,17 +21,54 @@ const PRIORITY_WORD: Record<TaskPriority, string> = {
   urgent: "Urgent",
 };
 
+/**
+ * What a request asks for: a specified request's specification, a quick
+ * one's description and steps.
+ */
+function RequestBody({ request, compact = false }: { request: TaskRequest; compact?: boolean }) {
+  const steps = pointsOf(request.steps);
+  return (
+    <div className={compact ? "space-y-2" : "space-y-3"}>
+      {request.description && (
+        <p className="whitespace-pre-wrap text-sm text-slate-700">{request.description}</p>
+      )}
+      <SpecView item={request} compact={compact} hideEmpty={compact} />
+      {steps.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Steps</p>
+          <div className="mt-0.5 space-y-0.5 text-sm text-slate-700">
+            {steps.map((s, i) => (
+              <p key={i} className="flex gap-1.5">
+                <span aria-hidden="true" className="text-slate-400">☐</span>
+                <span>{s}</span>
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+      {!request.description && !steps.length && request.task_type === "general" && (
+        <p className="text-sm text-slate-500">Just the title — no description or steps.</p>
+      )}
+      {(request.attachments?.length ?? 0) > 0 && (
+        <div>
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Files</p>
+          <FileLinks files={request.attachments!} base="/api/request-attachments" />
+        </div>
+      )}
+    </div>
+  );
+}
+
 const inputClass =
   "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
 
 /**
- * Task requests raised by project members. Anyone can raise one (correction or
- * new feature); an admin/lead approves it — choosing the assigned owner, which
- * creates the task — or rejects it with a reason. The raiser may withdraw a
- * request while it is pending.
+ * Task requests from project members (sent from the task form). An admin/lead
+ * approves one — choosing the assigned owner, which creates the task — or
+ * rejects it with a reason. The asker may withdraw a request while it is
+ * pending.
  */
 export default function TaskRequestsPanel({
-  projectId,
   requests,
   onRequestsChange,
   members,
@@ -43,13 +76,10 @@ export default function TaskRequestsPanel({
   isAdmin,
   canManage,
   writable,
-  raiseOpen,
-  onRaiseOpenChange,
   onTaskCreated,
   onOpenTask,
   onStale,
 }: {
-  projectId: number;
   requests: TaskRequest[];
   onRequestsChange: (requests: TaskRequest[]) => void;
   members: ProjectMember[];
@@ -57,8 +87,6 @@ export default function TaskRequestsPanel({
   isAdmin: boolean;
   canManage: boolean;
   writable: boolean;
-  raiseOpen: boolean;
-  onRaiseOpenChange: (open: boolean) => void;
   onTaskCreated: (task: Task) => void;
   onOpenTask: (taskId: number) => void;
   /** Requests/tasks changed elsewhere — reload them. */
@@ -88,7 +116,7 @@ export default function TaskRequestsPanel({
     }
   }
 
-  if (requests.length === 0 && !raiseOpen) return null;
+  if (requests.length === 0) return null;
 
   function renderRow(r: TaskRequest) {
     const mine = r.requested_by === currentUserId;
@@ -104,6 +132,11 @@ export default function TaskRequestsPanel({
             </button>
             <WorkTypeBadge type={r.task_type} />
             <RequestStatusBadge status={r.status} pendingLabel="Awaiting approval" />
+            {(r.attachments?.length ?? 0) > 0 && (
+              <span className="text-xs text-slate-500" title="Files sent with this request">
+                📎 {r.attachments!.length}
+              </span>
+            )}
           </div>
           <div className="mt-0.5 text-xs text-slate-600">
             Raised by {mine ? "you" : r.requester_name ?? "—"} · {formatIst(r.requested_at)}
@@ -203,18 +236,6 @@ export default function TaskRequestsPanel({
         </section>
       )}
 
-      {raiseOpen && (
-        <RaiseRequestModal
-          projectId={projectId}
-          onClose={() => onRaiseOpenChange(false)}
-          onRaised={(r) => {
-            onRequestsChange([r, ...requests]);
-            onRaiseOpenChange(false);
-            toast("Request raised — a project lead will review it");
-          }}
-        />
-      )}
-
       {viewing && (
         <Modal open onClose={() => setViewing(null)} title={viewing.title} widthClass="max-w-2xl">
           <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -233,7 +254,7 @@ export default function TaskRequestsPanel({
               <span className="font-medium">Decision note:</span> {viewing.decision_note}
             </p>
           )}
-          <SpecView item={viewing} />
+          <RequestBody request={viewing} />
         </Modal>
       )}
 
@@ -259,192 +280,6 @@ export default function TaskRequestsPanel({
   );
 }
 
-function RaiseRequestModal({
-  projectId,
-  onClose,
-  onRaised,
-}: {
-  projectId: number;
-  onClose: () => void;
-  onRaised: (r: TaskRequest) => void;
-}) {
-  const [type, setType] = useState<SpecType>("correction");
-  const [title, setTitle] = useState("");
-  const [spec, setSpec] = useState<SpecColumns>(pickSpec(null));
-  // Urgency and effort come from the person asking, not the approver.
-  const [priority, setPriority] = useState<TaskPriority>("medium");
-  const [estimatedHours, setEstimatedHours] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [dueDate, setDueDate] = useState("");
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError("");
-    try {
-      const res = await apiFetch<{ request: TaskRequest }>(
-        `/api/projects/${projectId}/requests`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            taskType: type,
-            title,
-            priority,
-            estimatedHours: estimatedHours.trim() || null,
-            startDate: startDate || null,
-            dueDate: dueDate || null,
-            ...specPayload(type, spec),
-          }),
-        }
-      );
-      onRaised(res.request);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not raise request");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Modal open onClose={onClose} title="Raise a task request" widthClass="max-w-2xl">
-      <form onSubmit={submit} className="space-y-4">
-        <p className="text-sm text-slate-600">
-          A project lead reviews your request, assigns an owner and approves it before
-          work starts.
-        </p>
-        {error && (
-          <div role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-            {error}
-          </div>
-        )}
-        <WorkSpecFields
-          type={type}
-          onTypeChange={setType}
-          spec={spec}
-          onSpecChange={setSpec}
-        />
-        <div>
-          <label htmlFor="request-title" className="mb-1 block text-sm font-medium text-slate-700">
-            Title <span className="text-red-500">*</span>
-          </label>
-          <input
-            id="request-title"
-            required
-            maxLength={200}
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className={inputClass}
-          />
-        </div>
-
-        {/* You know how urgent your own request is, and roughly what it takes.
-            The lead can adjust when approving, but shouldn't have to guess. */}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div>
-            <label
-              htmlFor="request-priority"
-              className="mb-1 block text-sm font-medium text-slate-700"
-            >
-              Priority
-            </label>
-            <select
-              id="request-priority"
-              value={priority}
-              onChange={(e) => setPriority(e.target.value as TaskPriority)}
-              className={inputClass}
-            >
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-              <option value="urgent">Urgent</option>
-            </select>
-          </div>
-          <div>
-            <label
-              htmlFor="request-hours"
-              className="mb-1 block text-sm font-medium text-slate-700"
-            >
-              Estimated hours
-            </label>
-            <input
-              id="request-hours"
-              type="number"
-              min="0"
-              step="0.5"
-              inputMode="decimal"
-              placeholder="e.g. 4"
-              value={estimatedHours}
-              onChange={(e) => setEstimatedHours(e.target.value)}
-              className={inputClass}
-            />
-          </div>
-        </div>
-
-        {/* When the work can start and when it is needed by. Either end can be
-            left blank — a request with no dates is still a valid request. */}
-        <fieldset>
-          <legend className="mb-1 block text-sm font-medium text-slate-700">
-            Dates
-          </legend>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
-              <label
-                htmlFor="request-start"
-                className="mb-1 block text-xs font-medium text-slate-600"
-              >
-                From
-              </label>
-              <input
-                id="request-start"
-                type="date"
-                value={startDate}
-                max={dueDate || undefined}
-                onChange={(e) => setStartDate(e.target.value)}
-                className={inputClass}
-              />
-            </div>
-            <div>
-              <label
-                htmlFor="request-due"
-                className="mb-1 block text-xs font-medium text-slate-600"
-              >
-                To (needed by)
-              </label>
-              <input
-                id="request-due"
-                type="date"
-                value={dueDate}
-                min={startDate || undefined}
-                onChange={(e) => setDueDate(e.target.value)}
-                className={inputClass}
-              />
-            </div>
-          </div>
-        </fieldset>
-
-        <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={busy}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
-          >
-            {busy ? "Sending…" : "Raise request"}
-          </button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
-
 function DecisionModal({
   request,
   mode,
@@ -466,7 +301,7 @@ function DecisionModal({
   const [busy, setBusy] = useState(false);
   const approving = mode === "approve";
   // What the task will start with, counted from the request itself.
-  const checklistItemCount = checklistFromSpec(request.task_type, request).length;
+  const checklistItemCount = checklistFor(request.task_type, request, request.steps).length;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -574,7 +409,7 @@ function DecisionModal({
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
               What was asked for
             </p>
-            <SpecView item={request} compact hideEmpty />
+            <RequestBody request={request} compact />
           </div>
 
           {/* What approving actually does, before it is done. */}
@@ -589,8 +424,10 @@ function DecisionModal({
               ) : (
                 <>with no checklist — this request lists no points to tick off</>
               )}
-              , owned by whoever you pick below. {request.requester_name ?? "The requester"}{" "}
-              signs it off at the end.
+              , owned by whoever you pick below.
+              {(request.attachments?.length ?? 0) > 0 &&
+                ` Its ${request.attachments!.length === 1 ? "file moves" : `${request.attachments!.length} files move`} to the task.`}{" "}
+              {request.requester_name ?? "The requester"} signs it off at the end.
             </p>
           )}
         </div>

@@ -76,7 +76,7 @@ test("a member requests a project and nominates a lead", async () => {
   await expect(alice.getByText("Awaiting lead approval")).toBeVisible();
   await expect(alice.getByText(`Nominated lead: ${USERS.lead.name}`)).toBeVisible();
   // Read-only until approved.
-  await expect(alice.getByRole("button", { name: "+ Raise request" })).toHaveCount(0);
+  await expect(alice.getByRole("button", { name: "+ New task" })).toHaveCount(0);
 });
 
 test("people outside the project can't see it", async () => {
@@ -117,32 +117,80 @@ test("the nominated lead approves the project and adds a member", async () => {
   await closeDialog(members);
 });
 
+test("a member's quick task goes for approval with its steps", async () => {
+  const quick = "E2E Order safety gloves";
+  await alice.goto(projectPath);
+  // The same button as a lead's; what happens to it depends on who asks.
+  await alice.getByRole("button", { name: "+ New task" }).click();
+  const dialog = alice.getByRole("dialog", { name: "New task" });
+  await expect(dialog).toContainText("A project lead reviews this");
+  await expect(dialog.getByLabel(/^Quick/)).toBeChecked();
+  // The approver picks the owner, so the asker isn't asked.
+  await expect(dialog.getByLabel(/^Assigned owner/)).toHaveCount(0);
+  await dialog.getByLabel(/^Title/).fill(quick);
+  await dialog.getByLabel("Steps — point 1").fill("Count what is left");
+  await dialog.getByLabel("Steps — point 1").press("Enter");
+  await dialog.getByLabel("Steps — point 2").fill("Order 50 pairs");
+  const preview = dialog.getByRole("region", { name: "Subtasks preview" });
+  await expect(preview).toContainText("Once approved, this starts with 2 subtasks");
+  await expect(preview).toContainText("Order 50 pairs");
+  // A file goes with it, for the lead to see before deciding.
+  await dialog.getByLabel("Attach files").setInputFiles({
+    name: "glove-sizes.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("S 10, M 20, L 20"),
+  });
+  await dialog.getByRole("button", { name: "Send for approval" }).click();
+  await expect(dialog).toBeHidden();
+
+  // The lead sees what was asked for, steps included, before deciding.
+  await expect(requestRow(alice, quick).getByText("Awaiting approval")).toBeVisible();
+  await expect(requestRow(alice, quick)).toContainText("📎 1");
+  await lead.goto(projectPath);
+  await requestRow(lead, quick).getByRole("button", { name: "Approve" }).click();
+  const approve = lead.getByRole("dialog", { name: "Approve request" });
+  await expect(approve).toContainText("Count what is left");
+  await expect(approve).toContainText("2-item checklist");
+  await expect(approve.getByRole("link", { name: /glove-sizes.txt/ })).toBeVisible();
+  await expect(approve).toContainText("Its file moves to the task.");
+  await approve.getByRole("button", { name: "Cancel" }).click();
+  await expect(approve).toBeHidden();
+
+  // Withdrawn again: the rest of this story counts the project's tasks.
+  await alice.goto(projectPath);
+  await requestRow(alice, quick).getByRole("button", { name: "Withdraw" }).click();
+  await expect(requestRow(alice, quick)).toHaveCount(0);
+});
+
 test("members raise requests; each type's required fields are enforced", async () => {
   await alice.goto(projectPath);
-  await alice.getByRole("button", { name: "+ Raise request" }).click();
-  let dialog = alice.getByRole("dialog", { name: "Raise a task request" });
+  await alice.getByRole("button", { name: "+ New task" }).click();
+  let dialog = alice.getByRole("dialog", { name: "New task" });
+  await dialog.getByText("Detailed", { exact: true }).click();
   await expect(dialog.getByLabel("Existing work correction")).toBeChecked();
   await dialog.getByLabel(/^Title/).fill(CORRECTION);
   await dialog.getByLabel(/^Existing behavior/).fill("Searching D-1042 finds nothing.");
   await dialog.getByLabel(/^Expected behavior/).fill("Searching a dealer code finds that dealer.");
   const criteria = dialog.getByLabel(/^Acceptance criteria/);
-  await dialog.getByRole("button", { name: "Raise request", exact: true }).click();
+  await dialog.getByRole("button", { name: "Send for approval" }).click();
   // Blocked: acceptance criteria is required for a correction.
   await expect(dialog).toBeVisible();
   expect(await criteria.evaluate((el: HTMLInputElement) => el.validity.valueMissing)).toBe(true);
   await criteria.fill("Typing D-1042 shows dealer D-1042.");
-  await dialog.getByRole("button", { name: "Raise request", exact: true }).click();
+  await dialog.getByRole("button", { name: "Send for approval" }).click();
   await expect(dialog).toBeHidden();
   await expect(requestRow(alice, CORRECTION).getByText("Awaiting approval")).toBeVisible();
 
-  await alice.getByRole("button", { name: "+ Raise request" }).click();
-  dialog = alice.getByRole("dialog", { name: "Raise a task request" });
+  await alice.getByRole("button", { name: "+ New task" }).click();
+  dialog = alice.getByRole("dialog", { name: "New task" });
+  // The form remembers that she last wrote a detailed one.
+  await expect(dialog.getByLabel(/^Detailed/)).toBeChecked();
   await dialog.getByText("New feature", { exact: true }).click();
   await expect(dialog.getByLabel(/^Existing behavior/)).toHaveCount(0);
   await dialog.getByLabel(/^Title/).fill(FEATURE_REQUEST);
   await dialog.getByLabel(/^Features/).fill("A dark colour theme toggle.");
   await dialog.getByLabel(/^Rules/).fill("Remember the choice per user.");
-  await dialog.getByRole("button", { name: "Raise request", exact: true }).click();
+  await dialog.getByRole("button", { name: "Send for approval" }).click();
   await expect(dialog).toBeHidden();
   await expect(requestRow(alice, FEATURE_REQUEST)).toBeVisible();
 });
@@ -208,9 +256,15 @@ test("a task can be created from a title alone", async () => {
   const dialog = lead.getByRole("dialog", { name: "New task" });
   // Nothing but the title is asked for: no type, no specification, no
   // requester. Work that needs none of that should cost one line.
+  await expect(dialog.getByLabel(/^Quick/)).toBeChecked();
   await expect(dialog.getByLabel(/^Existing behavior/)).toHaveCount(0);
   await expect(dialog.getByLabel(/^Requested by/)).toHaveCount(0);
   await dialog.getByLabel(/^Title/).fill(quick);
+  // A step shows up in the preview as the subtask it will be.
+  await dialog.getByLabel("Steps — point 1").fill("Call the supplier");
+  await expect(dialog.getByRole("region", { name: "Subtasks preview" })).toContainText(
+    "This starts with 1 subtask, for the task owner."
+  );
   await dialog.getByRole("button", { name: "Create task" }).click();
   await expect(dialog).toBeHidden();
   await expect(taskCard(lead, quick)).toBeVisible();
@@ -227,8 +281,8 @@ test("the lead creates a new-feature task directly", async () => {
   await lead.getByRole("button", { name: "+ New task" }).click();
   const dialog = lead.getByRole("dialog", { name: "New task" });
   await dialog.getByLabel(/^Title/).fill(FEATURE_TASK);
-  // The specification is opt-in, and generates the checklist once written.
-  await dialog.getByRole("button", { name: "Add a specification" }).click();
+  // The specification is opt-in (Detailed), and generates the checklist once written.
+  await dialog.getByText("Detailed", { exact: true }).click();
   await dialog.getByText("New feature", { exact: true }).click();
   await dialog.getByLabel(/^Features/).fill("Download the dealer list as a CSV file.");
   await dialog.getByLabel(/^Flow/).fill("Dealers → Export → file downloads");
@@ -308,6 +362,18 @@ test("the task owner's own subtasks are approved at once, and the finished task 
   // task is ready, so it went to the project's managers.
   await expect(task.getByLabel("Task status")).toHaveValue("review");
   await closeDialog(task);
+});
+
+test("the inline add row carries what was typed into the full form", async () => {
+  await lead.goto(projectPath);
+  await lead.getByRole("button", { name: "Tasks & subtasks" }).click();
+  await lead.getByRole("button", { name: "+ Add task" }).click();
+  await lead.getByLabel("Task title").fill("E2E Inline draft");
+  await lead.getByRole("button", { name: "More options…" }).click();
+  const dialog = lead.getByRole("dialog", { name: "New task" });
+  await expect(dialog.getByLabel(/^Title/)).toHaveValue("E2E Inline draft");
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
 });
 
 test("the tasks & subtasks view leads to the task's own page", async () => {
@@ -461,7 +527,7 @@ test("after the last sign-off the lead completes the project and it locks", asyn
 
   await alice.goto(projectPath);
   await expect(alice.getByText("Project completed — read-only")).toBeVisible();
-  await expect(alice.getByRole("button", { name: "+ Raise request" })).toHaveCount(0);
+  await expect(alice.getByRole("button", { name: "+ New task" })).toHaveCount(0);
   // Only an admin may reopen.
   await expect(lead.getByRole("button", { name: "Reopen project" })).toHaveCount(0);
 });
