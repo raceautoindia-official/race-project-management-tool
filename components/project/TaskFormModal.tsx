@@ -8,6 +8,7 @@ import { LABEL_COLORS, labelChipClass, labelSwatchClass } from "@/lib/colors";
 import type {
   Label,
   ProjectMember,
+  RequestFile,
   SpecColumns,
   Task,
   TaskPriority,
@@ -304,8 +305,19 @@ export default function TaskFormModal({
           if (failed.length) toast(`Task created, but these files didn't upload: ${failed.join(", ")}`, "error");
           else toast("Task created");
         } else {
-          onRequested?.(sent.request);
-          toast("Sent for approval — a project lead will review it");
+          // The files follow the request; the lead sees them before deciding.
+          let request = sent.request;
+          let failed: string[] = [];
+          if (files.length) {
+            failed = await uploadFiles(`/api/requests/${request.id}/attachments`, files);
+            const listed = await apiFetch<{ attachments: RequestFile[] }>(
+              `/api/requests/${request.id}/attachments`
+            ).catch(() => null);
+            if (listed) request = { ...request, attachments: listed.attachments };
+          }
+          onRequested?.(request);
+          if (failed.length) toast(`Sent for approval, but these files didn't upload: ${failed.join(", ")}`, "error");
+          else toast("Sent for approval — a project lead will review it");
         }
       }
       onClose();
@@ -558,13 +570,17 @@ export default function TaskFormModal({
           </section>
         )}
 
-        {!isEdit && !asRequest && (
+        {!isEdit && (
           <div>
             <span className="block text-sm font-medium text-slate-700">Files</span>
             <FilesField
               files={files}
               onChange={setFiles}
-              hint="Optional — drawings, documents or screenshots. Up to 10 MB each."
+              hint={
+                asRequest
+                  ? "Optional — the lead sees them before deciding; they move to the task once approved. Up to 10 MB each."
+                  : "Optional — drawings, documents or screenshots. Up to 10 MB each."
+              }
             />
           </div>
         )}

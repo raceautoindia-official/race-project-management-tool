@@ -134,16 +134,25 @@ test("a member's quick task goes for approval with its steps", async () => {
   const preview = dialog.getByRole("region", { name: "Subtasks preview" });
   await expect(preview).toContainText("Once approved, this starts with 2 subtasks");
   await expect(preview).toContainText("Order 50 pairs");
+  // A file goes with it, for the lead to see before deciding.
+  await dialog.getByLabel("Attach files").setInputFiles({
+    name: "glove-sizes.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("S 10, M 20, L 20"),
+  });
   await dialog.getByRole("button", { name: "Send for approval" }).click();
   await expect(dialog).toBeHidden();
 
   // The lead sees what was asked for, steps included, before deciding.
   await expect(requestRow(alice, quick).getByText("Awaiting approval")).toBeVisible();
+  await expect(requestRow(alice, quick)).toContainText("📎 1");
   await lead.goto(projectPath);
   await requestRow(lead, quick).getByRole("button", { name: "Approve" }).click();
   const approve = lead.getByRole("dialog", { name: "Approve request" });
   await expect(approve).toContainText("Count what is left");
   await expect(approve).toContainText("2-item checklist");
+  await expect(approve.getByRole("link", { name: /glove-sizes.txt/ })).toBeVisible();
+  await expect(approve).toContainText("Its file moves to the task.");
   await approve.getByRole("button", { name: "Cancel" }).click();
   await expect(approve).toBeHidden();
 

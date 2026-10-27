@@ -385,6 +385,21 @@ CREATE TABLE IF NOT EXISTS milestones (
 );
 
 -- Task file attachments (stored in-DB)  (Phase 3 · Wave 9)
+-- Files on a task request; approving it moves them onto its task.
+CREATE TABLE IF NOT EXISTS task_request_attachments (
+  id          INT AUTO_INCREMENT PRIMARY KEY,
+  request_id  INT NOT NULL,
+  uploaded_by INT NULL,
+  filename    VARCHAR(255) NOT NULL,
+  mime_type   VARCHAR(120) NULL,
+  size_bytes  INT NOT NULL,
+  data        LONGBLOB NOT NULL,
+  created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_ratt_request FOREIGN KEY (request_id) REFERENCES task_requests(id) ON DELETE CASCADE,
+  CONSTRAINT fk_ratt_user    FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_ratt_request (request_id)
+);
+
 CREATE TABLE IF NOT EXISTS task_attachments (
   id          INT AUTO_INCREMENT PRIMARY KEY,
   task_id     INT NOT NULL,

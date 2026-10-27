@@ -9,6 +9,7 @@ import { fetchTaskRequests, fetchTasks } from "@/lib/tasks";
 import { checklistFor, SPEC_KEYS } from "@/lib/workflow";
 import type { SpecColumns, WorkType } from "@/lib/types";
 import { makeRoomForTask } from "@/lib/subtasks";
+import { moveRequestFilesToTask } from "@/lib/attachments";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -125,6 +126,9 @@ export async function POST(req: NextRequest, { params }: Params) {
           );
         }
       }
+
+      // The files that came with the request belong to its task now.
+      if (taskId != null) await moveRequestFilesToTask(conn, requestId, taskId);
 
       await conn.execute(
         `UPDATE task_requests

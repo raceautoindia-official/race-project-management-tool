@@ -1,6 +1,7 @@
 import { pool, query, DbRow } from "./db";
 import type { Label, SpecColumns, WorkType } from "./types";
 import { checklistFor } from "./workflow";
+import { requestAttachmentsFor } from "./attachments";
 import { taskProgress as engineTaskProgress, type SubtaskForProgress, type TaskStatus } from "./work-engine";
 
 /**
@@ -47,7 +48,7 @@ export async function fetchTaskRequests(
   whereSql: string,
   params: unknown[]
 ): Promise<DbRow[]> {
-  return query<DbRow[]>(
+  const rows = await query<DbRow[]>(
     `SELECT r.id, r.project_id, r.task_type, r.title, r.description, r.steps,
             r.existing_behavior, r.expected_behavior, r.acceptance_criteria,
             r.reason, r.scope, r.features, r.flow, r.rules,
@@ -63,6 +64,10 @@ export async function fetchTaskRequests(
       LIMIT 200`,
     params
   );
+  // The files that came with each request (an approved one's moved to its task).
+  const files = await requestAttachmentsFor(rows.map((r) => r.id as number));
+  for (const r of rows) r.attachments = files.get(r.id) ?? [];
+  return rows;
 }
 
 /**

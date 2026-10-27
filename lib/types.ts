@@ -173,6 +173,16 @@ export interface Task extends SpecColumns {
 }
 
 /** A task raised by a project member, waiting for a lead to approve it. */
+export interface RequestFile {
+  id: number;
+  request_id: number;
+  filename: string;
+  mime_type: string | null;
+  size_bytes: number;
+  uploaded_by: number | null;
+  uploader_name?: string | null;
+}
+
 export interface TaskRequest extends SpecColumns {
   id: number;
   project_id: number;
@@ -181,6 +191,8 @@ export interface TaskRequest extends SpecColumns {
   /** A quick request's description and steps (one per line). */
   description?: string | null;
   steps?: string | null;
+  /** Files sent with the request (moved onto the task once approved). */
+  attachments?: RequestFile[];
   /** Urgency and effort as stated by whoever asked for the work. */
   priority: TaskPriority;
   estimated_hours: number | null;

@@ -12,6 +12,7 @@ import type { ProjectMember, Task, TaskPriority, TaskRequest } from "@/lib/types
 import { checklistFor } from "@/lib/workflow";
 import { SpecView } from "./WorkSpec";
 import { pointsOf } from "./PointsInput";
+import { FileLinks } from "@/components/work/AttachFiles";
 
 const PRIORITY_WORD: Record<TaskPriority, string> = {
   low: "Low",
@@ -47,6 +48,12 @@ function RequestBody({ request, compact = false }: { request: TaskRequest; compa
       )}
       {!request.description && !steps.length && request.task_type === "general" && (
         <p className="text-sm text-slate-500">Just the title — no description or steps.</p>
+      )}
+      {(request.attachments?.length ?? 0) > 0 && (
+        <div>
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Files</p>
+          <FileLinks files={request.attachments!} base="/api/request-attachments" />
+        </div>
       )}
     </div>
   );
@@ -125,6 +132,11 @@ export default function TaskRequestsPanel({
             </button>
             <WorkTypeBadge type={r.task_type} />
             <RequestStatusBadge status={r.status} pendingLabel="Awaiting approval" />
+            {(r.attachments?.length ?? 0) > 0 && (
+              <span className="text-xs text-slate-500" title="Files sent with this request">
+                📎 {r.attachments!.length}
+              </span>
+            )}
           </div>
           <div className="mt-0.5 text-xs text-slate-600">
             Raised by {mine ? "you" : r.requester_name ?? "—"} · {formatIst(r.requested_at)}
@@ -412,8 +424,10 @@ function DecisionModal({
               ) : (
                 <>with no checklist — this request lists no points to tick off</>
               )}
-              , owned by whoever you pick below. {request.requester_name ?? "The requester"}{" "}
-              signs it off at the end.
+              , owned by whoever you pick below.
+              {(request.attachments?.length ?? 0) > 0 &&
+                ` Its ${request.attachments!.length === 1 ? "file moves" : `${request.attachments!.length} files move`} to the task.`}{" "}
+              {request.requester_name ?? "The requester"} signs it off at the end.
             </p>
           )}
         </div>
