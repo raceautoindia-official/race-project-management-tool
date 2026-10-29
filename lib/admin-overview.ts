@@ -248,6 +248,21 @@ export async function getAdminOverview(user: User, today: string): Promise<Admin
     href: "/projects",
     examples: noOwnerTasks.slice(0, 4).map((r) => `${r.title} · ${r.project}`),
   });
+  // People who have left but still have work in their name: nobody is doing it.
+  const leftWithWork = await query<DbRow[]>(
+    `SELECT u.name, COUNT(*) AS c FROM tasks t
+       JOIN projects p ON p.id = t.project_id
+       JOIN users u ON u.id = t.assignee_id
+      WHERE ${OPEN_PROJECT} AND t.status <> 'done' AND u.is_active = 0
+      GROUP BY u.id, u.name ORDER BY c DESC`
+  );
+  dataIssues.push({
+    key: "task-retired-owner",
+    label: "Open tasks still with people who have left",
+    count: leftWithWork.reduce((n, r) => n + Number(r.c), 0),
+    href: "/team?tab=retired",
+    examples: leftWithWork.slice(0, 4).map((r) => `${r.name} (${r.c})`),
+  });
 
   return { portfolio, decisions, reviewers, people, idle, dataIssues };
 }

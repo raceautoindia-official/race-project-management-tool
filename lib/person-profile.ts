@@ -61,7 +61,7 @@ export async function getPersonProfile(
   today: string
 ): Promise<PersonProfile | null> {
   const [person] = await query<DbRow[]>(
-    `SELECT id, emp_id, employee_id, name, email, department, designation, role, is_active, last_seen_at
+    `SELECT id, emp_id, employee_id, name, email, department, designation, role, is_active, retired_at, retired_reason, last_seen_at
        FROM users WHERE id = ? LIMIT 1`,
     [personId]
   );

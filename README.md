@@ -359,6 +359,21 @@ it was finished on — with a box for saying how it went.
   0,15,30,45 * * * * curl -fsS -X POST -H "x-cron-secret: $CRON_SECRET" https://projectmanager.raceinnovations.in/api/cron/work-updates
   ```
 
+### People who leave (Team → Retired)
+
+Attendance decides who works here. Each run of the cron job above also checks everyone
+against Attendance: anyone removed or switched off there is **retired** — they can't sign
+in, and drop off every list of current staff, pickers, reminders and reports — but their
+tasks, comments and history stay. Reactivating them in Attendance brings them back.
+
+- Team → Retired (admins) lists them with the work still in their name, and the Control
+  centre's *Records to fix* counts open tasks left with people who have gone.
+- **Check against Attendance now** runs the sweep without waiting for the cron.
+- If Attendance can't be reached or returns nobody, nothing changes. If it would retire
+  more than half of the current staff at once, the sweep holds and an admin confirms it
+  on Team → Retired.
+- Migration: `db/migrations/2026-10-31_retired_staff.sql`.
+
 ### Personal documents (Profile → My documents)
 
 What someone uploads about themselves: ID proof, certificates, a signed contract.

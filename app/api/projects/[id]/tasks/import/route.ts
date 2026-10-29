@@ -55,7 +55,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const members = await query<DbRow[]>(
       `SELECT u.id, UPPER(u.emp_id) AS emp_id FROM project_members pm
          JOIN users u ON u.id = pm.user_id
-        WHERE pm.project_id = ?`,
+        WHERE pm.project_id = ? AND u.is_active = TRUE`,
       [projectId]
     );
     const empIdToId = new Map<string, number>(

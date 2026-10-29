@@ -64,8 +64,8 @@ export default async function PersonPage({
   return (
     <AppShell user={user}>
       <div className="mb-2 text-sm">
-        <Link href="/team" className="inline-block py-1 text-slate-600 hover:text-indigo-600">
-          ← Team
+        <Link href={person.is_active ? "/team" : "/team?tab=retired"} className="inline-block py-1 text-slate-600 hover:text-indigo-600">
+          ← {person.is_active ? "Team" : "Retired"}
         </Link>
       </div>
       <PageHeader
@@ -78,6 +78,14 @@ export default async function PersonPage({
           { label: "Updates submitted (30d)", value: profile.rate === null ? "—" : `${profile.rate}%` },
         ]}
       />
+      {!person.is_active && (
+        <p role="status" className="mb-4 rounded-xl bg-slate-100 px-4 py-2.5 text-sm text-slate-700 ring-1 ring-slate-200">
+          <strong>Retired</strong>
+          {person.retired_at ? ` on ${formatDate(person.retired_at)}` : ""} —{" "}
+          {person.retired_reason === "deactivated" ? "switched off in Attendance" : "no longer in Attendance"}.
+          They can&apos;t sign in and aren&apos;t offered for new work; anything still in their name is under Work.
+        </p>
+      )}
       <PageTabs
         label="About this person"
         active={tab}
@@ -124,7 +132,7 @@ function Overview({ profile, base }: { profile: PersonProfile; base: string }) {
             label="Last seen"
             value={stats?.online ? "Active now" : person.last_seen_at ? formatRelative(person.last_seen_at) : "Never signed in"}
           />
-          <Row label="Status" value={person.is_active ? "Active" : "Left (inactive)"} />
+          <Row label="Status" value={person.is_active ? "Active" : `Retired${person.retired_at ? ` ${formatDate(person.retired_at)}` : ""}`} />
         </dl>
       </SectionCard>
 

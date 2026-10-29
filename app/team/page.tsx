@@ -18,6 +18,9 @@ import { describePeriod, isDateKey, isWorkDay, todayIst, weekStart } from "@/lib
 import { PageTabs } from "@/components/work/items";
 import RemindButton from "@/components/work/RemindButton";
 import { UPDATE_STATUS, UpdateStatusBadge, UpdateStatusLegend } from "@/components/work/update-status";
+import StaffSyncButton from "@/components/work/StaffSyncButton";
+import { lastStaffSync, listRetired, type RetiredPerson, type StaffSyncResult } from "@/lib/staff-sync";
+import { formatDate } from "@/lib/format";
 
 function shiftDay(key: string, days: number): string {
   const [y, m, d] = key.split("-").map(Number);
@@ -55,7 +58,11 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
   const sp = await searchParams;
   // Admins see everyone's updates, leads their projects' people.
   const seesUpdates = scope === "all" || scope === "led";
-  const tab = seesUpdates && sp.tab === "updates" ? "updates" : "people";
+  // People who have left are the admin's to see: retired, not deleted.
+  const seesRetired = scope === "all";
+  const retired = seesRetired ? await listRetired() : [];
+  const tab =
+    seesUpdates && sp.tab === "updates" ? "updates" : seesRetired && sp.tab === "retired" ? "retired" : "people";
   const today = todayIst();
   const gridEnd = sp.date && isDateKey(sp.date) && sp.date <= today ? sp.date : today;
   // Everyone who writes updates (not admins), and their last 30 days.
@@ -88,10 +95,15 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
           tabs={[
             { key: "people", label: "People", href: "/team" },
             { key: "updates", label: "Daily updates", href: "/team?tab=updates" },
+            ...(seesRetired
+              ? [{ key: "retired", label: `Retired (${retired.length})`, href: "/team?tab=retired" }]
+              : []),
           ]}
         />
       )}
-      {tab === "updates" ? (
+      {tab === "retired" ? (
+        <RetiredList people={retired} last={await lastStaffSync()} />
+      ) : tab === "updates" ? (
         <UpdatesGrid
           people={writers}
           end={gridEnd}
@@ -284,6 +296,103 @@ function Stat({
     <div className="rounded-lg bg-slate-50 px-2 py-2" title={hint}>
       <div className={`text-lg font-bold ${ink}`}>{value}</div>
       <div className="text-[11px] text-slate-600">{label}</div>
+    </div>
+  );
+}
+
+/**
+ * People who are no longer in Attendance (or are switched off there). They
+ * keep their history; what is still in their name is shown so it can be
+ * handed to someone else.
+ */
+function RetiredList({ people, last }: { people: RetiredPerson[]; last: StaffSyncResult | null }) {
+  const holding = people.filter((p) => p.open_tasks + p.owned_projects + p.led_projects > 0).length;
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-white p-4 ring-1 ring-slate-200">
+        <div className="mr-auto max-w-2xl">
+          <p className="text-sm font-semibold text-slate-800">
+            People who have left: removed or switched off in Attendance
+          </p>
+          <p className="text-xs text-slate-500">
+            They can no longer sign in and are left off every list of current staff, pickers and reminders.
+            Their tasks, comments and history stay. Reactivating someone in Attendance brings them back.
+            {last && <> Last checked {formatRelative(last.at)}.</>}
+          </p>
+        </div>
+        <StaffSyncButton label="Check against Attendance now" />
+      </div>
+
+      {last?.held && (
+        <div role="alert" className="flex flex-wrap items-center gap-3 rounded-2xl bg-rose-50 p-4 text-sm text-rose-900 ring-1 ring-rose-200">
+          <span className="mr-auto">{last.held}</span>
+          {last.held.startsWith("Attendance would retire") && (
+            <StaffSyncButton force label="It's right — retire them" />
+          )}
+        </div>
+      )}
+
+      {holding > 0 && (
+        <p className="rounded-xl bg-amber-50 px-4 py-2.5 text-sm text-amber-900 ring-1 ring-amber-200">
+          {holding} {holding === 1 ? "person who has left still has" : "people who have left still have"} open
+          work in their name. Open them to hand it to someone else.
+        </p>
+      )}
+
+      <div className="overflow-x-auto rounded-2xl bg-white ring-1 ring-slate-200">
+        <table className="w-full min-w-[640px] text-sm">
+          <thead className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="px-4 py-2.5">Person</th>
+              <th className="px-4 py-2.5">Left</th>
+              <th className="px-4 py-2.5">Last signed in</th>
+              <th className="px-4 py-2.5">Still in their name</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {people.map((p) => {
+              const owes = [
+                p.open_tasks && `${p.open_tasks} open ${p.open_tasks === 1 ? "task" : "tasks"}`,
+                p.owned_projects && `owns ${p.owned_projects} ${p.owned_projects === 1 ? "project" : "projects"}`,
+                p.led_projects && `leads ${p.led_projects} ${p.led_projects === 1 ? "project" : "projects"}`,
+              ].filter(Boolean);
+              return (
+                <tr key={p.id} className="align-top">
+                  <td className="px-4 py-3">
+                    <Link href={`/team/${p.id}?tab=work`} className="font-medium text-slate-800 hover:text-indigo-600 hover:underline">
+                      {p.name}
+                    </Link>
+                    <div className="text-xs text-slate-500">
+                      {[p.emp_id, p.department, p.designation].filter(Boolean).join(" · ")}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-slate-700">
+                    {p.retired_at ? formatDate(p.retired_at) : "—"}
+                    <div className="text-xs text-slate-500">
+                      {p.retired_reason === "removed"
+                        ? "Removed from Attendance"
+                        : p.retired_reason === "deactivated"
+                          ? "Switched off in Attendance"
+                          : "Inactive"}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {p.last_seen_at ? formatRelative(p.last_seen_at) : "Never"}
+                  </td>
+                  <td className="px-4 py-3">
+                    {owes.length ? (
+                      <span className="text-amber-800">{owes.join(" · ")}</span>
+                    ) : (
+                      <span className="text-slate-500">Nothing open</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {people.length === 0 && <p className="py-8 text-center text-sm text-slate-500">Nobody has left.</p>}
+      </div>
     </div>
   );
 }

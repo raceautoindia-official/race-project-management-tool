@@ -192,10 +192,21 @@ export async function syncEmployeeStatus(
       fresh.is_active !== current.is_active ||
       fresh.department !== current.department
     ) {
+      // Leaving retires them (Team › Retired); coming back undoes it.
       await query(
-        `UPDATE users SET role = ?, is_active = ?, department = ?
+        `UPDATE users SET role = ?, is_active = ?, department = ?,
+                retired_at = IF(?, NULL, COALESCE(retired_at, NOW())),
+                retired_reason = IF(?, NULL, ?)
           WHERE employee_id = ?`,
-        [fresh.role, fresh.is_active ? 1 : 0, fresh.department, employeeId]
+        [
+          fresh.role,
+          fresh.is_active ? 1 : 0,
+          fresh.department,
+          fresh.is_active ? 1 : 0,
+          fresh.is_active ? 1 : 0,
+          emp ? "deactivated" : "removed",
+          employeeId,
+        ]
       );
     }
     return fresh;
@@ -305,7 +316,9 @@ export async function provisionPmUser(
        name      = VALUES(name),
        email     = VALUES(email),
        role      = VALUES(role),
-       is_active = VALUES(is_active)`,
+       is_active = VALUES(is_active),
+       retired_at = IF(VALUES(is_active), NULL, retired_at),
+       retired_reason = IF(VALUES(is_active), NULL, retired_reason)`,
     [emp.id, emp.emp_id, emp.name, emp.email, role, emp.is_active ? 1 : 0]
   );
   // Separately, and after the fact: what PM cannot read is what PM does not

@@ -34,6 +34,9 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash        VARCHAR(255) NULL,             -- unused (federated auth)
   role                 ENUM('admin','member') NOT NULL DEFAULT 'member',
   is_active            BOOLEAN NOT NULL DEFAULT TRUE,
+  -- When PM saw them leave Attendance (NULL while they work here), and how.
+  retired_at           DATETIME NULL,
+  retired_reason       ENUM('removed','deactivated') NULL,
   must_change_password BOOLEAN NOT NULL DEFAULT FALSE, -- unused (federated auth)
   last_seen_at         DATETIME NULL,                  -- presence heartbeat
   calendar_token       CHAR(32) NULL UNIQUE,           -- private .ics feed link

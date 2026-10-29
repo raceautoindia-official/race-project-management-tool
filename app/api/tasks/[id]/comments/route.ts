@@ -79,7 +79,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       const members = await query<DbRow[]>(
         `SELECT u.id, u.email FROM project_members pm
            JOIN users u ON u.id = pm.user_id
-          WHERE pm.project_id = ? AND u.id IN (${placeholders})`,
+          WHERE pm.project_id = ? AND u.is_active = TRUE AND u.id IN (${placeholders})`,
         [task.project_id, ...ids]
       );
       const link = `/projects/${task.project_id}`;
