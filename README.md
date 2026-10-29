@@ -346,7 +346,7 @@ it was finished on — with a box for saying how it went.
   evening, the weekly plan on Monday, the weekly summary on Saturday. Admins set the
   times in **Admin › Update reminders**, and get a morning digest of who left their day to
   the app. Admins and leads can also remind people by hand.
-- **Team › Daily updates** shows everyone × the last two weeks (submitted, auto, missing,
+- **Team › Work updates** (Daily) shows everyone × the last two weeks (submitted, auto, missing,
   reminded); **Team › a person** has their full profile: work, 30-day figures,
   attendance hours, every daily and weekly update beside the recorded summary, and
   their recent activity.

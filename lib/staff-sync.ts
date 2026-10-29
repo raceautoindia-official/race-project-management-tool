@@ -82,10 +82,11 @@ const LAST_RUN_KEY = "staff_sync_last";
 /**
  * Check everyone against Attendance and retire or restore as needed.
  * `force` applies a change the guard would hold (an admin confirmed it).
- * `roster` is for tests; it defaults to reading Attendance.
+ * `roster` and `only` are for tests: a stand-in Attendance, and the PM users
+ * to consider (by id) so a test never touches anyone else's.
  */
 export async function syncStaffWithAttendance(
-  opts: { force?: boolean; roster?: () => Promise<RosterEntry[]> } = {}
+  opts: { force?: boolean; roster?: () => Promise<RosterEntry[]>; only?: number[] } = {}
 ): Promise<StaffSyncResult> {
   const at = new Date().toISOString();
   const result: StaffSyncResult = { at, retired: [], returned: [], held: null };
@@ -102,8 +103,10 @@ export async function syncStaffWithAttendance(
   if (!roster.length) {
     result.held = "Attendance returned no employees, so nobody was changed.";
   } else {
+    const only = opts.only?.length ? ` WHERE id IN (${opts.only.map(() => "?").join(", ")})` : "";
     const people = (await query<DbRow[]>(
-      `SELECT id, employee_id, name, is_active, retired_at FROM users`
+      `SELECT id, employee_id, name, is_active, retired_at FROM users${only}`,
+      opts.only ?? []
     )) as unknown as PmPerson[];
     const changes = planStaffSync(people, roster);
     const retiring = changes.filter((c) => c.change === "retire");

@@ -16,11 +16,13 @@ export const UPDATE_STATUS: Record<UpdateStatus, { label: string; cell: string; 
   },
 };
 
-export function UpdateStatusBadge({ status }: { status: UpdateStatus }) {
+/** A week's update is due all week, not today. */
+export function UpdateStatusBadge({ status, period = "day" }: { status: UpdateStatus; period?: "day" | "week" }) {
   const s = UPDATE_STATUS[status];
+  const label = period === "week" && status === "due" ? "Due this week" : s.label;
   return (
     <span className={`inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${s.badge}`}>
-      {s.label}
+      {label}
     </span>
   );
 }

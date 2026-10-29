@@ -68,7 +68,7 @@ const MEMBER_NAV: { label: string; links: NavItem[] }[] = [
  * rail starts at the Control centre and leaves out My Work, Reviews and the
  * personal Work Updates (their addresses still work). Everything waiting on a
  * decision across the organisation is Approvals; everyone's daily and weekly
- * updates are read in Team (a person's profile, and the Daily updates grid).
+ * updates are read in Team (a person's profile, and the Work updates tab).
  */
 const ADMIN_NAV: { label: string; links: NavItem[] }[] = [
   {

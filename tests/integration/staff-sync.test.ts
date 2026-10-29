@@ -49,19 +49,18 @@ describe("the sweep against the database", () => {
   let admin: User;
   let stays: User;
   let leaves: User;
-  let roster: RosterEntry[];
+  const crowd: User[] = [];
+  /** Only this file's people: other files create users while this runs. */
+  const mine = () => [admin, stays, leaves, ...crowd].map((u) => u.id);
 
-  /**
-   * Attendance as PM sees it now, minus those named and with `back` working
-   * again — so people other test files made inactive stay as they are.
-   */
-  async function rosterWithout(gone: User[], back: User[] = []): Promise<RosterEntry[]> {
-    const rows = await query<DbRow[]>(`SELECT id, employee_id, is_active FROM users`);
-    const goneIds = new Set(gone.map((u) => u.id));
-    const backIds = new Set(back.map((u) => u.id));
-    return rows
-      .filter((r) => !goneIds.has(Number(r.id)))
-      .map((r) => ({ id: Number(r.employee_id), is_active: backIds.has(Number(r.id)) ? 1 : Number(r.is_active) }));
+  /** Attendance listing these people as working (and nobody else). */
+  async function rosterOf(working: User[]): Promise<RosterEntry[]> {
+    if (!working.length) return [];
+    const rows = await query<DbRow[]>(
+      `SELECT employee_id FROM users WHERE id IN (${working.map(() => "?").join(", ")})`,
+      working.map((u) => u.id)
+    );
+    return rows.map((r) => ({ id: Number(r.employee_id), is_active: 1 }));
   }
 
   beforeAll(async () => {
@@ -78,12 +77,14 @@ describe("the sweep against the database", () => {
 
   afterAll(async () => {
     // Leave everyone as other files expect them.
-    await query(`UPDATE users SET is_active = 1, retired_at = NULL, retired_reason = NULL WHERE id IN (?, ?)`, [stays.id, leaves.id]);
+    await query(
+      `UPDATE users SET is_active = 1, retired_at = NULL, retired_reason = NULL WHERE id IN (${mine().map(() => "?").join(", ")})`,
+      mine()
+    );
   });
 
   it("retires someone Attendance no longer has, and keeps their work", async () => {
-    roster = await rosterWithout([leaves]);
-    const res = await syncStaffWithAttendance({ roster: async () => roster });
+    const res = await syncStaffWithAttendance({ roster: () => rosterOf([admin, stays]), only: mine() });
     expect(res.held).toBeNull();
     expect(res.retired.map((c) => c.userId)).toEqual([leaves.id]);
 
@@ -101,17 +102,18 @@ describe("the sweep against the database", () => {
   });
 
   it("does nothing on a second run", async () => {
-    const res = await syncStaffWithAttendance({ roster: async () => roster });
+    const res = await syncStaffWithAttendance({ roster: () => rosterOf([admin, stays]), only: mine() });
     expect(res.retired).toEqual([]);
     expect(res.returned).toEqual([]);
   });
 
   it("refuses an empty or unreachable Attendance", async () => {
-    expect((await syncStaffWithAttendance({ roster: async () => [] })).held).toMatch(/no employees/);
+    expect((await syncStaffWithAttendance({ roster: async () => [], only: mine() })).held).toMatch(/no employees/);
     const down = await syncStaffWithAttendance({
       roster: async () => {
         throw new Error("ECONNREFUSED");
       },
+      only: mine(),
     });
     expect(down.held).toMatch(/could not be reached/);
     const [row] = await query<DbRow[]>(`SELECT is_active FROM users WHERE id = ?`, [stays.id]);
@@ -120,16 +122,18 @@ describe("the sweep against the database", () => {
 
   it("holds a roster that would retire nearly everyone, unless an admin confirms", async () => {
     // Enough people that losing all but one cannot be a handful of leavers.
-    for (let i = 0; i < 8; i++) await createUser(`SweepCrowd${i}`);
-    const tiny = (await rosterWithout([])).slice(0, 1);
-    const held = await syncStaffWithAttendance({ roster: async () => tiny });
+    for (let i = 0; i < 8; i++) crowd.push(await createUser(`SweepCrowd${i}`));
+    const held = await syncStaffWithAttendance({ roster: () => rosterOf([stays]), only: mine() });
     expect(held.held).toMatch(/would retire/);
-    const [row] = await query<DbRow[]>(`SELECT is_active FROM users WHERE id = ?`, [stays.id]);
+    const [row] = await query<DbRow[]>(`SELECT is_active FROM users WHERE id = ?`, [crowd[0].id]);
     expect(Number(row.is_active)).toBe(1);
+
+    const forced = await syncStaffWithAttendance({ roster: () => rosterOf([stays]), only: crowd.map((u) => u.id), force: true });
+    expect(forced.retired).toHaveLength(8);
   });
 
-  it("brings someone back when Attendance does", async () => {
-    const res = await syncStaffWithAttendance({ roster: async () => rosterWithout([], [leaves]) });
+  it("brings people back when Attendance does", async () => {
+    const res = await syncStaffWithAttendance({ roster: () => rosterOf([admin, stays, leaves, ...crowd]), only: mine() });
     expect(res.returned.map((c) => c.userId)).toContain(leaves.id);
     const [row] = await query<DbRow[]>(`SELECT is_active, retired_at FROM users WHERE id = ?`, [leaves.id]);
     expect(Number(row.is_active)).toBe(1);

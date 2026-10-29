@@ -92,7 +92,7 @@ export default async function PersonPage({
         tabs={[
           { key: "overview", label: "Overview", href: base },
           { key: "work", label: "Work", href: `${base}?tab=work`, count: profile.work.todo.length },
-          { key: "updates", label: "Daily & weekly updates", href: `${base}?tab=updates` },
+          { key: "updates", label: "Work updates", href: `${base}?tab=updates` },
           { key: "activity", label: "Activity", href: `${base}?tab=activity` },
         ]}
       />
@@ -328,7 +328,7 @@ function UpdatesTab({
 
         <SectionCard
           title={`Week of ${describePeriod("week", week.start)}`}
-          action={<UpdateStatusBadge status={week.status} />}
+          action={<UpdateStatusBadge status={week.status} period="week" />}
         >
           <div className="space-y-4">
             <div>

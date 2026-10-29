@@ -13,8 +13,8 @@ import { formatRelative } from "@/lib/format";
 import { DepartmentBadge } from "@/components/DepartmentField";
 import EditPersonButton from "@/components/EditPersonButton";
 import type { MemberStats } from "@/lib/performance";
-import { dailyStatusGrid, submissionRate, type StatusCell } from "@/lib/work-updates";
-import { describePeriod, isDateKey, isWorkDay, todayIst, weekStart } from "@/lib/planner";
+import { dailyStatusGrid, submissionRate, trackingSince, type StatusCell } from "@/lib/work-updates";
+import { describePeriod, isDateKey, isWorkDay, todayIst, updateStatus, weekStart } from "@/lib/planner";
 import { PageTabs } from "@/components/work/items";
 import RemindButton from "@/components/work/RemindButton";
 import { UPDATE_STATUS, UpdateStatusBadge, UpdateStatusLegend } from "@/components/work/update-status";
@@ -52,7 +52,7 @@ const SUBTITLES = {
   self: "Your individual status and 30-day performance.",
 } as const;
 
-export default async function TeamPage({ searchParams }: { searchParams: Promise<{ tab?: string; date?: string }> }) {
+export default async function TeamPage({ searchParams }: { searchParams: Promise<{ tab?: string; date?: string; view?: string }> }) {
   const user = await requirePageUser();
   const { scope, members } = await getTeamPerformance(user);
   const sp = await searchParams;
@@ -65,6 +65,8 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
     seesUpdates && sp.tab === "updates" ? "updates" : seesRetired && sp.tab === "retired" ? "retired" : "people";
   const today = todayIst();
   const gridEnd = sp.date && isDateKey(sp.date) && sp.date <= today ? sp.date : today;
+  // Work updates come in two sizes: each day's, and each week's plan and summary.
+  const view = sp.view === "week" ? "week" : "day";
   // Everyone who writes updates (not admins), and their last 30 days.
   const writers = members.filter((m) => m.role !== "admin");
   const grid = seesUpdates
@@ -94,7 +96,7 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
           active={tab}
           tabs={[
             { key: "people", label: "People", href: "/team" },
-            { key: "updates", label: "Daily updates", href: "/team?tab=updates" },
+            { key: "updates", label: "Work updates", href: "/team?tab=updates" },
             ...(seesRetired
               ? [{ key: "retired", label: `Retired (${retired.length})`, href: "/team?tab=retired" }]
               : []),
@@ -104,12 +106,25 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
       {tab === "retired" ? (
         <RetiredList people={retired} last={await lastStaffSync()} />
       ) : tab === "updates" ? (
-        <UpdatesGrid
-          people={writers}
-          end={gridEnd}
-          today={today}
-          cells={await dailyStatusGrid(writers.map((m) => m.id), shiftDay(gridEnd, -13), gridEnd, today)}
-        />
+        <div className="space-y-4">
+          <UpdatesSwitch view={view} />
+          {view === "week" ? (
+            <WeeklyBoard
+              people={writers}
+              monday={weekStart(gridEnd)}
+              today={today}
+              entries={await weekEntries(writers.map((m) => m.id), weekStart(gridEnd))}
+              since={await trackingSince()}
+            />
+          ) : (
+            <UpdatesGrid
+              people={writers}
+              end={gridEnd}
+              today={today}
+              cells={await dailyStatusGrid(writers.map((m) => m.id), shiftDay(gridEnd, -13), gridEnd, today)}
+            />
+          )}
+        </div>
       ) : (
 
       <div className="space-y-8">
@@ -397,6 +412,146 @@ function RetiredList({ people, last }: { people: RetiredPerson[]; last: StaffSyn
   );
 }
 
+/** Daily or weekly work updates. */
+function UpdatesSwitch({ view }: { view: "day" | "week" }) {
+  const item = (key: "day" | "week", label: string, hint: string) => (
+    <Link
+      href={key === "week" ? "/team?tab=updates&view=week" : "/team?tab=updates"}
+      aria-current={view === key ? "page" : undefined}
+      className={`rounded-lg px-3 py-1.5 text-left transition ${
+        view === key ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200" : "text-slate-600 hover:text-slate-900"
+      }`}
+    >
+      <span className="block text-sm font-semibold">{label}</span>
+      <span className="block text-xs text-slate-500">{hint}</span>
+    </Link>
+  );
+  return (
+    <nav aria-label="Which updates" className="inline-flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1">
+      {item("day", "Daily", "Each day's plan, how it went, and the day's summary")}
+      {item("week", "Weekly", "Each week's plan and weekly summary")}
+    </nav>
+  );
+}
+
+interface WeekEntry {
+  user_id: number;
+  plan: string | null;
+  progress: string | null;
+  submitted_at: string | null;
+  submission: "manual" | "auto" | null;
+}
+
+/** Everyone's weekly entry for one week, by person. */
+async function weekEntries(userIds: number[], monday: string): Promise<Map<number, WeekEntry>> {
+  if (!userIds.length) return new Map();
+  const rows = await query<DbRow[]>(
+    `SELECT user_id, plan, progress, submitted_at, submission FROM planner_entries
+      WHERE period = 'week' AND entry_date = ? AND user_id IN (${userIds.map(() => "?").join(", ")})`,
+    [monday, ...userIds]
+  );
+  return new Map(rows.map((r) => [Number(r.user_id), r as unknown as WeekEntry]));
+}
+
+function WeekText({ value, empty }: { value: string | null | undefined; empty: string }) {
+  return value ? (
+    <p className="line-clamp-4 whitespace-pre-line text-sm text-slate-800">{value}</p>
+  ) : (
+    <p className="text-sm italic text-slate-400">{empty}</p>
+  );
+}
+
+/**
+ * Everyone's weekly plan and weekly summary for one week, side by side. A
+ * name opens that person's week, next to the week as the app recorded it.
+ */
+function WeeklyBoard({
+  people,
+  monday,
+  today,
+  entries,
+  since,
+}: {
+  people: MemberStats[];
+  monday: string;
+  today: string;
+  entries: Map<number, WeekEntry>;
+  since: string | null;
+}) {
+  const thisWeek = weekStart(today);
+  const over = monday < thisWeek;
+  const planned = people.filter((p) => entries.get(p.id)?.plan).length;
+  const summed = people.filter((p) => entries.get(p.id)?.progress).length;
+  const dow = new Date(`${today}T00:00:00Z`).getUTCDay();
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-white p-4 ring-1 ring-slate-200">
+        <div className="mr-auto">
+          <p className="text-sm font-semibold text-slate-800">Week of {describePeriod("week", monday)}</p>
+          <p className="text-xs text-slate-500">
+            <span className="figure">{planned}</span> of <span className="figure">{people.length}</span> wrote a plan ·{" "}
+            <span className="figure">{summed}</span> wrote a summary. Weekly updates lock at midnight on Saturday.
+          </p>
+        </div>
+        <Link href={`/team?tab=updates&view=week&date=${shiftDay(monday, -7)}`} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
+          ← Earlier
+        </Link>
+        {over && (
+          <Link href={`/team?tab=updates&view=week&date=${shiftDay(monday, 7)}`} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
+            Later →
+          </Link>
+        )}
+        <a
+          href={`/api/planner/export?scope=team&period=week&date=${monday}`}
+          className="rounded-lg px-3 py-1.5 text-sm font-medium text-sky-800 ring-1 ring-sky-300 hover:bg-sky-50"
+        >
+          ⤓ Download everyone&rsquo;s
+        </a>
+        {!over && dow >= 1 && <RemindButton kind="week_plan" date={monday} label="Remind: weekly plan" />}
+        {!over && dow === 6 && <RemindButton kind="week_summary" date={monday} label="Remind: weekly summary" />}
+      </div>
+
+      <div className="overflow-x-auto rounded-2xl bg-white ring-1 ring-slate-200">
+        <table className="w-full min-w-[760px] text-sm">
+          <thead className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="w-56 px-4 py-2.5">Person</th>
+              <th className="px-4 py-2.5">Weekly plan</th>
+              <th className="px-4 py-2.5">Weekly summary</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {people.map((p) => {
+              const e = entries.get(p.id);
+              return (
+                <tr key={p.id} className="align-top">
+                  <td className="px-4 py-3">
+                    <Link href={`/team/${p.id}?tab=updates&date=${monday}`} className="font-medium text-slate-800 hover:text-indigo-600 hover:underline">
+                      {p.name}
+                    </Link>
+                    {p.department && <div className="text-xs text-slate-500">{p.department}</div>}
+                    <div className="mt-1.5">
+                      <UpdateStatusBadge status={updateStatus("week", monday, today, e, since)} period="week" />
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <WeekText value={e?.plan} empty={over ? "No plan was written" : "No plan yet"} />
+                  </td>
+                  <td className="px-4 py-3">
+                    <WeekText value={e?.progress} empty={over ? "No summary was written" : "Not written yet — due Saturday"} />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {people.length === 0 && <p className="py-8 text-center text-sm text-slate-500">Nobody here writes updates.</p>}
+      </div>
+    </div>
+  );
+}
+
 /**
  * Everyone × the last two weeks of daily updates: who submitted, who left it
  * to the app, who is still due today. A cell opens that person's day.
@@ -418,8 +573,6 @@ function UpdatesGrid({
     const c = cells.get(p.id)?.find((x) => x.date === today);
     return c && (c.status === "due" || c.status === "draft");
   }).length;
-  const monday = weekStart(today);
-  const dow = new Date(`${today}T00:00:00Z`).getUTCDay();
   const label = (d: string) =>
     new Date(`${d}T00:00:00Z`).toLocaleDateString("en-GB", { weekday: "narrow", timeZone: "UTC" });
 
@@ -451,8 +604,6 @@ function UpdatesGrid({
         {isWorkDay(today) && dueToday > 0 && (
           <RemindButton kind="day" date={today} label={`Remind the ${dueToday} not submitted today`} />
         )}
-        {dow >= 1 && <RemindButton kind="week_plan" date={monday} label="Remind: weekly plan" />}
-        {dow === 6 && <RemindButton kind="week_summary" date={monday} label="Remind: weekly summary" />}
       </div>
 
       <div className="overflow-x-auto rounded-2xl bg-white p-4 ring-1 ring-slate-200">

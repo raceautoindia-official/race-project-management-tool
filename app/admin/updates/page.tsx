@@ -28,7 +28,7 @@ export default async function UpdateRemindersPage() {
             <li>A day locks at midnight; a week at midnight on Saturday. Sunday is off.</li>
             <li>
               Read anyone&apos;s updates, and remind people by hand, from{" "}
-              <Link href="/team?tab=updates" className="font-medium text-indigo-600 hover:underline">Team › Daily updates</Link>{" "}
+              <Link href="/team?tab=updates" className="font-medium text-indigo-600 hover:underline">Team › Work updates</Link>{" "}
               or a person&apos;s profile.
             </li>
             <li>
