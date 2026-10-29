@@ -92,3 +92,65 @@ export function rangeBack(period: PlannerPeriod, key: string, count: number): st
   for (let i = 0; i < count; i += 1) at = shiftPeriod(period, at, -1);
   return at;
 }
+
+// ── Submitting, and the midnight lock ──────────────────────────────────────
+
+/** A day stays itself; for weeks, the week the start date falls in counts. */
+function weekStartOr(period: PlannerPeriod, key: string): string {
+  return period === "week" ? weekStart(key) : key;
+}
+
+/** Updates are due Monday to Saturday; Sunday is off. */
+export function isWorkDay(key: string): boolean {
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay() !== 0;
+}
+
+/**
+ * The last day an entry can be written or changed: the day itself, or the
+ * Saturday that ends its week. At midnight after it, the entry locks.
+ */
+export function editableUntil(period: PlannerPeriod, key: string): string {
+  return period === "week" ? addDays(weekStart(key), 5) : key;
+}
+
+/** True once the entry's last day is over (in India). */
+export function isLocked(period: PlannerPeriod, key: string, today: string): boolean {
+  return today > editableUntil(period, key);
+}
+
+export type UpdateStatus =
+  | "submitted" // handed in by the person
+  | "auto" // handed in by the app at the end of the day
+  | "draft" // written, not handed in yet (still open)
+  | "due" // nothing yet, and still open
+  | "missing" // nothing, and the day is over
+  | "upcoming" // not reached yet
+  | "off" // Sunday
+  | "untracked"; // before submitting began: never asked for
+
+/**
+ * Where one person's entry for one day or week stands. `entry` is their row
+ * for it, if any.
+ */
+export function updateStatus(
+  period: PlannerPeriod,
+  key: string,
+  today: string,
+  entry: { submission?: string | null; plan?: string | null; progress?: string | null } | null | undefined,
+  /** The first day updates were asked for; before it, nothing is missing. */
+  since?: string | null
+): UpdateStatus {
+  if (period === "day" && !isWorkDay(key)) return "off";
+  if (since && (period === "week" ? weekStart(key) : key) < weekStartOr(period, since)) {
+    // Written anyway, back then: it counts as handed in.
+    return entry && (entry.plan || entry.progress) ? "submitted" : "untracked";
+  }
+  if (entry?.submission === "manual") return "submitted";
+  if (entry?.submission === "auto") return "auto";
+  const open = !isLocked(period, key, today);
+  const startsAfterToday = (period === "week" ? weekStart(key) : key) > today;
+  if (entry && (entry.plan || entry.progress)) return open ? "draft" : "missing";
+  if (startsAfterToday) return "upcoming";
+  return open ? "due" : "missing";
+}

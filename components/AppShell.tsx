@@ -67,8 +67,8 @@ const MEMBER_NAV: { label: string; links: NavItem[] }[] = [
  * An admin runs the organisation rather than working a to-do list, so their
  * rail starts at the Control centre and leaves out My Work, Reviews and the
  * personal Work Updates (their addresses still work). Everything waiting on a
- * decision across the organisation is Approvals; Work Updates becomes Team
- * updates, read-only.
+ * decision across the organisation is Approvals; everyone's daily and weekly
+ * updates are read in Team (a person's profile, and the Daily updates grid).
  */
 const ADMIN_NAV: { label: string; links: NavItem[] }[] = [
   {
@@ -84,7 +84,6 @@ const ADMIN_NAV: { label: string; links: NavItem[] }[] = [
       { href: "/projects", label: "Projects", icon: "▢" },
       { href: "/reviews", label: "Approvals", icon: "✓" },
       { href: "/team", label: "Team", icon: "◉" },
-      { href: "/planner", label: "Team updates", icon: "🗓" },
       { href: "/work-hours", label: "Work hours", icon: "◵" },
     ],
   },
@@ -92,6 +91,7 @@ const ADMIN_NAV: { label: string; links: NavItem[] }[] = [
     label: "Records & setup",
     links: [
       { href: "/admin/people", label: "People & levels", icon: "☰" },
+      { href: "/admin/updates", label: "Update reminders", icon: "🔔" },
       { href: "/admin/activity", label: "Activity Log", icon: "≡" },
       { href: "/admin/documents", label: "Documents", icon: "🗎" },
       { href: "/credentials", label: "Credentials", icon: "🔑" },

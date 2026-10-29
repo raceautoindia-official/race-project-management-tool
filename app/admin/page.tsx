@@ -79,7 +79,8 @@ export default async function ControlCentrePage() {
                 { href: "/admin/activity", label: "Activity log", hint: "Every login and change" },
                 { href: "/admin/documents", label: "Personal documents", hint: "Opening one is recorded" },
                 { href: "/credentials", label: "Credentials", hint: "Shared logins, every read logged" },
-                { href: "/planner", label: "Team updates", hint: "Everyone's plans and progress" },
+                { href: "/team?tab=updates", label: "Daily updates", hint: "Who submitted, who was auto-submitted" },
+                { href: "/admin/updates", label: "Update reminders", hint: "When reminders and auto-submit run" },
                 { href: "/work-hours", label: "Work hours", hint: "Attendance hours by person" },
               ].map((t) => (
                 <li key={t.href}>

@@ -13,6 +13,16 @@ import { formatRelative } from "@/lib/format";
 import { DepartmentBadge } from "@/components/DepartmentField";
 import EditPersonButton from "@/components/EditPersonButton";
 import type { MemberStats } from "@/lib/performance";
+import { dailyStatusGrid, submissionRate, type StatusCell } from "@/lib/work-updates";
+import { describePeriod, isDateKey, isWorkDay, todayIst, weekStart } from "@/lib/planner";
+import { PageTabs } from "@/components/work/items";
+import RemindButton from "@/components/work/RemindButton";
+import { UPDATE_STATUS, UpdateStatusBadge, UpdateStatusLegend } from "@/components/work/update-status";
+
+function shiftDay(key: string, days: number): string {
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
 
 export const dynamic = "force-dynamic";
 
@@ -39,9 +49,21 @@ const SUBTITLES = {
   self: "Your individual status and 30-day performance.",
 } as const;
 
-export default async function TeamPage() {
+export default async function TeamPage({ searchParams }: { searchParams: Promise<{ tab?: string; date?: string }> }) {
   const user = await requirePageUser();
   const { scope, members } = await getTeamPerformance(user);
+  const sp = await searchParams;
+  // Admins see everyone's updates, leads their projects' people.
+  const seesUpdates = scope === "all" || scope === "led";
+  const tab = seesUpdates && sp.tab === "updates" ? "updates" : "people";
+  const today = todayIst();
+  const gridEnd = sp.date && isDateKey(sp.date) && sp.date <= today ? sp.date : today;
+  // Everyone who writes updates (not admins), and their last 30 days.
+  const writers = members.filter((m) => m.role !== "admin");
+  const grid = seesUpdates
+    ? await dailyStatusGrid(writers.map((m) => m.id), shiftDay(today, -29), today, today)
+    : new Map<number, StatusCell[]>();
+  const opens = (id: number) => seesUpdates || id === user.id;
   // Exporting a spreadsheet of colleagues' performance stays with the people
   // accountable for it. Seeing who you work with is not the same thing.
   const showExport = scope === "all" || scope === "led";
@@ -59,6 +81,24 @@ export default async function TeamPage() {
         subtitle={SUBTITLES[scope]}
         action={showExport ? <ExportButton href="/api/team/export" /> : undefined}
       />
+      {seesUpdates && (
+        <PageTabs
+          label="Team views"
+          active={tab}
+          tabs={[
+            { key: "people", label: "People", href: "/team" },
+            { key: "updates", label: "Daily updates", href: "/team?tab=updates" },
+          ]}
+        />
+      )}
+      {tab === "updates" ? (
+        <UpdatesGrid
+          people={writers}
+          end={gridEnd}
+          today={today}
+          cells={await dailyStatusGrid(writers.map((m) => m.id), shiftDay(gridEnd, -13), gridEnd, today)}
+        />
+      ) : (
 
       <div className="space-y-8">
         {groupByDepartment(members).map(([dept, people]) => (
@@ -90,7 +130,13 @@ export default async function TeamPage() {
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold text-slate-900">{m.name}</span>
+                      {opens(m.id) ? (
+                        <Link href={`/team/${m.id}`} className="font-semibold text-slate-900 hover:text-indigo-600 hover:underline">
+                          {m.name}
+                        </Link>
+                      ) : (
+                        <span className="font-semibold text-slate-900">{m.name}</span>
+                      )}
                       <RoleBadge role={m.role} />
                       <DepartmentBadge name={m.department} />
                       {user.role === "admin" && (
@@ -109,6 +155,17 @@ export default async function TeamPage() {
                         {levelFor(m.designation) !== undefined && (
                           <span className="figure text-slate-500" title="Seniority level">
                             {" "}· L{levelFor(m.designation)}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {grid.has(m.id) && (
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                        <span>Today&apos;s update:</span>
+                        <UpdateStatusBadge status={grid.get(m.id)!.at(-1)!.status} />
+                        {submissionRate(grid.get(m.id)!) !== null && (
+                          <span className="figure" title="Share of the last 30 days' updates they submitted themselves">
+                            {submissionRate(grid.get(m.id)!)}% submitted (30d)
                           </span>
                         )}
                       </div>
@@ -199,6 +256,7 @@ export default async function TeamPage() {
           </div>
         )}
       </div>
+      )}
     </AppShell>
   );
 }
@@ -226,6 +284,126 @@ function Stat({
     <div className="rounded-lg bg-slate-50 px-2 py-2" title={hint}>
       <div className={`text-lg font-bold ${ink}`}>{value}</div>
       <div className="text-[11px] text-slate-600">{label}</div>
+    </div>
+  );
+}
+
+/**
+ * Everyone × the last two weeks of daily updates: who submitted, who left it
+ * to the app, who is still due today. A cell opens that person's day.
+ */
+function UpdatesGrid({
+  people,
+  end,
+  today,
+  cells,
+}: {
+  people: MemberStats[];
+  end: string;
+  today: string;
+  cells: Map<number, StatusCell[]>;
+}) {
+  const days: string[] = [];
+  for (let d = shiftDay(end, -13); d <= end; d = shiftDay(d, 1)) days.push(d);
+  const dueToday = people.filter((p) => {
+    const c = cells.get(p.id)?.find((x) => x.date === today);
+    return c && (c.status === "due" || c.status === "draft");
+  }).length;
+  const monday = weekStart(today);
+  const dow = new Date(`${today}T00:00:00Z`).getUTCDay();
+  const label = (d: string) =>
+    new Date(`${d}T00:00:00Z`).toLocaleDateString("en-GB", { weekday: "narrow", timeZone: "UTC" });
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-white p-4 ring-1 ring-slate-200">
+        <div className="mr-auto">
+          <p className="text-sm font-semibold text-slate-800">
+            {describePeriod("day", shiftDay(end, -13))} – {describePeriod("day", end)}
+          </p>
+          <p className="text-xs text-slate-500">
+            Updates are due Monday to Saturday and lock at midnight; anything not submitted is submitted by the app.
+          </p>
+        </div>
+        <Link href={`/team?tab=updates&date=${shiftDay(end, -14)}`} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
+          ← Earlier
+        </Link>
+        {end < today && (
+          <Link href={`/team?tab=updates&date=${shiftDay(end, 14) > today ? today : shiftDay(end, 14)}`} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
+            Later →
+          </Link>
+        )}
+        <a
+          href={`/api/planner/export?scope=team&period=day&date=${end}`}
+          className="rounded-lg px-3 py-1.5 text-sm font-medium text-sky-800 ring-1 ring-sky-300 hover:bg-sky-50"
+        >
+          ⤓ Download everyone&rsquo;s
+        </a>
+        {isWorkDay(today) && dueToday > 0 && (
+          <RemindButton kind="day" date={today} label={`Remind the ${dueToday} not submitted today`} />
+        )}
+        {dow >= 1 && <RemindButton kind="week_plan" date={monday} label="Remind: weekly plan" />}
+        {dow === 6 && <RemindButton kind="week_summary" date={monday} label="Remind: weekly summary" />}
+      </div>
+
+      <div className="overflow-x-auto rounded-2xl bg-white p-4 ring-1 ring-slate-200">
+        <table className="w-full min-w-[640px] border-separate border-spacing-1 text-sm">
+          <thead>
+            <tr>
+              <th className="text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Person</th>
+              {days.map((d) => (
+                <th key={d} className={`w-8 text-center text-[11px] font-medium ${d === today ? "text-indigo-700" : "text-slate-500"}`} title={d}>
+                  {label(d)}
+                  <span className="block text-[10px] font-normal">{Number(d.slice(8))}</span>
+                </th>
+              ))}
+              <th className="text-right text-xs font-semibold uppercase tracking-wide text-slate-500">30d</th>
+            </tr>
+          </thead>
+          <tbody>
+            {people.map((p) => {
+              const row = cells.get(p.id) ?? [];
+              return (
+                <tr key={p.id}>
+                  <td className="max-w-[12rem] truncate pr-2">
+                    <Link href={`/team/${p.id}?tab=updates`} className="font-medium text-slate-800 hover:text-indigo-600">
+                      {p.name}
+                    </Link>
+                    {p.department && <span className="ml-1.5 text-xs text-slate-500">{p.department}</span>}
+                  </td>
+                  {row.map((c) => (
+                    <td key={c.date}>
+                      <Link
+                        href={`/team/${p.id}?tab=updates&date=${c.date}`}
+                        title={`${p.name} · ${c.date}: ${UPDATE_STATUS[c.status].label}${c.reminded ? ` · reminded ${c.reminded}×` : ""}`}
+                        className={`relative block h-7 rounded-md ${UPDATE_STATUS[c.status].cell}`}
+                      >
+                        <span className="sr-only">{c.date}: {UPDATE_STATUS[c.status].label}</span>
+                        {c.reminded > 0 && (
+                          <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-amber-500 ring-1 ring-white" aria-hidden />
+                        )}
+                      </Link>
+                    </td>
+                  ))}
+                  <td className="figure text-right text-xs text-slate-600">
+                    {(() => {
+                      const r = submissionRate(row);
+                      return r === null ? "—" : `${r}%`;
+                    })()}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {people.length === 0 && <p className="py-6 text-center text-sm text-slate-500">Nobody here writes updates.</p>}
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+          <UpdateStatusLegend />
+          <span className="text-xs text-slate-500">
+            <span className="mr-1 inline-block h-2 w-2 rounded-full bg-amber-500 align-middle" aria-hidden /> reminded
+          </span>
+        </div>
+      </div>
     </div>
   );
 }

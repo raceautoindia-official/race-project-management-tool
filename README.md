@@ -335,6 +335,30 @@ it was finished on — with a box for saying how it went.
   worked-out summary — beside what was typed. What you can download is what you can see.
 - Clearing both boxes and saving removes the entry.
 
+#### Submitting, reminders and auto-submit
+
+- **Submit update** hands the day (or week) in. It stays editable until **midnight**
+  (for a week, midnight on Saturday), then locks. Sunday is off.
+- Anything not submitted by the **auto-submit time** (23:30 by default) is submitted by
+  the app, marked *auto-submitted*; an empty "how it went" is filled from what the board
+  recorded. On Saturday the week is submitted the same way.
+- **Reminders** go out in the app, as a browser push and by email: the daily one in the
+  evening, the weekly plan on Monday, the weekly summary on Saturday. Admins set the
+  times in **Admin › Update reminders**, and get a morning digest of who left their day to
+  the app. Admins and leads can also remind people by hand.
+- **Team › Daily updates** shows everyone × the last two weeks (submitted, auto, missing,
+  reminded); **Team › a person** has their full profile: work, 30-day figures,
+  attendance hours, every daily and weekly update beside the recorded summary, and
+  their recent activity.
+- Days before the feature was installed are shown as *before submitting began* and
+  never count as missing.
+- It all runs from one cron job, every 15 minutes (each job happens once a day however
+  often it fires, and a missed day is caught up):
+
+  ```
+  0,15,30,45 * * * * curl -fsS -X POST -H "x-cron-secret: $CRON_SECRET" https://projectmanager.raceinnovations.in/api/cron/work-updates
+  ```
+
 ### Personal documents (Profile → My documents)
 
 What someone uploads about themselves: ID proof, certificates, a signed contract.

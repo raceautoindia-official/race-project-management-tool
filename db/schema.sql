@@ -552,11 +552,43 @@ CREATE TABLE IF NOT EXISTS planner_entries (
   entry_date DATE NOT NULL,              -- the day, or that week's Monday
   plan       TEXT NULL,                  -- what they mean to do
   progress   TEXT NULL,                  -- how it went
+  submitted_at DATETIME NULL,              -- handed in (NULL: still a draft)
+  submission ENUM('manual','auto') NULL,  -- by the person, or by the app at day's end
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT fk_planner_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   UNIQUE KEY uq_planner_entry (user_id, period, entry_date),
   INDEX idx_planner_date (entry_date, period)
+);
+
+-- Small admin-set values (e.g. when update reminders go out), as JSON.
+CREATE TABLE IF NOT EXISTS app_settings (
+  setting_key VARCHAR(64) PRIMARY KEY,
+  value       TEXT NOT NULL,
+  updated_by  INT NULL,
+  updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_settings_user FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
+);
+
+-- Every work-update reminder sent, automatic (sent_by NULL) or by an admin.
+CREATE TABLE IF NOT EXISTS update_reminders (
+  id        INT AUTO_INCREMENT PRIMARY KEY,
+  user_id   INT NOT NULL,
+  kind      ENUM('day','week_plan','week_summary') NOT NULL,
+  ref_date  DATE NOT NULL,
+  sent_by   INT NULL,
+  sent_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_ureminder_user   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_ureminder_sender FOREIGN KEY (sent_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_ureminder_ref (kind, ref_date, user_id)
+);
+
+-- Which scheduled jobs already ran for which day (the cron fires often).
+CREATE TABLE IF NOT EXISTS job_runs (
+  job     VARCHAR(40) NOT NULL,
+  run_for VARCHAR(20) NOT NULL,
+  ran_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (job, run_for)
 );
 
 -- Job titles with a level, so seniority compares across differently named

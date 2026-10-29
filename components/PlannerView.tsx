@@ -14,10 +14,12 @@ import { apiFetch } from "@/lib/api-client";
 import { useToast } from "@/components/ToastProvider";
 import {
   describePeriod,
+  isWorkDay,
   rangeBack,
   shiftPeriod,
   type PlannerPeriod,
 } from "@/lib/planner";
+import { formatIst } from "@/lib/tz";
 
 export interface PlannerEntry {
   entry_date: string;
@@ -25,6 +27,9 @@ export interface PlannerEntry {
   plan: string | null;
   progress: string | null;
   updated_at: string;
+  /** When it was handed in, and by whom: the person, or the app at day's end. */
+  submitted_at?: string | null;
+  submission?: "manual" | "auto" | null;
   user_id?: number;
   user_name?: string;
   emp_id?: string;
@@ -51,6 +56,7 @@ export default function PlannerView({
   canSeeOthers,
   currentUserId,
   teamOnly = false,
+  initialLocked = false,
 }: {
   initialPeriod: PlannerPeriod;
   initialDate: string;
@@ -66,6 +72,8 @@ export default function PlannerView({
   currentUserId: number;
   /** An admin reads everyone's and writes none of their own. */
   teamOnly?: boolean;
+  /** The day (or week) shown first is over, so it can only be read. */
+  initialLocked?: boolean;
 }) {
   const { toast } = useToast();
   type Tab = "day" | "week-plan" | "week-summary";
@@ -77,6 +85,9 @@ export default function PlannerView({
   const [plan, setPlan] = useState(initialEntry?.plan ?? "");
   const [progress, setProgress] = useState(initialEntry?.progress ?? "");
   const [savedAt, setSavedAt] = useState<string | null>(initialEntry?.updated_at ?? null);
+  const [submission, setSubmission] = useState<PlannerEntry["submission"]>(initialEntry?.submission ?? null);
+  const [submittedAt, setSubmittedAt] = useState<string | null>(initialEntry?.submitted_at ?? null);
+  const [locked, setLocked] = useState(initialLocked);
   const [team, setTeam] = useState<PlannerEntry[]>(initialTeam);
   const [summary, setSummary] = useState<DailySummary | null>(initialSummary);
   const [week, setWeek] = useState<WeekSummary | null>(initialWeek);
@@ -98,12 +109,15 @@ export default function PlannerView({
     }
     setLoading(true);
     try {
-      const mine = await apiFetch<{ entry: PlannerEntry | null }>(
+      const mine = await apiFetch<{ entry: PlannerEntry | null; locked: boolean }>(
         `/api/planner?period=${nextPeriod}&date=${nextDate}`
       );
       setPlan(mine.entry?.plan ?? "");
       setProgress(mine.entry?.progress ?? "");
       setSavedAt(mine.entry?.updated_at ?? null);
+      setSubmission(mine.entry?.submission ?? null);
+      setSubmittedAt(mine.entry?.submitted_at ?? null);
+      setLocked(Boolean(mine.locked));
       setDirty(false);
       let others: PlannerEntry[] = [];
       if (canSeeOthers) {
@@ -151,7 +165,7 @@ export default function PlannerView({
     }
   }
 
-  async function save() {
+  async function save(quiet = false): Promise<PlannerEntry | null | undefined> {
     setBusy(true);
     try {
       const res = await apiFetch<{ entry: PlannerEntry | null }>("/api/planner", {
@@ -159,16 +173,44 @@ export default function PlannerView({
         body: JSON.stringify({ period, date, plan, progress }),
       });
       setSavedAt(res.entry?.updated_at ?? null);
+      setSubmission(res.entry?.submission ?? null);
+      setSubmittedAt(res.entry?.submitted_at ?? null);
       setDirty(false);
-      toast(res.entry ? "Saved" : "Entry removed");
+      if (!quiet) toast(res.entry ? "Saved" : "Entry removed");
       if (canSeeOthers) {
         const others = await apiFetch<{ entries: PlannerEntry[] }>(
           `/api/planner?scope=team&period=${period}&date=${date}`
         );
         setTeam(others.entries);
       }
+      return res.entry;
     } catch (e) {
       toast(e instanceof Error ? e.message : "Could not save", "error");
+      return undefined;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Save what is in the boxes, then hand it in. */
+  async function submit() {
+    const saved = await save(true);
+    if (saved === undefined) return;
+    if (!saved) {
+      toast("Write something first — an empty day is submitted for you at the end of the day", "error");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await apiFetch<{ entry: PlannerEntry }>("/api/planner/submit", {
+        method: "POST",
+        body: JSON.stringify({ period, date }),
+      });
+      setSubmission(res.entry.submission ?? "manual");
+      setSubmittedAt(res.entry.submitted_at ?? null);
+      toast(period === "day" ? "Daily update submitted" : "Weekly update submitted");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not submit", "error");
     } finally {
       setBusy(false);
     }
@@ -315,18 +357,65 @@ export default function PlannerView({
           </h2>
           <span
             className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-              savedAt
+              submission === "manual"
                 ? "bg-emerald-100 text-emerald-800"
-                : "bg-slate-200 text-slate-700"
+                : submission === "auto"
+                  ? "bg-sky-100 text-sky-800"
+                  : savedAt
+                    ? "bg-amber-100 text-amber-900"
+                    : "bg-slate-200 text-slate-700"
             }`}
           >
-            {savedAt
-              ? `Saved ${String(savedAt).replace("T", " ").slice(0, 16)}`
-              : "Nothing written yet"}
+            {submission === "manual"
+              ? `Submitted${submittedAt ? ` ${formatIst(submittedAt)}` : ""}`
+              : submission === "auto"
+                ? "Submitted automatically"
+                : savedAt
+                  ? `Saved ${String(savedAt).replace("T", " ").slice(0, 16)} · not submitted yet`
+                  : "Nothing written yet"}
           </span>
+          {locked && (
+            <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs font-medium text-white">
+              🔒 Locked
+            </span>
+          )}
         </div>
 
         <div className="px-5 py-4">
+        {locked ? (
+          // The day is over: what was handed in is the record.
+          <div className="space-y-3">
+            {tab !== "week-summary" && (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">What I meant to do</p>
+                {pointsOf(plan).length ? (
+                  <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-slate-700">
+                    {pointsOf(plan).map((l, i) => <li key={i}>{l}</li>)}
+                  </ul>
+                ) : (
+                  <p className="mt-1 text-sm text-slate-500">—</p>
+                )}
+              </div>
+            )}
+            {tab !== "week-plan" && (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">How it went</p>
+                <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{progress || "—"}</p>
+              </div>
+            )}
+            <p className="text-xs text-slate-500">
+              {period === "day"
+                ? "Updates lock at midnight. This day is over, so it can only be read."
+                : "Weekly updates lock at midnight on Saturday. This week is over, so it can only be read."}
+            </p>
+          </div>
+        ) : (
+          <>
+        {period === "day" && !isWorkDay(date) && (
+          <p className="mb-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600 ring-1 ring-slate-200">
+            Sunday — no update is due today. You can still write one.
+          </p>
+        )}
         {tab !== "week-summary" && (
           <PointsInput
             // Re-seeded when the period or the day changes: the rows are the
@@ -385,9 +474,16 @@ export default function PlannerView({
         <div className="mt-4 border-t border-slate-100 pt-3">
           <div className="flex flex-wrap items-center gap-3">
             <button
-              onClick={save}
+              onClick={() => void submit()}
               disabled={busy}
-              className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-60"
+              className="rounded-lg bg-emerald-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60"
+            >
+              {submission === "manual" ? "Submit changes" : "Submit update"}
+            </button>
+            <button
+              onClick={() => void save()}
+              disabled={busy}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
             >
               {busy ? "Saving…" : "Save"}
             </button>
@@ -402,9 +498,14 @@ export default function PlannerView({
               ? "How the week went is on the next tab — saving here keeps both."
               : tab === "week-summary"
                 ? "The plan is on the previous tab — saving here keeps both."
-                : "Clearing both boxes and saving removes the entry."}
+                : "Clearing both boxes and saving removes the entry."}{" "}
+            {period === "day"
+              ? "Submit it before the end of the day — anything not submitted is handed in for you, and the day locks at midnight."
+              : "Submit it by Saturday — anything not submitted is handed in for you, and the week locks at midnight on Saturday."}
           </p>
         </div>
+          </>
+        )}
         </div>
       </section>
       )}

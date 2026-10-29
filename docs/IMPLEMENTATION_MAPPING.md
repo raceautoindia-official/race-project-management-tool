@@ -123,3 +123,8 @@ Profile and Notifications stay where they are (avatar menu and bell).
 ## Admin view (2026-10-29)
 
 An admin gets their own rail and home. **Control centre** (/admin) replaces My Work as their landing page (/dashboard redirects there). It shows the portfolio worst first, what waits on a decision, whose reviews pile up, workload and idle people, and records to fix. Reviews is **Approvals** (organisation-wide, no "I sent" tab); Work Updates is **Team updates** (read-only, no personal entry). Nothing was removed: My Work, Reviews and Work Updates stay as they were for members.
+
+Later (2026-10-30): Team updates left the admin rail. Everyone's updates are read in
+**Team** — a profile per person (/team/:id) and a **Daily updates** grid — and admins set
+reminder times in **Admin › Update reminders**. Updates are now submitted, lock at
+midnight, and are auto-submitted by `/api/cron/work-updates`.

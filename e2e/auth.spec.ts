@@ -61,11 +61,11 @@ test.describe("login (Employee ID + PIN from the attendance DB)", () => {
       await expect(page.getByRole("heading", { name: panel })).toBeVisible();
     }
     const rail = page.getByRole("navigation", { name: "Main" });
-    for (const link of ["Control centre", "Approvals", "Team updates", "People & levels"]) {
+    for (const link of ["Control centre", "Approvals", "Update reminders", "People & levels"]) {
       await expect(rail.getByRole("link", { name: link })).toBeVisible();
     }
     // A member's personal pages are not on an admin's rail.
-    for (const link of ["My Work", "Reviews", "Work Updates"]) {
+    for (const link of ["My Work", "Reviews", "Work Updates", "Team updates"]) {
       await expect(rail.getByRole("link", { name: link, exact: true })).toHaveCount(0);
     }
     // And My Work's address brings them back here.
