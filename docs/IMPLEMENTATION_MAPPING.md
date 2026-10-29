@@ -119,3 +119,7 @@ Profile and Notifications stay where they are (avatar menu and bell).
 | 4 | Screens: new shell/nav, My Work, Reviews, Projects list + wizard, Project page tree, Task page, Team pickers, Admin › People & levels, Reports (progress) |
 | 5 | Notifications, crons, Excel export, templates, deep-link redirects |
 | 6 | Full browser walkthrough per role, e2e update, lint + build, deployment checklist |
+
+## Admin view (2026-10-29)
+
+An admin gets their own rail and home. **Control centre** (/admin) replaces My Work as their landing page (/dashboard redirects there). It shows the portfolio worst first, what waits on a decision, whose reviews pile up, workload and idle people, and records to fix. Reviews is **Approvals** (organisation-wide, no "I sent" tab); Work Updates is **Team updates** (read-only, no personal entry). Nothing was removed: My Work, Reviews and Work Updates stay as they were for members.

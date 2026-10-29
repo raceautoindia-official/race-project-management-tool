@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { requirePageUser } from "@/lib/page-guard";
 import { getMyWork, type WorkItem } from "@/lib/my-work";
 import { getRecentActivityFor, getUpcomingMeetings } from "@/lib/dashboard";
@@ -40,6 +41,8 @@ function greeting(): string {
 
 export default async function MyWorkPage({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
   const user = await requirePageUser();
+  // An admin's home is the Control centre, not a personal to-do list.
+  if (user.role === "admin") redirect("/admin");
   const view: View = (await searchParams).view === "tasks" ? "tasks" : "work";
   const work = await getMyWork(user);
   const today = todayIST();

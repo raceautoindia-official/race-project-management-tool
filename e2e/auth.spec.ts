@@ -54,6 +54,28 @@ test.describe("login (Employee ID + PIN from the attendance DB)", () => {
     await page.context().close();
   });
 
+  test("an admin lands on the Control centre, with a rail for running the organisation", async ({ browser }) => {
+    const page = await signIn(browser, USERS.admin);
+    await expect(page.getByRole("heading", { name: "Control centre" })).toBeVisible();
+    for (const panel of ["Needs a decision", "Where reviews are waiting", "Workload", "Portfolio health", "Records to fix"]) {
+      await expect(page.getByRole("heading", { name: panel })).toBeVisible();
+    }
+    const rail = page.getByRole("navigation", { name: "Main" });
+    for (const link of ["Control centre", "Approvals", "Team updates", "People & levels"]) {
+      await expect(rail.getByRole("link", { name: link })).toBeVisible();
+    }
+    // A member's personal pages are not on an admin's rail.
+    for (const link of ["My Work", "Reviews", "Work Updates"]) {
+      await expect(rail.getByRole("link", { name: link, exact: true })).toHaveCount(0);
+    }
+    // And My Work's address brings them back here.
+    await page.goto("/dashboard");
+    await expect(page).toHaveURL(/\/admin$/);
+    await page.goto("/reviews");
+    await expect(page.getByRole("heading", { name: "Approvals" })).toBeVisible();
+    await page.context().close();
+  });
+
   test("a valid login lands on the dashboard and can log out", async ({ browser }) => {
     const page = await signIn(browser, USERS.sam);
     await expect(page.getByText(USERS.sam.name).first()).toBeVisible();

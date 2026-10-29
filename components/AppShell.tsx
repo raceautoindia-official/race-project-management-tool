@@ -31,7 +31,7 @@ interface NavItem {
  * My Tasks and Outstanding are not listed any more: they live inside My Work
  * and Reviews, and their old addresses redirect there.
  */
-const NAV_GROUPS: { label: string; links: NavItem[]; adminOnly?: boolean }[] = [
+const MEMBER_NAV: { label: string; links: NavItem[] }[] = [
   {
     label: "Work",
     links: [
@@ -61,19 +61,53 @@ const NAV_GROUPS: { label: string; links: NavItem[]; adminOnly?: boolean }[] = [
     label: "Insight",
     links: [{ href: "/reports", label: "Reports", icon: "▥" }],
   },
+];
+
+/**
+ * An admin runs the organisation rather than working a to-do list, so their
+ * rail starts at the Control centre and leaves out My Work, Reviews and the
+ * personal Work Updates (their addresses still work). Everything waiting on a
+ * decision across the organisation is Approvals; Work Updates becomes Team
+ * updates, read-only.
+ */
+const ADMIN_NAV: { label: string; links: NavItem[] }[] = [
   {
-    label: "Administration",
-    adminOnly: true,
+    label: "Overview",
     links: [
-      { href: "/admin", label: "Admin Home", icon: "★" },
+      { href: "/admin", label: "Control centre", icon: "★" },
+      { href: "/reports", label: "Reports", icon: "▥" },
+    ],
+  },
+  {
+    label: "Organisation",
+    links: [
+      { href: "/projects", label: "Projects", icon: "▢" },
+      { href: "/reviews", label: "Approvals", icon: "✓" },
+      { href: "/team", label: "Team", icon: "◉" },
+      { href: "/planner", label: "Team updates", icon: "🗓" },
+      { href: "/work-hours", label: "Work hours", icon: "◵" },
+    ],
+  },
+  {
+    label: "Records & setup",
+    links: [
       { href: "/admin/people", label: "People & levels", icon: "☰" },
       { href: "/admin/activity", label: "Activity Log", icon: "≡" },
       { href: "/admin/documents", label: "Documents", icon: "🗎" },
+      { href: "/credentials", label: "Credentials", icon: "🔑" },
+    ],
+  },
+  {
+    label: "Tools",
+    links: [
+      { href: "/meetings", label: "Meetings", icon: "◷" },
+      { href: "/calendar", label: "Calendar", icon: "▤" },
+      { href: "/reminders", label: "Reminders", icon: "🔔" },
     ],
   },
 ];
 
-const ALL_HREFS = NAV_GROUPS.flatMap((g) => g.links.map((l) => l.href)).concat("/profile");
+const ALL_HREFS = [...MEMBER_NAV, ...ADMIN_NAV].flatMap((g) => g.links.map((l) => l.href)).concat("/profile");
 
 export default function AppShell({
   user,
@@ -167,7 +201,7 @@ export default function AppShell({
           </button>
         </div>
         <nav className="flex flex-1 flex-col overflow-y-auto px-3 pb-4" aria-label="Main">
-          {NAV_GROUPS.filter((g) => !g.adminOnly || user.role === "admin").map((g, i) => (
+          {(user.role === "admin" ? ADMIN_NAV : MEMBER_NAV).map((g, i) => (
             <div key={g.label} role="group" aria-label={g.label} className={i === 0 ? "" : "mt-4"}>
               <div className="flex items-center gap-2 px-4 pb-1">
                 <span className="text-xs font-semibold text-slate-400">{g.label}</span>

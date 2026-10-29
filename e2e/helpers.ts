@@ -37,7 +37,8 @@ export async function signIn(browser: Browser, user: E2EUser): Promise<Page> {
   await page.getByLabel("Employee ID").fill(user.empId);
   await page.getByLabel("PIN").fill(E2E_PIN);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/\/dashboard$/);
+  // A member lands on My Work, an admin on the Control centre.
+  await expect(page).toHaveURL(user.role === "super_admin" ? /\/admin$/ : /\/dashboard$/);
   return page;
 }
 

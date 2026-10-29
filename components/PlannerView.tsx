@@ -50,6 +50,7 @@ export default function PlannerView({
   initialTeamLines,
   canSeeOthers,
   currentUserId,
+  teamOnly = false,
 }: {
   initialPeriod: PlannerPeriod;
   initialDate: string;
@@ -63,6 +64,8 @@ export default function PlannerView({
   initialTeamLines: Record<number, string>;
   canSeeOthers: boolean;
   currentUserId: number;
+  /** An admin reads everyone's and writes none of their own. */
+  teamOnly?: boolean;
 }) {
   const { toast } = useToast();
   type Tab = "day" | "week-plan" | "week-summary";
@@ -240,29 +243,31 @@ export default function PlannerView({
 
         {/* Mine and everyone's are different acts, so they are not the same
             colour. */}
-        <a
-          href={exportHref}
-          className="ml-auto rounded-xl px-3 py-2 text-sm font-medium text-amber-800 ring-1 ring-amber-300 transition hover:bg-amber-50"
-        >
-          ⤓ Download mine
-        </a>
+        {!teamOnly && (
+          <a
+            href={exportHref}
+            className="ml-auto rounded-xl px-3 py-2 text-sm font-medium text-amber-800 ring-1 ring-amber-300 transition hover:bg-amber-50"
+          >
+            ⤓ Download mine
+          </a>
+        )}
         {canSeeOthers && (
           <a
             href={`/api/planner/export?scope=team&period=${period}&date=${date}`}
-            className="rounded-xl px-3 py-2 text-sm font-medium text-sky-800 ring-1 ring-sky-300 transition hover:bg-sky-50"
+            className={`${teamOnly ? "ml-auto " : ""}rounded-xl px-3 py-2 text-sm font-medium text-sky-800 ring-1 ring-sky-300 transition hover:bg-sky-50`}
           >
-            ⤓ Download the team&rsquo;s
+            ⤓ Download {teamOnly ? "everyone" : "the team"}&rsquo;s
           </a>
         )}
       </div>
 
-      {period === "day" && summary && (
+      {!teamOnly && period === "day" && summary && (
         <div className="mb-4">
           <DailySummaryPanel summary={summary} />
         </div>
       )}
 
-      {tab !== "day" && week && (
+      {!teamOnly && tab !== "day" && week && (
         <WeekSummaryPanel
           summary={week}
           show={tab === "week-plan" ? "upcoming" : "held"}
@@ -298,6 +303,7 @@ export default function PlannerView({
       )}
 
       {/* The other half of the page: the part only a person can write. */}
+      {!teamOnly && (
       <section className="mt-4 overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200">
         <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50 px-5 py-3">
           <h2 className="text-base font-semibold text-slate-900">
@@ -401,15 +407,16 @@ export default function PlannerView({
         </div>
         </div>
       </section>
+      )}
 
       {canSeeOthers && (
         <section className="mt-6">
           <h2 className="mb-2 text-sm font-semibold text-slate-700">
-            The team — {label}
+            {teamOnly ? "Everyone" : "The team"} — {label}
           </h2>
           {team.filter((t) => t.user_id !== currentUserId).length === 0 ? (
             <p className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
-              Nobody else has written anything for this {period}.
+              Nobody {teamOnly ? "" : "else "}has written anything for this {period}.
             </p>
           ) : (
             <ul className="space-y-3">

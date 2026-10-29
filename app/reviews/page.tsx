@@ -27,24 +27,36 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Prom
   const tab: Tab = (TABS as readonly string[]).includes(asked ?? "") ? (asked as Tab) : "mine";
   const work = await getMyWork(user);
   const waiting = [...work.reviewSubtasks, ...work.reviewTasks];
+  // For an admin this is the organisation's approvals: every request, sign-off,
+  // blocker and finished task waiting on a decision they are allowed to make.
+  const isAdmin = user.role === "admin";
+  const waitingCount = waiting.length + work.attention.length;
 
   return (
     <AppShell user={user}>
       <PageHeader
-        title="Reviews"
-        subtitle="Finished work only counts toward progress once its owner approves it. Approve it, or send it back with a note."
-        figures={[
-          { label: "Waiting for me", value: waiting.length + work.attention.length },
-          { label: "I sent", value: work.submitted.length },
-        ]}
+        title={isAdmin ? "Approvals" : "Reviews"}
+        subtitle={
+          isAdmin
+            ? "Everything across the organisation that is waiting on a decision you can make — finished work, project and task requests, sign-offs and blockers."
+            : "Finished work only counts toward progress once its owner approves it. Approve it, or send it back with a note."
+        }
+        figures={
+          isAdmin
+            ? [{ label: "Waiting on a decision", value: waitingCount }]
+            : [
+                { label: "Waiting for me", value: waitingCount },
+                { label: "I sent", value: work.submitted.length },
+              ]
+        }
       />
       <PageTabs
         label="Review lists"
         active={tab}
         tabs={[
-          { key: "mine", label: "Waiting for me", href: "/reviews", count: waiting.length + work.attention.length },
+          { key: "mine", label: isAdmin ? "Waiting on a decision" : "Waiting for me", href: "/reviews", count: waitingCount },
           { key: "overdue", label: "Overdue & in review", href: "/reviews?tab=overdue" },
-          { key: "sent", label: "I sent", href: "/reviews?tab=sent", count: work.submitted.length },
+          ...(isAdmin ? [] : [{ key: "sent", label: "I sent", href: "/reviews?tab=sent", count: work.submitted.length }]),
           { key: "approved", label: "Recently approved", href: "/reviews?tab=approved" },
         ]}
       />

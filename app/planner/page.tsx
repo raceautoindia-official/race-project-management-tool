@@ -32,11 +32,13 @@ export default async function PlannerPage({
   // A lead sees the people on the projects they lead; an admin sees everyone.
   const team = await plannerForPeriod(user, period, entryDate);
 
+  // An admin reads everyone's updates and keeps none of their own.
+  const teamOnly = user.role === "admin";
   // The day, worked out rather than typed. Only for the daily tab: a week
   // is a plan, and planning is the part the app cannot do for anyone.
-  const summary = period === "day" ? await dailySummary(user.id, date) : null;
+  const summary = !teamOnly && period === "day" ? await dailySummary(user.id, date) : null;
   // The week, from the board: what is due, and what it has come to so far.
-  const week = period === "week" ? await weekSummary(user.id, entryDate) : null;
+  const week = !teamOnly && period === "week" ? await weekSummary(user.id, entryDate) : null;
   const teamLines =
     period === "day"
       ? Object.fromEntries(
@@ -59,11 +61,13 @@ export default async function PlannerPage({
   return (
     <AppShell user={user}>
       <PageHeader
-        title="Work Updates"
+        title={teamOnly ? "Team updates" : "Work Updates"}
         subtitle={
-          canSeeOthers
-            ? "What you mean to do, and how it went — yours, and your team's."
-            : "What you mean to do, and how it went. Your lead and an admin can read it."
+          teamOnly
+            ? "What everyone planned and how it went, by day or by week. Read-only."
+            : canSeeOthers
+              ? "What you mean to do, and how it went — yours, and your team's."
+              : "What you mean to do, and how it went. Your lead and an admin can read it."
         }
       />
       <PlannerView
@@ -76,6 +80,7 @@ export default async function PlannerPage({
         initialTeamLines={teamLines}
         canSeeOthers={canSeeOthers}
         currentUserId={user.id}
+        teamOnly={teamOnly}
       />
     </AppShell>
   );

@@ -67,8 +67,10 @@ test("an admin reads it without being able to change it", async () => {
   const theirs = admin.getByRole("listitem").filter({ hasText: USERS.sam.name });
   await expect(theirs).toContainText(PLAN);
   await expect(theirs).toContainText(PROGRESS);
-  // One box, theirs alone — no way to type into somebody else's.
-  await expect(admin.getByLabel("What I mean to do — point 1")).toHaveCount(1);
+  // Team updates for an admin: everyone's to read, no box of their own and
+  // no way to type into somebody else's.
+  await expect(admin.getByRole("heading", { name: "Team updates" })).toBeVisible();
+  await expect(admin.getByLabel("What I mean to do — point 1")).toHaveCount(0);
 });
 
 test("a member sees nobody else's", async ({ browser }) => {
@@ -90,7 +92,7 @@ test("it downloads as a spreadsheet", async () => {
   await admin.goto("/planner");
   const [teamFile] = await Promise.all([
     admin.waitForEvent("download"),
-    admin.getByRole("link", { name: /Download the team/ }).click(),
+    admin.getByRole("link", { name: /Download everyone/ }).click(),
   ]);
   expect(teamFile.suggestedFilename()).toMatch(/^team-day-.*\.xlsx$/);
 });
