@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { query, DbRow } from "@/lib/db";
 import type { User } from "@/lib/types";
 import { actAs, call, createLedProject, createUser } from "./helpers";
@@ -19,6 +19,15 @@ let admin: User, lead: User, sam: User, outsider: User;
 
 const THU = "2026-10-08"; // a Thursday
 const MON = "2026-10-05"; // that week's Monday
+
+// These tests write that Thursday's entries, so it is that Thursday: a day
+// locks at midnight. Only the date is fixed, not the timers.
+beforeAll(() => {
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-10-08T06:00:00Z") });
+});
+afterAll(() => {
+  vi.useRealTimers();
+});
 
 beforeAll(async () => {
   admin = await createUser("Planadmin", "admin");

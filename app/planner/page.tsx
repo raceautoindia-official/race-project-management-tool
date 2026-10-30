@@ -1,9 +1,10 @@
+import { redirect } from "next/navigation";
 import { requirePageUser } from "@/lib/page-guard";
 import { query, DbRow } from "@/lib/db";
 import AppShell from "@/components/AppShell";
 import { PageHeader } from "@/components/Cards";
 import PlannerView, { type PlannerEntry } from "@/components/PlannerView";
-import { entryDateFor, isDateKey, todayIst, type PlannerPeriod } from "@/lib/planner";
+import { entryDateFor, isDateKey, isLocked, todayIst, type PlannerPeriod } from "@/lib/planner";
 import { plannerForPeriod } from "@/lib/planner-data";
 import { dailySummary, dailySummaryLines } from "@/lib/daily-summary";
 import { weekSummary } from "@/lib/week-summary";
@@ -16,6 +17,8 @@ export default async function PlannerPage({
   searchParams: Promise<{ period?: string; date?: string }>;
 }) {
   const user = await requirePageUser();
+  // An admin writes no updates of their own; everyone's are read in Team.
+  if (user.role === "admin") redirect("/team?tab=updates");
   const params = await searchParams;
   const period: PlannerPeriod = params.period === "week" ? "week" : "day";
   const asked = params.date ?? "";
@@ -23,7 +26,7 @@ export default async function PlannerPage({
   const entryDate = entryDateFor(period, date);
 
   const [mine] = await query<DbRow[]>(
-    `SELECT DATE_FORMAT(entry_date, '%Y-%m-%d') AS entry_date, period, plan, progress, updated_at
+    `SELECT DATE_FORMAT(entry_date, '%Y-%m-%d') AS entry_date, period, plan, progress, submitted_at, submission, updated_at
        FROM planner_entries
       WHERE user_id = ? AND period = ? AND entry_date = ? LIMIT 1`,
     [user.id, period, entryDate]
@@ -47,7 +50,6 @@ export default async function PlannerPage({
         )
       : {};
   const canSeeOthers =
-    user.role === "admin" ||
     (
       await query<DbRow[]>(
         `SELECT 1 FROM project_members
@@ -76,6 +78,7 @@ export default async function PlannerPage({
         initialTeamLines={teamLines}
         canSeeOthers={canSeeOthers}
         currentUserId={user.id}
+        initialLocked={isLocked(period, entryDate, todayIst())}
       />
     </AppShell>
   );

@@ -93,7 +93,7 @@ export async function getWorkHours(
   // tasks to compare against and is left out rather than shown as a zero.
   const pmUsers = await query<DbRow[]>(
     `SELECT id, employee_id, name FROM users
-      WHERE employee_id IN (${employeeIds.map(() => "?").join(",")})`,
+      WHERE is_active = TRUE AND employee_id IN (${employeeIds.map(() => "?").join(",")})`,
     employeeIds
   );
   if (!pmUsers.length) return { people: [], ownOnly: true, attendanceUnavailable };

@@ -19,7 +19,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
     const members = await query<DbRow[]>(
       `SELECT u.emp_id, u.name FROM project_members pm
          JOIN users u ON u.id = pm.user_id
-        WHERE pm.project_id = ?
+        WHERE pm.project_id = ? AND u.is_active = TRUE
         ORDER BY u.name`,
       [projectId]
     );

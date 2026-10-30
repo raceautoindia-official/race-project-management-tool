@@ -36,7 +36,7 @@ async function projectDetail(projectId: number) {
             u.department, u.designation
      FROM project_members pm
      JOIN users u ON u.id = pm.user_id
-     WHERE pm.project_id = ?
+     WHERE pm.project_id = ? AND u.is_active = TRUE
      ORDER BY (pm.role_in_project = 'lead') DESC, u.name ASC`,
     [projectId]
   );

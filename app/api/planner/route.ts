@@ -1,8 +1,8 @@
 import { NextRequest } from "next/server";
 import { query, DbRow } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
-import { json, errorResponse, ApiError, forbidden } from "@/lib/http";
-import { entryDateFor, isDateKey, todayIst, type PlannerPeriod } from "@/lib/planner";
+import { json, errorResponse, ApiError, conflict, forbidden } from "@/lib/http";
+import { entryDateFor, isDateKey, isLocked, todayIst, type PlannerPeriod } from "@/lib/planner";
 import { canReadPlanner, plannerForPeriod, plannerRange } from "@/lib/planner-data";
 
 export const dynamic = "force-dynamic";
@@ -51,12 +51,12 @@ export async function GET(req: NextRequest) {
     }
 
     const rows = await query<DbRow[]>(
-      `SELECT DATE_FORMAT(entry_date, '%Y-%m-%d') AS entry_date, period, plan, progress, updated_at
+      `SELECT DATE_FORMAT(entry_date, '%Y-%m-%d') AS entry_date, period, plan, progress, submitted_at, submission, updated_at
          FROM planner_entries
         WHERE user_id = ? AND period = ? AND entry_date = ? LIMIT 1`,
       [forUser, period, entryDate]
     );
-    return json({ period, entryDate, entry: rows[0] ?? null });
+    return json({ period, entryDate, entry: rows[0] ?? null, locked: isLocked(period, entryDate, todayIst()) });
   } catch (err) {
     return errorResponse(err);
   }
@@ -76,6 +76,10 @@ export async function PUT(req: NextRequest) {
     const date = String(body.date ?? todayIst());
     if (!isDateKey(date)) throw new ApiError(400, "Expected date as YYYY-MM-DD");
     const entryDate = entryDateFor(period, date);
+    // A day closes at midnight; a week at midnight after its Saturday.
+    if (isLocked(period, entryDate, todayIst())) {
+      throw conflict(period === "day" ? "This day is over — updates lock at midnight." : "This week is over — updates lock at midnight on Saturday.");
+    }
 
     const plan = String(body.plan ?? "").slice(0, MAX_TEXT).trim() || null;
     const progress = String(body.progress ?? "").slice(0, MAX_TEXT).trim() || null;
@@ -97,12 +101,12 @@ export async function PUT(req: NextRequest) {
     );
 
     const [row] = await query<DbRow[]>(
-      `SELECT DATE_FORMAT(entry_date, '%Y-%m-%d') AS entry_date, period, plan, progress, updated_at
+      `SELECT DATE_FORMAT(entry_date, '%Y-%m-%d') AS entry_date, period, plan, progress, submitted_at, submission, updated_at
          FROM planner_entries
         WHERE user_id = ? AND period = ? AND entry_date = ? LIMIT 1`,
       [user.id, period, entryDate]
     );
-    return json({ entry: row ?? null });
+    return json({ entry: row ?? null, locked: false });
   } catch (err) {
     return errorResponse(err);
   }

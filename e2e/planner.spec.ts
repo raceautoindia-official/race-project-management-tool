@@ -27,8 +27,14 @@ test("the day fills itself in, with a box for the rest", async () => {
   await sam.getByRole("button", { name: "Save" }).click();
 
   await expect(sam.getByText(/Saved \d/)).toBeVisible();
+  await expect(sam.getByText(/not submitted yet/)).toBeVisible();
   await sam.reload();
   await expect(sam.getByLabel("What I mean to do — point 1")).toHaveValue(PLAN);
+
+  // Handed in: it says so, and stays editable until midnight.
+  await sam.getByRole("button", { name: "Submit update" }).click();
+  await expect(sam.getByText(/^Submitted /)).toBeVisible();
+  await expect(sam.getByRole("button", { name: "Submit changes" })).toBeVisible();
 });
 
 test("the week has its own two tabs, and its own entry", async () => {
@@ -62,13 +68,19 @@ test("the week has its own two tabs, and its own entry", async () => {
   await expect(sam.getByLabel("What I mean to do — point 1")).toHaveValue(PLAN);
 });
 
-test("an admin reads it without being able to change it", async () => {
+test("an admin reads it on the person's profile, without being able to change it", async () => {
+  // An admin keeps no updates of their own: Work Updates takes them to Team.
   await admin.goto("/planner");
-  const theirs = admin.getByRole("listitem").filter({ hasText: USERS.sam.name });
-  await expect(theirs).toContainText(PLAN);
-  await expect(theirs).toContainText(PROGRESS);
-  // One box, theirs alone — no way to type into somebody else's.
-  await expect(admin.getByLabel("What I mean to do — point 1")).toHaveCount(1);
+  await expect(admin).toHaveURL(/\/team\?tab=updates$/);
+  // Today's cell says Sam submitted.
+  const samRow = admin.getByRole("row").filter({ hasText: USERS.sam.name });
+  await expect(samRow.getByRole("link", { name: /: Submitted$/ })).toHaveCount(1);
+  await admin.getByRole("link", { name: USERS.sam.name, exact: true }).first().click();
+  await expect(admin.getByRole("heading", { name: USERS.sam.name })).toBeVisible();
+  await expect(admin.getByText(PLAN)).toBeVisible();
+  await expect(admin.getByText(PROGRESS)).toBeVisible();
+  // Read-only: no box to type into somebody else's.
+  await expect(admin.getByLabel("What I mean to do — point 1")).toHaveCount(0);
 });
 
 test("a member sees nobody else's", async ({ browser }) => {
@@ -87,10 +99,10 @@ test("it downloads as a spreadsheet", async () => {
   ]);
   expect(download.suggestedFilename()).toMatch(/^work-updates-day-.*\.xlsx$/);
 
-  await admin.goto("/planner");
+  await admin.goto("/team?tab=updates");
   const [teamFile] = await Promise.all([
     admin.waitForEvent("download"),
-    admin.getByRole("link", { name: /Download the team/ }).click(),
+    admin.getByRole("link", { name: /Download everyone/ }).click(),
   ]);
   expect(teamFile.suggestedFilename()).toMatch(/^team-day-.*\.xlsx$/);
 });
