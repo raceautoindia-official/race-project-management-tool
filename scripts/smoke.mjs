@@ -64,7 +64,8 @@ async function signIn(empId) {
   await page.getByLabel("Employee ID").fill(empId);
   await page.getByLabel("PIN").fill(PIN);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL(/\/dashboard/, { timeout: 30000 });
+  // Members land on My work, admins on the Control centre.
+  await page.waitForURL(/\/(dashboard|admin)$/, { timeout: 30000 });
   return page;
 }
 
