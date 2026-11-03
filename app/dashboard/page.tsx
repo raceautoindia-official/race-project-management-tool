@@ -16,6 +16,9 @@ import { AttentionRow, ItemContext, MeetingList, PageTabs, itemHref, utcAgo, typ
 import { DateRange, DueLabel, HealthBadge, ProgressLegend, SubtaskStatusBadge, WorkProgress } from "@/components/work/kit";
 import ScheduleTrack from "@/components/work/ScheduleTrack";
 import DoActions from "@/components/work/DoActions";
+import WorkingOnPanel from "@/components/work/WorkingOnPanel";
+import { itemTimeKey, myItemTimes } from "@/lib/time-data";
+import { istDayBounds } from "@/lib/time-metrics";
 
 export const dynamic = "force-dynamic";
 
@@ -44,8 +47,12 @@ export default async function MyWorkPage({ searchParams }: { searchParams: Promi
   // An admin's home is the Control centre, not a personal to-do list.
   if (user.role === "admin") redirect("/admin");
   const view: View = (await searchParams).view === "tasks" ? "tasks" : "work";
-  const work = await getMyWork(user);
+  const [work, times] = await Promise.all([getMyWork(user), myItemTimes(user.id)]);
   const today = todayIST();
+  const timeOf = (i: WorkItem) => times[itemTimeKey(i.kind === "subtask" ? i.task_id : i.id, i.kind === "subtask" ? i.id : null)] ?? null;
+  const workingOn = work.todo.filter((i) => i.status === "in_progress").map((i) => ({ ...i, time: timeOf(i) }));
+  const notStarted = work.todo.filter((i) => i.status === "todo");
+  const todayStartUtc = istDayBounds(today).start.toISOString().slice(0, 19).replace("T", " ");
 
   const toReview = work.reviewSubtasks.length + work.reviewTasks.length;
   const overdue = work.todo.filter((i) => i.due_date && daysFrom(today, i.due_date) < 0);
@@ -79,6 +86,8 @@ export default async function MyWorkPage({ searchParams }: { searchParams: Promi
       ) : (
         <>
           <IntroStrip />
+
+          <WorkingOnPanel items={workingOn} notStarted={notStarted} todayStartUtc={todayStartUtc} />
 
           {/* At-a-glance counters */}
           <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">

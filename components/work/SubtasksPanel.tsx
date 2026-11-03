@@ -30,6 +30,7 @@ import {
 import { taskProgress } from "@/lib/work-engine";
 import { SPEC_LABELS, type SpecKey } from "@/lib/workflow";
 import { FileLinks, FilesField, filesOk, noteWithFiles, uploadFiles } from "./AttachFiles";
+import WorkButton from "./WorkButton";
 
 type Action = "start" | "submit" | "approve" | "request_changes" | "reopen" | "cancel" | "restore";
 
@@ -305,8 +306,8 @@ export default function SubtasksPanel({
                   </span>
                   <SubtaskStatusBadge status={s.status} />
                   <div className="flex flex-wrap gap-1.5">
-                    {s.status === "todo" && mayWork && (
-                      <Btn onClick={() => act(s, "start")} busy={busy === s.id} variant="secondary">▶ Start</Btn>
+                    {(s.status === "todo" || s.status === "in_progress") && mayWork && (
+                      <WorkButton subtaskId={s.id} status={s.status} title={s.title} compact={compact} onChanged={() => void refreshAll()} />
                     )}
                     {(s.status === "todo" || s.status === "in_progress") && mayWork && (
                       <Btn

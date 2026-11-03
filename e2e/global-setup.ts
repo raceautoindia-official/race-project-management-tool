@@ -69,6 +69,25 @@ export default async function globalSetup(config: FullConfig) {
       ]
     );
   }
+  // Everyone active is clocked in since an hour ago, so the work timer can
+  // run (it only starts for someone clocked in on Attendance).
+  await conn.query(`
+    CREATE TABLE attendance.attendance (
+      id BIGINT AUTO_INCREMENT PRIMARY KEY, employee_id INT NOT NULL, work_date DATE NOT NULL,
+      first_clock_in_utc DATETIME NULL, clock_in_utc DATETIME NULL, clock_out_utc DATETIME NULL,
+      total_minutes INT NULL, banked_minutes INT NOT NULL DEFAULT 0, session_count INT NOT NULL DEFAULT 1,
+      status ENUM('present','late','early_departure','absent','leave','holiday') NOT NULL DEFAULT 'present'
+    );`);
+  const clockIn = new Date(Date.now() - 3600_000);
+  const workDate = new Date(clockIn.getTime() + 330 * 60_000).toISOString().slice(0, 10);
+  const utc = clockIn.toISOString().slice(0, 19).replace("T", " ");
+  for (const u of Object.values(USERS).filter((x) => x.active)) {
+    await conn.query(
+      `INSERT INTO attendance.attendance (employee_id, work_date, first_clock_in_utc, clock_in_utc)
+       VALUES (?, ?, ?, ?)`,
+      [u.id, workDate, utc, utc]
+    );
+  }
   await conn.end();
 
   // Explicit values win over .env.local, so the app can't reach any other DB,

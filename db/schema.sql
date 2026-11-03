@@ -480,10 +480,39 @@ CREATE TABLE IF NOT EXISTS task_time_logs (
   user_id    INT NULL,
   minutes    INT NOT NULL,
   note       VARCHAR(255) NULL,
+  source     ENUM('manual','timer') NOT NULL DEFAULT 'manual', -- typed in, or from the work timer
+  session_id INT NULL,                                           -- work_sessions.id it came from
+  subtask_id INT NULL,
   logged_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_ttl_task FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
   CONSTRAINT fk_ttl_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
-  INDEX idx_ttl_task (task_id)
+  UNIQUE KEY uq_ttl_session (session_id),
+  INDEX idx_ttl_task (task_id),
+  INDEX idx_ttl_user_day (user_id, logged_at)
+);
+
+-- Work timer: one row per stretch of work on a task or subtask. Only someone
+-- clocked in on the Attendance app can start one; clocking out ends it at the
+-- clock-out time. open_user allows one running timer per person.
+-- (No foreign key on user_id: MySQL forbids cascading keys on the base columns
+-- of a stored generated column. People are retired, never deleted.)
+CREATE TABLE IF NOT EXISTS work_sessions (
+  id          INT AUTO_INCREMENT PRIMARY KEY,
+  user_id     INT NOT NULL,
+  task_id     INT NOT NULL,
+  subtask_id  INT NULL,
+  started_at  DATETIME NOT NULL,
+  ended_at    DATETIME NULL,
+  end_reason  ENUM('paused','switched','clocked_out','finished','retired') NULL,
+  minutes     INT NULL,
+  open_user   INT AS (IF(ended_at IS NULL, user_id, NULL)) STORED,
+  created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_ws_open_user (open_user),
+  CONSTRAINT fk_ws_task    FOREIGN KEY (task_id)    REFERENCES tasks(id)    ON DELETE CASCADE,
+  CONSTRAINT fk_ws_subtask FOREIGN KEY (subtask_id) REFERENCES subtasks(id) ON DELETE SET NULL,
+  INDEX idx_ws_user_start (user_id, started_at),
+  INDEX idx_ws_task (task_id),
+  INDEX idx_ws_subtask (subtask_id)
 );
 
 -- Admin credentials vault (website logins)  (Phase 5)

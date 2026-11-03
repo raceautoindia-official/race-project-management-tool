@@ -1,4 +1,5 @@
 import "server-only";
+import type { ClockRow } from "./attendance-clock";
 import mysql from "mysql2/promise";
 import bcrypt from "bcryptjs";
 import { query, DbRow } from "./db";
@@ -102,6 +103,29 @@ export async function fetchAttendanceDays(
     [...employeeIds, fromDate, toDate]
   );
   return (Array.isArray(rows) ? rows : []) as AttendanceDay[];
+}
+
+/**
+ * The clock rows (lib/attendance-clock.ts) for these employees from
+ * `fromDate` on — enough to tell whether someone is clocked in now and when
+ * they last clocked out. Read-only.
+ */
+export async function fetchClockRows(employeeIds: number[], fromDate: string): Promise<ClockRow[]> {
+  if (!employeeIds.length) return [];
+  const holes = employeeIds.map(() => "?").join(",");
+  const [rows] = await attendancePool.query(
+    `SELECT employee_id, work_date, first_clock_in_utc, clock_in_utc, clock_out_utc,
+            total_minutes, banked_minutes, session_count, status
+       FROM attendance
+      WHERE employee_id IN (${holes}) AND work_date >= ?
+      ORDER BY work_date`,
+    [...employeeIds, fromDate]
+  );
+  return ((Array.isArray(rows) ? rows : []) as ClockRow[]).map((r) => ({
+    ...r,
+    employee_id: Number(r.employee_id),
+    work_date: String(r.work_date).slice(0, 10),
+  }));
 }
 
 /** Who reports to whom, plus the details PM has no column for. */

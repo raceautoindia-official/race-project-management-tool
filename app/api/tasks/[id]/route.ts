@@ -11,6 +11,7 @@ import {
 } from "@/lib/rbac";
 import { updateTaskSchema } from "@/lib/validation";
 import { logActivity, notify } from "@/lib/activity";
+import { stopWorkOn } from "@/lib/work-sessions";
 import { fetchTasks, syncTaskLabels } from "@/lib/tasks";
 import { projectAlertRecipients } from "@/lib/recipients";
 import { sendEmail, emailLayout, appBaseUrl, escapeHtml } from "@/lib/mailer";
@@ -285,6 +286,10 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
     const statusChanged =
       data.status !== undefined && data.status !== task.status;
+    // Work stops once a task leaves To do / In progress.
+    if (statusChanged && data.status !== "todo" && data.status !== "in_progress") {
+      await stopWorkOn({ taskId });
+    }
     await logActivity({
       userId: user.id,
       action: statusChanged ? "task.status_changed" : "task.updated",

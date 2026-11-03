@@ -470,7 +470,7 @@ test("everyone sees the signed-off task as read-only", async () => {
     await expect(taskCard(page, CORRECTION)).toContainText("Signed off");
     const task = await openTask(page, CORRECTION);
     await expect(task.getByText("This task is signed off and read-only.")).toBeVisible();
-    for (const control of ["Edit", "Delete", "Sign off", "Log time", "+ Attach file"]) {
+    for (const control of ["Edit", "Delete", "Sign off", "Add time", "+ Attach file"]) {
       await expect(task.getByRole("button", { name: control, exact: true })).toHaveCount(0);
     }
     await expect(task.getByLabel("Task status")).toHaveCount(0);

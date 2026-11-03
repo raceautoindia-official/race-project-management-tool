@@ -6,6 +6,7 @@ import { useToast } from "@/components/ToastProvider";
 import { apiFetch } from "@/lib/api-client";
 import { reviewsChanged } from "./review-count";
 import { FilesField, filesOk, noteWithFiles, uploadFiles } from "./AttachFiles";
+import WorkButton from "./WorkButton";
 
 /**
  * What the current person can do with a task, in plain words, plus who acts
@@ -99,11 +100,10 @@ export default function TaskActions({
     }
   } else if (task.status === "todo" || task.status === "in_progress") {
     const mayWork = isOwner || isManager;
-    if (mayWork && task.status === "todo") {
+    // Work on a task with subtasks is timed on its subtasks.
+    if (mayWork && !hasSubtasks) {
       parts.push(
-        <button key="start" type="button" disabled={busy} onClick={() => run(() => patch("in_progress"), `Started “${task.title}”`)} className={`rounded-lg border border-slate-300 bg-white font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 ${btn}`}>
-          ▶ Start
-        </button>
+        <WorkButton key="work" taskId={task.id} status={task.status} title={task.title} size={size === "md" ? "md" : "sm"} onChanged={onChanged} />
       );
     }
     if (mayWork && (!hasSubtasks || allApproved)) {

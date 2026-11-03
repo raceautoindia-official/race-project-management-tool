@@ -122,6 +122,10 @@ export async function getCurrentUser(): Promise<User | null> {
       departmentSource:
         row.department_source === "pm" ? "pm" : "attendance",
     });
+    // …and stop their work timer if they clocked out on Attendance meanwhile.
+    import("./work-timer")
+      .then((m) => m.reconcileTimers({ userIds: [row.id] }))
+      .catch((err) => console.error("[work-timer] check failed:", (err as Error).message));
     if (fresh) {
       if (!fresh.is_active) return null;
       row.role = fresh.role;

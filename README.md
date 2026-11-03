@@ -374,6 +374,37 @@ tasks, comments and history stay. Reactivating them in Attendance brings them ba
   on Team → Retired.
 - Migration: `db/migrations/2026-10-31_retired_staff.sql`.
 
+### Work timer and hours (tied to the Attendance clock)
+
+**Start** on a task or subtask runs a work timer — and only works while you are clocked in
+on the Attendance app. Clocking out there stops it at your clock-out time; clocking back in
+does not restart it, you press **Resume** (the header chip offers the last thing you were on).
+
+- One timer per person: starting other work stops the first. Sending work for review,
+  finishing, cancelling or locking it stops its timers too.
+- Each stretch is logged against the task (and subtask) as timer time, so task totals,
+  the daily summary and the reports include it. Time can still be added by hand for work
+  done away from PM; timer time can only be removed by an admin.
+- The **header chip** shows what is running and for how long, or *Not clocked in* /
+  *No timer running*, with today's clocked-in, on-task and no-timer time.
+- **Work hours → Day**: who is working on what right now, and per person clocked in, on
+  tasks, no timer, share of time on tasks, first task after clock-in, stretches, switches,
+  longest stretch, a timeline, and the tasks and subtasks the time went to. **Week**: hours
+  at work against hours logged. Everyone sees themselves, managers their direct reports
+  in Attendance, admins everyone.
+- A task's **Time** panel splits timer and hand-typed time, by person and by subtask,
+  against the estimate, and shows who is on it now.
+- If Attendance can't be reached, timers can't start (PM can't confirm a clock-in) and
+  running ones keep going until it can check again.
+- Stopping on clock-out happens on the next page load (once a minute), the chip's poll,
+  or the cron — the 15-minute job above, or this one every 5 minutes for quicker notices:
+
+  ```
+  */5 * * * * curl -fsS -X POST -H "x-cron-secret: $CRON_SECRET" https://projectmanager.raceinnovations.in/api/cron/work-timers
+  ```
+- Reads `attendance` (clock rows) read-only, like the rest of the Attendance access.
+- Migration: `db/migrations/2026-10-31_work_timer.sql`.
+
 ### Personal documents (Profile → My documents)
 
 What someone uploads about themselves: ID proof, certificates, a signed contract.

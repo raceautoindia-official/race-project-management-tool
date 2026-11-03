@@ -43,8 +43,10 @@ export async function GET(_req: NextRequest, { params }: Params) {
     await assertProjectAccess(user, task.project_id);
 
     const logs = await query<DbRow[]>(
-      `SELECT l.id, l.minutes, l.note, l.logged_at, l.user_id, u.name AS user_name
+      `SELECT l.id, l.minutes, l.note, l.logged_at, l.user_id, u.name AS user_name,
+              l.source, l.subtask_id, s.title AS subtask_title
          FROM task_time_logs l LEFT JOIN users u ON u.id = l.user_id
+         LEFT JOIN subtasks s ON s.id = l.subtask_id
         WHERE l.task_id = ?
         ORDER BY l.logged_at DESC, l.id DESC`,
       [taskId]
@@ -135,12 +137,17 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     if (!Number.isInteger(logId)) throw new ApiError(400, "Invalid logId");
 
     const [entry] = await query<DbRow[]>(
-      `SELECT user_id FROM task_time_logs WHERE id = ? AND task_id = ? LIMIT 1`,
+      `SELECT user_id, source FROM task_time_logs WHERE id = ? AND task_id = ? LIMIT 1`,
       [logId, taskId]
     );
     if (!entry) throw new ApiError(404, "Entry not found");
     if (!canManageProject(user, projectRole) && entry.user_id !== user.id) {
       throw forbidden("You can only remove your own time entries");
+    }
+    // Timer time was checked against the Attendance clock as it ran; taking
+    // it back is an admin's correction, not an edit.
+    if (entry.source === "timer" && user.role !== "admin") {
+      throw forbidden("Time from the work timer can only be removed by an admin");
     }
 
     await query(`DELETE FROM task_time_logs WHERE id = ?`, [logId]);
