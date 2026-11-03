@@ -2,6 +2,7 @@ import { query, DbResult } from "./db";
 import { conflict, badRequest } from "./http";
 import { assertTaskWritable } from "./rbac";
 import { logActivity, notify } from "./activity";
+import { stopWorkOn } from "./work-sessions";
 import { subtaskSubmitOutcome, type SubtaskStatus } from "./work-engine";
 import { assertCan, assertMayReopenTask, loadSubtaskContext, subtaskLink, syncTaskAfterSubtaskChange } from "./subtasks";
 import type { User } from "./types";
@@ -116,6 +117,8 @@ export async function applySubtaskAction(
     [to, to === "done", ...values, subtaskId, from]
   )) as unknown as DbResult;
   if (res.affectedRows === 0) throw conflict("Someone else changed this subtask first — reload and try again");
+  // Work stops once a subtask leaves To do / In progress.
+  if (to !== "todo" && to !== "in_progress") await stopWorkOn({ subtaskId });
 
   await logActivity({
     userId: user.id,

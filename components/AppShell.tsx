@@ -10,6 +10,7 @@ import Avatar from "./Avatar";
 import { RoleBadge } from "./Badge";
 import { useToast } from "./ToastProvider";
 import { useReviewCount } from "./work/review-count";
+import WorkTimerChip from "./work/WorkTimerChip";
 import type { Role } from "@/lib/types";
 
 interface NavUser {
@@ -251,6 +252,7 @@ export default function AppShell({
           <div className="flex-1">
             <GlobalSearch />
           </div>
+          <WorkTimerChip />
           <RoleBadge role={user.role} />
           <NotificationsBell />
           <button

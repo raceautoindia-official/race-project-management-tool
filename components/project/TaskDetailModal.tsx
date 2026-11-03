@@ -24,6 +24,7 @@ import {
 import { SpecView } from "./WorkSpec";
 import SubtasksPanel from "@/components/work/SubtasksPanel";
 import TaskActions from "@/components/work/TaskActions";
+import TaskTimeBreakdown from "@/components/work/TaskTimeBreakdown";
 
 interface TimeLog {
   id: number;
@@ -32,6 +33,9 @@ interface TimeLog {
   logged_at: string;
   user_id: number | null;
   user_name: string | null;
+  /** 'timer' = from the work timer; typed-in entries are 'manual'. */
+  source?: "manual" | "timer";
+  subtask_title?: string | null;
 }
 import {
   TASK_STATUS_LABELS,
@@ -868,9 +872,16 @@ export default function TaskDetailModal({
                 <ProgressBar value={pct} tone={over ? "green" : "indigo"} />
               </div>
             )}
+            <TaskTimeBreakdown taskId={currentTask.id} refreshKey={timeLogs.length} />
 
             {canEditExecution && (
-              <div className="mt-3 flex flex-wrap items-end gap-2">
+              <p className="mt-3 text-xs text-slate-500">
+                Time is counted by the work timer while you are clocked in — press Start on the task
+                or a subtask. Add time by hand only for work done away from it.
+              </p>
+            )}
+            {canEditExecution && (
+              <div className="mt-2 flex flex-wrap items-end gap-2">
                 <div>
                   <label htmlFor="log-hours" className="block text-xs text-slate-600">
                     Hours
@@ -911,7 +922,7 @@ export default function TaskDetailModal({
                   disabled={savingLog || (!logH && !logM)}
                   className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-40"
                 >
-                  {savingLog ? "Adding…" : "Log time"}
+                  {savingLog ? "Adding…" : "Add time"}
                 </button>
               </div>
             )}
@@ -924,11 +935,20 @@ export default function TaskDetailModal({
                       {formatMinutes(l.minutes)}
                     </span>
                     <span className="text-slate-500">{l.user_name ?? "—"}</span>
-                    {l.note && <span className="text-slate-600">· {l.note}</span>}
+                    {l.source === "timer" ? (
+                      <span className="text-emerald-700">
+                        · ⏱ timer{l.subtask_title ? ` · ${l.subtask_title}` : ""}
+                      </span>
+                    ) : (
+                      l.note && <span className="text-slate-600">· {l.note}</span>
+                    )}
                     <span className="ml-auto text-slate-500">
                       {formatIst(l.logged_at)}
                     </span>
-                    {!readOnly && (canManage || l.user_id === currentUser.id) && (
+                    {!readOnly &&
+                      (l.source === "timer"
+                        ? currentUser.role === "admin"
+                        : canManage || l.user_id === currentUser.id) && (
                       <button
                         onClick={() => deleteLog(l.id)}
                         className="rounded px-1 text-slate-500 hover:bg-red-50 hover:text-red-600"
