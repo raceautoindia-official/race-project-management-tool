@@ -12,6 +12,7 @@ import {
 import { updateTaskSchema } from "@/lib/validation";
 import { logActivity, notify } from "@/lib/activity";
 import { stopWorkOn } from "@/lib/work-sessions";
+import { finishRoutineCopy } from "@/lib/recurring";
 import { fetchTasks, syncTaskLabels } from "@/lib/tasks";
 import { projectAlertRecipients } from "@/lib/recipients";
 import { sendEmail, emailLayout, appBaseUrl, escapeHtml } from "@/lib/mailer";
@@ -222,8 +223,11 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       }
     }
 
+    // A copy of a recurring task that needs no review is finished, not reviewed.
+    const routine = submittingReview && Boolean(task.auto_approve) && (await finishRoutineCopy(taskId, user));
+
     // Submit for review → notify the project lead(s) + admins (in-app + email).
-    if (submittingReview) {
+    if (submittingReview && !routine) {
       const recipients = await projectAlertRecipients(task.project_id);
       const link = `/projects/${task.project_id}`;
       for (const r of recipients.filter((r) => r.id !== user.id)) {

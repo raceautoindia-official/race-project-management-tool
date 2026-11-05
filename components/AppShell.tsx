@@ -39,6 +39,7 @@ const MEMBER_NAV: { label: string; links: NavItem[] }[] = [
       { href: "/dashboard", label: "My Work", icon: "▦" },
       { href: "/reviews", label: "Reviews", icon: "✓" },
       { href: "/projects", label: "Projects", icon: "▢" },
+      { href: "/recurring", label: "Recurring", icon: "↻" },
       { href: "/planner", label: "Work Updates", icon: "🗓" },
       { href: "/calendar", label: "Calendar", icon: "▤" },
     ],
@@ -84,6 +85,7 @@ const ADMIN_NAV: { label: string; links: NavItem[] }[] = [
     links: [
       { href: "/projects", label: "Projects", icon: "▢" },
       { href: "/reviews", label: "Approvals", icon: "✓" },
+      { href: "/recurring", label: "Recurring", icon: "↻" },
       { href: "/team", label: "Team", icon: "◉" },
       { href: "/work-hours", label: "Work hours", icon: "◵" },
     ],

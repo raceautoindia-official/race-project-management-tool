@@ -19,6 +19,8 @@ import DoActions from "@/components/work/DoActions";
 import WorkingOnPanel from "@/components/work/WorkingOnPanel";
 import { itemTimeKey, myItemTimes } from "@/lib/time-data";
 import { istDayBounds } from "@/lib/time-metrics";
+import { upcomingForMe } from "@/lib/recurring";
+import OngoingSummary from "@/components/work/OngoingSummary";
 
 export const dynamic = "force-dynamic";
 
@@ -344,15 +346,23 @@ function OwnedProjects({ work }: { work: Awaited<ReturnType<typeof getMyWork>> }
           <Link key={p.id} href={`/projects/${p.id}`} className="rounded-xl border border-slate-200 border-t-4 border-t-violet-400 p-3 transition hover:border-violet-300 hover:shadow-sm">
             <div className="flex items-start justify-between gap-2">
               <span className="min-w-0 text-sm font-medium text-slate-900">
-                {p.name} <span className="figure ml-1 font-bold text-slate-900">{p.percent}%</span>
+                {p.name} {!p.ongoing && <span className="figure ml-1 font-bold text-slate-900">{p.percent}%</span>}
               </span>
-              <HealthBadge approved={p.percent} start={p.start_date} due={p.due_date} />
+              <HealthBadge approved={p.percent} start={p.start_date} due={p.due_date} ongoing={p.ongoing} />
             </div>
-            <ScheduleTrack variant="compact" approved={p.percent} start={p.start_date} due={p.due_date} className="mt-3" />
+            {p.ongoing ? (
+              <OngoingSummary stats={p.ongoing} className="mt-3" />
+            ) : (
+              <ScheduleTrack variant="compact" approved={p.percent} start={p.start_date} due={p.due_date} className="mt-3" />
+            )}
             <p className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
-              <span>
-                Due <DueLabel date={p.due_date} />
-              </span>
+              {p.ongoing ? (
+                <span>↻ Ongoing — recurring work</span>
+              ) : (
+                <span>
+                  Due <DueLabel date={p.due_date} />
+                </span>
+              )}
               <span>· {p.task_count} tasks</span>
               {p.ready_to_close && <span className="font-medium text-green-700">· Ready to close</span>}
             </p>
@@ -363,10 +373,48 @@ function OwnedProjects({ work }: { work: Awaited<ReturnType<typeof getMyWork>> }
   );
 }
 
-async function RightColumn({ user }: { user: { id: number; role: string } }) {
-  const [meetings, activity] = await Promise.all([getUpcomingMeetings(user.id), getRecentActivityFor(user)]);
+async function RightColumn({ user }: { user: Awaited<ReturnType<typeof requirePageUser>> }) {
+  const [meetings, activity, recurring] = await Promise.all([
+    getUpcomingMeetings(user.id),
+    getRecentActivityFor(user),
+    upcomingForMe(user),
+  ]);
+  const today = todayIST();
   return (
     <div className="min-w-0 space-y-6">
+      <SectionCard
+        title="↻ Recurring"
+        action={
+          <Link href="/recurring" className="text-sm font-medium text-indigo-600 hover:underline">
+            All
+          </Link>
+        }
+      >
+        {recurring.length === 0 ? (
+          <p className="text-sm text-slate-500">Nothing repeats for you yet. Weekly reports, daily checks and monthly filings can come round on their own.</p>
+        ) : (
+          <ul className="space-y-2.5">
+            {recurring.map((r) => (
+              <li key={r.id} className="text-sm">
+                <Link href={`/recurring?rule=${r.id}`} className="font-medium text-slate-800 hover:text-indigo-700">
+                  {r.title}
+                </Link>
+                <span className="block text-xs text-slate-500">
+                  {r.schedule} · next{" "}
+                  <span className="font-medium text-slate-700">
+                    {r.next === today
+                      ? "today"
+                      : new Date(`${r.next}T00:00:00Z`).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" })}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <Link href="/recurring?new=1" className="mt-3 inline-block text-sm font-medium text-indigo-600 hover:underline">
+          + Set up a recurring task
+        </Link>
+      </SectionCard>
       <SectionCard
         title="Upcoming meetings"
         action={

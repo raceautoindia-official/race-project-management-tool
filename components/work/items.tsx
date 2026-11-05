@@ -38,6 +38,11 @@ export function ItemContext({ item }: { item: WorkItem }) {
           </Link>
         </>
       )}
+      {item.recurring && (
+        <span className="ml-1 rounded bg-violet-50 px-1.5 py-px text-[11px] font-medium text-violet-700" title="A copy of a recurring task">
+          ↻ Recurring
+        </span>
+      )}
     </span>
   );
 }
@@ -47,6 +52,7 @@ export const ATTENTION_LABELS: Record<Attention["kind"], { icon: string; label: 
   project_request: { icon: "▢", label: "New project request", action: "Review request" },
   task_request: { icon: "＋", label: "Task request", action: "Review request" },
   blocker: { icon: "⛔", label: "Blocker request", action: "Open task" },
+  recurring_request: { icon: "↻", label: "Recurring task to approve", action: "Review" },
 };
 
 /** One item from the existing workflows (sign-offs, requests, blockers). */

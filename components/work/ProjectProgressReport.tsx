@@ -7,6 +7,7 @@ import ScheduleTrack from "./ScheduleTrack";
 import { scheduleHealth } from "@/lib/work-engine";
 import { todayIST } from "@/lib/work-dates";
 import type { ProjectProgressRow } from "@/lib/work-views";
+import OngoingSummary, { OngoingBadge } from "./OngoingSummary";
 
 /**
  * Reports › Progress: one bar per project showing approved (weighted)
@@ -33,9 +34,11 @@ export default function ProjectProgressReport({ rows }: { rows: ProjectProgressR
     ? departments.map((d) => [d, shown.filter((r) => (r.department ?? NO_DEPT) === d)] as [string, ProjectProgressRow[]]).filter(([, l]) => l.length > 0)
     : [["", shown]];
 
-  // Weighted by task count, like the preview's "Approved progress".
-  const weight = shown.reduce((n, r) => n + Math.max(1, r.task_count), 0);
-  const overall = weight ? Math.round(shown.reduce((n, r) => n + r.percent * Math.max(1, r.task_count), 0) / weight) : null;
+  // Weighted by task count, like the preview's "Approved progress". Ongoing
+  // projects (only recurring work) never finish, so they don't count here.
+  const finite = shown.filter((r) => !r.ongoing);
+  const weight = finite.reduce((n, r) => n + Math.max(1, r.task_count), 0);
+  const overall = weight ? Math.round(finite.reduce((n, r) => n + r.percent * Math.max(1, r.task_count), 0) / weight) : null;
 
   if (rows.length === 0) {
     return (
@@ -125,6 +128,26 @@ export default function ProjectProgressReport({ rows }: { rows: ProjectProgressR
 }
 
 function ProgressRow({ row: r, today }: { row: ProjectProgressRow; today: string }) {
+  if (r.ongoing) {
+    return (
+      <li>
+        <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+          <Link href={`/projects/${r.id}`} className="min-w-0 truncate text-sm font-medium text-slate-800 hover:text-indigo-700 hover:underline">
+            {r.name}
+          </Link>
+          <span className="flex gap-1.5">
+            <OngoingBadge />
+            <HealthBadge approved={0} start={null} due={null} ongoing={r.ongoing} />
+          </span>
+        </div>
+        <OngoingSummary stats={r.ongoing} />
+        <p className="mt-1 flex flex-wrap gap-x-2 text-xs text-slate-500">
+          {r.overdue_count > 0 && <span className="text-red-600">{r.overdue_count} cop{r.overdue_count === 1 ? "y" : "ies"} overdue</span>}
+          {r.owner_name && <span>Owner {r.owner_name}</span>}
+        </p>
+      </li>
+    );
+  }
   const { expected } = scheduleHealth(r.percent, r.start_date?.slice(0, 10) ?? null, r.due_date?.slice(0, 10) ?? null, today);
   const behind = expected !== null ? Math.round(expected - r.percent) : 0;
   const summary = `${r.percent}% approved${expected !== null ? `, expected ${Math.round(expected)}% by today` : ""}`;

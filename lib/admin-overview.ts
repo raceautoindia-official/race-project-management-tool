@@ -3,6 +3,7 @@ import { query, DbRow } from "./db";
 import { getProjectProgressRows, type ProjectProgressRow } from "./work-views";
 import { forecast, scheduleHealth, type Health } from "./work-engine";
 import type { User } from "./types";
+import { ongoingHealth } from "./progress";
 
 /**
  * lib/admin-overview.ts — the Control centre's figures: how the
@@ -96,6 +97,8 @@ export async function getAdminOverview(user: User, today: string): Promise<Admin
     .map((r) => {
       const start = r.start_date ? String(r.start_date).slice(0, 10) : null;
       const due = r.due_date ? String(r.due_date).slice(0, 10) : null;
+      // Only recurring work: healthy when its copies are done on time.
+      if (r.ongoing) return { ...r, health: ongoingHealth(r.ongoing) as Health, expected: null, eta: null, daysLate: null };
       const { health, expected } = scheduleHealth(r.percent, start, due, today);
       const f = forecast(r.percent, start, due, today);
       return { ...r, health, expected, eta: f.eta, daysLate: f.daysLate };

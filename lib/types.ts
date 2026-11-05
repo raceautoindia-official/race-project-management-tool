@@ -76,6 +76,10 @@ export interface Project {
   /** Checklist items across the project, and how many are ticked. */
   progress_units?: number;
   progress_done?: number;
+  /** Only recurring work (lib/progress.ts PROJECT_ONGOING_FIELDS_SQL). */
+  is_ongoing?: number | boolean;
+  copies_done?: number;
+  copies_on_time?: number;
   /** YYYY-MM-DD. Either can be unset. */
   start_date?: string | null;
   due_date?: string | null;
@@ -148,6 +152,11 @@ export interface Task extends SpecColumns {
   completed_at?: string | null;
   is_additional?: boolean;
   parent_task_id?: number | null;
+  /** Set on a copy of a recurring task (lib/recurring.ts). */
+  recurring_task_id?: number | null;
+  occurrence_date?: string | null;
+  /** A recurring copy that needs no review. */
+  auto_approve?: number | boolean;
   priority: TaskPriority;
   estimated_hours: number | null;
   spent_hours: number;

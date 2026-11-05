@@ -2,25 +2,9 @@ import { NextRequest } from "next/server";
 import { query, DbRow, DbResult } from "@/lib/db";
 import { json, errorResponse } from "@/lib/http";
 import { assertCron } from "@/lib/cron";
-import { notify } from "@/lib/activity";
-import { makeRoomForTask } from "@/lib/subtasks";
+import { runRecurringTasks } from "@/lib/recurring";
 
 export const dynamic = "force-dynamic";
-
-/** Advance a "YYYY-MM-DD" date to the next occurrence strictly after today (UTC). */
-function nextDate(dateStr: string, recurrence: string): string {
-  const d = new Date(dateStr + "T00:00:00Z");
-  const todayUtc = new Date(new Date().toISOString().slice(0, 10) + "T00:00:00Z");
-  const step = () => {
-    if (recurrence === "daily") d.setUTCDate(d.getUTCDate() + 1);
-    else if (recurrence === "weekly") d.setUTCDate(d.getUTCDate() + 7);
-    else if (recurrence === "monthly") d.setUTCMonth(d.getUTCMonth() + 1);
-  };
-  do {
-    step();
-  } while (d.getTime() <= todayUtc.getTime());
-  return d.toISOString().slice(0, 10);
-}
 
 /** Advance a UTC datetime "YYYY-MM-DD HH:MM:SS" to the next future occurrence. */
 function nextDateTime(utc: string, recurrence: string): string {
@@ -40,69 +24,19 @@ function nextDateTime(utc: string, recurrence: string): string {
 /**
  * POST /api/cron/recurring  (header: x-cron-secret)
  *
- * Materializes recurring work: (1) due recurring-task definitions become real
- * tasks and advance to their next run; (2) recurring meetings whose latest
+ * Materializes recurring work: (1) due recurring tasks get their copies
+ * (lib/recurring.ts runRecurringTasks); (2) recurring meetings whose latest
  * occurrence has passed get their next occurrence created (attendees copied).
  * Run daily (tasks are date-granular; meetings advance on the same pass).
  */
 export async function POST(req: NextRequest) {
   try {
     assertCron(req);
-    let tasksCreated = 0;
     let meetingsCreated = 0;
 
-    // ── recurring tasks ─────────────────────────────────────────────────────
-    const dueRt = await query<DbRow[]>(
-      `SELECT rt.id, rt.project_id, rt.title, rt.description, rt.priority,
-              rt.assignee_id, rt.estimated_hours, rt.recurrence, rt.next_run,
-              rt.created_by, p.owner_id
-         FROM recurring_tasks rt
-         JOIN projects p ON p.id = rt.project_id
-        WHERE rt.is_active = 1 AND rt.next_run <= UTC_DATE()
-          -- read-only projects (pending/rejected requests, completed) get no new work
-          AND p.approval_status = 'approved' AND p.status <> 'completed'`
-    );
-    for (const rt of dueRt) {
-      const runDate = String(rt.next_run).slice(0, 10);
-      await makeRoomForTask(rt.project_id);
-      const result = (await query<DbResult>(
-        `INSERT INTO tasks
-           (project_id, title, description, status, priority, estimated_hours,
-            assignee_id, created_by, due_date, start_date,
-            requested_by, request_approved_by, request_approved_at)
-         VALUES (?, ?, ?, 'todo', ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP())`,
-        [
-          rt.project_id,
-          rt.title,
-          rt.description ?? null,
-          rt.priority,
-          rt.estimated_hours ?? null,
-          rt.assignee_id ?? null,
-          rt.created_by ?? null,
-          runDate,
-          runDate,
-          // Whoever set up the recurring definition requested + approved it.
-          // No creator left → the project owner is on record instead.
-          rt.created_by ?? rt.owner_id ?? null,
-          rt.created_by ?? rt.owner_id ?? null,
-        ]
-      )) as unknown as DbResult;
-
-      await query(`UPDATE recurring_tasks SET next_run = ? WHERE id = ?`, [
-        nextDate(runDate, rt.recurrence),
-        rt.id,
-      ]);
-
-      if (rt.assignee_id) {
-        await notify(
-          rt.assignee_id,
-          "task_assigned",
-          `Recurring task created: "${rt.title}"`,
-          `/projects/${rt.project_id}?task=${result.insertId}`
-        );
-      }
-      tasksCreated++;
-    }
+    // ── recurring tasks (lib/recurring.ts; also run every 15 minutes by work-updates) ─
+    const tasks = await runRecurringTasks();
+    const tasksCreated = tasks.created;
 
     // ── recurring meetings (advance the latest occurrence once it has passed) ─
     const heads = await query<DbRow[]>(
@@ -144,7 +78,7 @@ export async function POST(req: NextRequest) {
       meetingsCreated++;
     }
 
-    return json({ ok: true, tasksCreated, meetingsCreated });
+    return json({ ok: true, tasksCreated, tasksSkipped: tasks.skipped, meetingsCreated });
   } catch (err) {
     return errorResponse(err);
   }

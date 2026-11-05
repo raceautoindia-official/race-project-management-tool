@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { ProjectStatusBadge, RequestStatusBadge, RoleBadge } from "./Badge";
 import { DepartmentBadge } from "./DepartmentField";
-import { projectPercent } from "@/lib/progress";
+import { ongoingOf, projectPercent } from "@/lib/progress";
+import OngoingSummary, { OngoingBadge } from "@/components/work/OngoingSummary";
 import { HealthBadge } from "@/components/work/kit";
 import ScheduleTrack from "@/components/work/ScheduleTrack";
 import type { Project } from "@/lib/types";
@@ -15,6 +16,7 @@ export default function ProjectCard({ project }: { project: Project }) {
     units: project.progress_units ?? 0,
     credited: project.progress_done ?? 0,
   });
+  const ongoing = ongoingOf(project);
 
   return (
     <Link
@@ -26,6 +28,7 @@ export default function ProjectCard({ project }: { project: Project }) {
       <div className="flex items-start justify-between gap-2">
         <h3 className="font-semibold text-slate-900">{project.name}</h3>
         <div className="flex shrink-0 flex-wrap justify-end gap-1">
+          {ongoing && <OngoingBadge />}
           <DepartmentBadge name={project.department} />
           {project.approval_status && project.approval_status !== "approved" ? (
             <RequestStatusBadge status={project.approval_status} />
@@ -38,6 +41,11 @@ export default function ProjectCard({ project }: { project: Project }) {
         {project.description || "No description"}
       </p>
 
+      {ongoing ? (
+        // Only recurring work: it doesn't finish, so it's judged on copies done on time.
+        <OngoingSummary stats={ongoing} className="mt-3" />
+      ) : (
+        <>
       <div className="mt-3 flex items-baseline justify-between gap-2 text-xs text-slate-600">
         <span>
           <span className="figure text-lg font-bold text-slate-900">{pct}%</span> complete
@@ -54,13 +62,15 @@ export default function ProjectCard({ project }: { project: Project }) {
         due={project.due_date}
         className="mt-2"
       />
+        </>
+      )}
 
       {/* The dates, and whether approved progress keeps up with them. */}
       <div className="mt-3 flex items-center justify-between gap-2">
         <span className="figure text-xs text-slate-600">
-          📅 {dayMonth(project.start_date)} → {dayMonth(project.due_date)}
+          {ongoing ? `📅 since ${dayMonth(project.start_date)}` : <>📅 {dayMonth(project.start_date)} → {dayMonth(project.due_date)}</>}
         </span>
-        <HealthBadge approved={pct} start={project.start_date} due={project.due_date} />
+        <HealthBadge approved={pct} start={project.start_date} due={project.due_date} ongoing={ongoing} />
       </div>
 
       <div className="mt-3 flex items-center justify-between text-xs text-slate-600">

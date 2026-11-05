@@ -4,6 +4,7 @@ import { assertCron } from "@/lib/cron";
 import { runWorkUpdateJobs } from "@/lib/work-updates";
 import { syncStaffWithAttendance } from "@/lib/staff-sync";
 import { reconcileTimers } from "@/lib/work-timer";
+import { runRecurringTasks } from "@/lib/recurring";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,9 @@ export const dynamic = "force-dynamic";
  * First, every time, it checks everyone against Attendance (lib/staff-sync),
  * so people who have left are retired before anyone is reminded — and stops
  * the work timer of anyone who clocked out (/api/cron/work-timers does the
- * same every five minutes, where that cron line is set up).
+ * same every five minutes, where that cron line is set up). Then it makes
+ * any recurring-task copies due today (lib/recurring.ts), so recurring work
+ * needs no cron line of its own.
  *
  * crontab, every 15 minutes (minute field "0,15,30,45"):
  *   0,15,30,45 * * * * curl -fsS -X POST -H "x-cron-secret: $CRON_SECRET" \
@@ -30,9 +33,11 @@ export async function POST(req: NextRequest) {
     assertCron(req);
     const staff = await syncStaffWithAttendance();
     const timers = await reconcileTimers();
+    const recurring = await runRecurringTasks();
     return json({
       staff: { retired: staff.retired.length, returned: staff.returned.length, held: staff.held },
       timers: { stopped: timers.stopped.length },
+      recurring: { created: recurring.created, skipped: recurring.skipped, paused: recurring.paused },
       ran: await runWorkUpdateJobs(),
     });
   } catch (err) {

@@ -425,14 +425,18 @@ try {
     }
   });
 
-  await step("6d a recurring task definition can be added", async () => {
-    await admin.getByRole("button", { name: "Recurring" }).click();
-    const d = admin.getByRole("dialog", { name: "Recurring tasks" });
-    await d.getByPlaceholder("Title").fill(`Flow weekly check ${STAMP}`);
-    await d.locator('input[type="date"]').first().fill("2026-12-28");
-    await d.getByRole("button", { name: "Add recurring task" }).click();
-    await d.getByText(`Flow weekly check ${STAMP}`).waitFor({ timeout: 20000 });
-    await d.getByRole("button", { name: "Close" }).click();
+  await step("6d a recurring task can be set up from the project", async () => {
+    await admin.getByRole("link", { name: "↻ Recurring" }).click();
+    await admin.getByRole("button", { name: "+ New recurring task" }).click();
+    const d = admin.getByRole("dialog", { name: "New recurring task" });
+    await d.getByLabel("What needs doing").fill(`Flow weekly check ${STAMP}`);
+    await admin.waitForFunction(() => document.querySelectorAll("#rt-project option").length > 2, null, { timeout: 20000 });
+    await d.getByLabel("Where it goes").selectOption(String(p2Id));
+    await d.getByLabel("Owner of each copy").selectOption({ index: 1 });
+    await d.getByLabel(/^Yes, review each copy/).check();
+    await d.getByRole("button", { name: "Start it" }).click();
+    await admin.getByText(`Flow weekly check ${STAMP}`).first().waitFor({ timeout: 20000 });
+    await admin.goto(`${BASE}/projects/${p2Id}`);
   });
 
   await step("6e the project can be saved as a template and reused", async () => {

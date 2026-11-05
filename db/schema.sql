@@ -116,6 +116,9 @@ CREATE TABLE IF NOT EXISTS tasks (
   due_alert_sent  TINYINT(1) NOT NULL DEFAULT 0,
   is_additional   TINYINT(1) NOT NULL DEFAULT 0,   -- extra work raised post-completion
   parent_task_id  INT NULL,                        -- the task this follows up
+  recurring_task_id INT NULL,                      -- the recurring rule this is a copy of
+  occurrence_date   DATE NULL,                     -- the date of that copy
+  auto_approve      TINYINT(1) NOT NULL DEFAULT 0, -- a copy that needs no review
   priority    ENUM('low','medium','high','urgent') NOT NULL DEFAULT 'medium',
   weight      DECIMAL(6,3) NOT NULL DEFAULT 0,     -- share of the project's progress (%)
   weight_mode ENUM('auto','manual') NOT NULL DEFAULT 'auto',
@@ -140,7 +143,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   INDEX idx_tasks_assignee (assignee_id),
   INDEX idx_tasks_status (status),
   INDEX idx_tasks_signed_off (signed_off_at),
-  INDEX idx_tasks_request (request_id)
+  INDEX idx_tasks_request (request_id),
+  UNIQUE KEY uq_tasks_occurrence (recurring_task_id, occurrence_date)
 );
 
 -- Tasks raised by project members, awaiting a lead's approval  (Phase 4)
@@ -329,21 +333,63 @@ CREATE TABLE IF NOT EXISTS task_dependencies (
 -- Recurring task definitions + project templates  (Phase 3 · Wave 12)
 CREATE TABLE IF NOT EXISTS recurring_tasks (
   id              INT AUTO_INCREMENT PRIMARY KEY,
-  project_id      INT NOT NULL,
+  project_id      INT NULL,                       -- NULL while it asks for a project of its own
+  new_project_name VARCHAR(200) NULL,
   title           VARCHAR(200) NOT NULL,
   description     TEXT NULL,
   priority        ENUM('low','medium','high','urgent') NOT NULL DEFAULT 'medium',
-  assignee_id     INT NULL,
+  assignee_id     INT NULL,                       -- owns each copy
   estimated_hours DECIMAL(6,2) NULL,
   recurrence      ENUM('daily','weekly','monthly') NOT NULL DEFAULT 'weekly',
-  next_run        DATE NOT NULL,
+  interval_n      TINYINT UNSIGNED NOT NULL DEFAULT 1,  -- every N weeks / months
+  weekdays        VARCHAR(27) NULL,               -- weekly: 'Mon,Thu'
+  month_day       TINYINT NULL,                   -- monthly: 1–31, 0 = the last day
+  start_date      DATE NULL,
+  end_date        DATE NULL,
+  due_after_days  TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  when_open       ENUM('skip','create') NOT NULL DEFAULT 'skip', -- last copy still open
+  review_mode     ENUM('review','none') NULL,     -- set by the admin who approves it
+  approval_status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'approved',
+  decided_by      INT NULL,
+  decided_at      DATETIME NULL,
+  decision_note   VARCHAR(500) NULL,
+  next_run        DATE NOT NULL,                  -- the next date a copy is planned for
+  last_run        DATE NULL,                      -- dates up to here have been handled
   is_active       TINYINT(1) NOT NULL DEFAULT 1,
+  paused_reason   VARCHAR(200) NULL,
   created_by      INT NULL,
   created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT fk_rt_project  FOREIGN KEY (project_id)  REFERENCES projects(id) ON DELETE CASCADE,
   CONSTRAINT fk_rt_assignee FOREIGN KEY (assignee_id) REFERENCES users(id)    ON DELETE SET NULL,
   CONSTRAINT fk_rt_creator  FOREIGN KEY (created_by)  REFERENCES users(id)    ON DELETE SET NULL,
-  INDEX idx_rt_next (is_active, next_run)
+  INDEX idx_rt_next (is_active, next_run),
+  INDEX idx_rt_approval (approval_status)
+);
+
+-- The subtasks every copy of a recurring rule starts with.
+CREATE TABLE IF NOT EXISTS recurring_subtasks (
+  id                INT AUTO_INCREMENT PRIMARY KEY,
+  recurring_task_id INT NOT NULL,
+  title             VARCHAR(200) NOT NULL,
+  assignee_id       INT NULL,
+  position          INT NOT NULL DEFAULT 0,
+  CONSTRAINT fk_rs_rule     FOREIGN KEY (recurring_task_id) REFERENCES recurring_tasks(id) ON DELETE CASCADE,
+  CONSTRAINT fk_rs_assignee FOREIGN KEY (assignee_id) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_rs_rule (recurring_task_id, position)
+);
+
+-- Dates a rule made no copy for, and why.
+CREATE TABLE IF NOT EXISTS recurring_skips (
+  id                INT AUTO_INCREMENT PRIMARY KEY,
+  recurring_task_id INT NOT NULL,
+  occurrence_date   DATE NOT NULL,
+  reason            ENUM('holiday','day_off','still_open','missed','skipped') NOT NULL,
+  moved_to          DATE NULL,
+  created_by        INT NULL,
+  created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_rsk_rule FOREIGN KEY (recurring_task_id) REFERENCES recurring_tasks(id) ON DELETE CASCADE,
+  UNIQUE KEY uq_rsk (recurring_task_id, occurrence_date)
 );
 
 CREATE TABLE IF NOT EXISTS project_templates (

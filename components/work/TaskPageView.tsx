@@ -10,6 +10,7 @@ import TaskActions from "./TaskActions";
 import ScheduleTrack from "./ScheduleTrack";
 import type { Label, ProjectMember, Role, Task, TaskStatus } from "@/lib/types";
 import { DateRange, PersonLine, ProgressLegend, WorkProgress, weightLabel } from "./kit";
+import RecurringBadge from "@/components/work/RecurringBadge";
 
 /**
  * The task page: who owns it and who reviews it, its dates, how much it
@@ -106,6 +107,9 @@ export default function TaskPageView({
             <h1 className="text-2xl font-semibold text-slate-900">{task.title}</h1>
             <div className="mt-2 flex flex-wrap items-center gap-3">
               <TaskStatusBadge status={task.status} />
+              {task.recurring_task_id ? (
+                <RecurringBadge ruleId={task.recurring_task_id} date={task.occurrence_date} noReview={task.auto_approve} />
+              ) : null}
               <span className="text-xs text-slate-500" title={`This task's share of ${project.name}'s progress`}>
                 Counts for <strong className="figure text-slate-700">{weightLabel(weight)}</strong> of the project
               </span>

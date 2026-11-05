@@ -27,6 +27,7 @@ const LATER_MIGRATIONS = [
   "2026-10-30_update_submission.sql",
   "2026-10-31_retired_staff.sql",
   "2026-10-31_work_timer.sql",
+  "2026-11-05_recurring_work.sql",
 ].map((f) =>
   readFileSync(new URL(`../../db/migrations/${f}`, import.meta.url), "utf8")
 );
@@ -161,6 +162,9 @@ describe("2026-09-17 phase 4 migration", () => {
       "users",
       "task_time_logs",
       "work_sessions",
+      "recurring_tasks",
+      "recurring_subtasks",
+      "recurring_skips",
     ]) {
       expect({ table, columns: await columns("pm_migrate", table) }).toEqual({
         table,

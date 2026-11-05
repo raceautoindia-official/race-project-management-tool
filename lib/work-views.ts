@@ -1,7 +1,7 @@
 import "server-only";
 import { query, DbRow } from "./db";
 import { attachTaskMeta } from "./tasks";
-import { PROJECT_CREDITED_SQL, PROJECT_UNITS_SQL, projectPercent } from "./progress";
+import { PROJECT_CREDITED_SQL, PROJECT_ONGOING_FIELDS_SQL, PROJECT_UNITS_SQL, ongoingOf, projectPercent, type OngoingStats } from "./progress";
 import type { OutstandingTask } from "@/components/OutstandingView";
 import type { Task, User } from "./types";
 
@@ -119,6 +119,8 @@ export interface ProjectProgressRow {
   done_count: number;
   review_count: number;
   overdue_count: number;
+  /** Set for a project of only recurring work: judged on copies done on time. */
+  ongoing: OngoingStats | null;
 }
 
 /**
@@ -134,7 +136,8 @@ export async function getProjectProgressRows(user: User): Promise<ProjectProgres
             (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'review') AS review_count,
             (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status <> 'done'
                 AND t.due_date < UTC_DATE()) AS overdue_count,
-            ${PROJECT_UNITS_SQL} AS units, ${PROJECT_CREDITED_SQL} AS credited
+            ${PROJECT_UNITS_SQL} AS units, ${PROJECT_CREDITED_SQL} AS credited,
+            ${PROJECT_ONGOING_FIELDS_SQL}
        FROM projects p LEFT JOIN users o ON o.id = p.owner_id
       WHERE p.status = 'active' AND p.approval_status = 'approved' ${scope}
       ORDER BY p.name`,
@@ -152,5 +155,6 @@ export async function getProjectProgressRows(user: User): Promise<ProjectProgres
     done_count: Number(r.done_count),
     review_count: Number(r.review_count),
     overdue_count: Number(r.overdue_count),
+    ongoing: ongoingOf(r),
   }));
 }

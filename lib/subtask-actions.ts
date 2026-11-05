@@ -82,7 +82,8 @@ export async function applySubtaskAction(
       to = "in_progress";
       break;
     case "submit":
-      to = subtaskSubmitOutcome(user.id, task.assignee_id);
+      // No review on a recurring copy that doesn't need it.
+      to = task.auto_approve ? "done" : subtaskSubmitOutcome(user.id, task.assignee_id);
       sets = ", submitted_at = UTC_TIMESTAMP(), changes_requested = NULL";
       if (to === "done") {
         sets += ", approved_by = ?, approved_at = UTC_TIMESTAMP()";

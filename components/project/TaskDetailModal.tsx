@@ -25,6 +25,7 @@ import { SpecView } from "./WorkSpec";
 import SubtasksPanel from "@/components/work/SubtasksPanel";
 import TaskActions from "@/components/work/TaskActions";
 import TaskTimeBreakdown from "@/components/work/TaskTimeBreakdown";
+import RecurringBadge from "@/components/work/RecurringBadge";
 
 interface TimeLog {
   id: number;
@@ -623,6 +624,9 @@ export default function TaskDetailModal({
         <TaskStatusBadge status={currentTask.status} />
         <TaskPriorityBadge priority={currentTask.priority} />
         {currentTask.signed_off_at && <ReadOnlyBadge />}
+        {currentTask.recurring_task_id ? (
+          <RecurringBadge ruleId={currentTask.recurring_task_id} date={currentTask.occurrence_date} noReview={currentTask.auto_approve} />
+        ) : null}
         {Boolean(currentTask.is_additional) && (
           <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-700">
             Additional work

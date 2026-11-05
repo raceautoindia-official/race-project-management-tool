@@ -142,3 +142,56 @@ export const PROJECT_CREDITED_SQL = `
   (SELECT COALESCE(SUM((${EFFECTIVE_WEIGHT_SQL}) * (${TASK_APPROVED_FRACTION_SQL})), 0)
      FROM tasks t
     WHERE t.project_id = p.id)`;
+
+// ── Ongoing projects ───────────────────────────────────────────────────────
+
+/**
+ * An ongoing project holds only recurring work: it has recurring tasks and
+ * no ordinary task. Copies are weighted 0 (lib/recurring.ts), so its
+ * progress would always read 0%; it is measured by how many copies were done
+ * on time instead (the last 60 days; "on time" = completed, India time, by
+ * the copy's due date).
+ */
+export const ONGOING_WINDOW_DAYS = 60;
+
+export const PROJECT_ONGOING_SQL = `
+  (EXISTS (SELECT 1 FROM recurring_tasks r WHERE r.project_id = p.id)
+   AND NOT EXISTS (SELECT 1 FROM tasks o WHERE o.project_id = p.id AND o.recurring_task_id IS NULL))`;
+
+const RECENT_COPIES = `
+  FROM tasks c WHERE c.project_id = p.id AND c.recurring_task_id IS NOT NULL AND c.status = 'done'
+   AND c.occurrence_date >= UTC_DATE() - INTERVAL ${ONGOING_WINDOW_DAYS} DAY`;
+
+/** Select-list fields `is_ongoing`, `copies_done`, `copies_on_time` (alias `p`). */
+export const PROJECT_ONGOING_FIELDS_SQL = `
+  ${PROJECT_ONGOING_SQL} AS is_ongoing,
+  (SELECT COUNT(*) ${RECENT_COPIES}) AS copies_done,
+  (SELECT COUNT(*) ${RECENT_COPIES}
+      AND DATE(c.completed_at + INTERVAL 330 MINUTE) <= COALESCE(c.due_date, c.occurrence_date)) AS copies_on_time`;
+
+export interface OngoingStats {
+  done: number;
+  onTime: number;
+}
+
+/** The on-time figures of an ongoing project's row, or null for a normal project. */
+export function ongoingOf(row: object): OngoingStats | null {
+  const r = row as { is_ongoing?: unknown; copies_done?: unknown; copies_on_time?: unknown };
+  if (!Number(r.is_ongoing ?? 0)) return null;
+  return { done: Number(r.copies_done ?? 0), onTime: Number(r.copies_on_time ?? 0) };
+}
+
+/** On-time share, 0–100, or null before any copy is done. */
+export function onTimePercent(s: OngoingStats): number | null {
+  return s.done ? Math.round((s.onTime / s.done) * 100) : null;
+}
+
+/**
+ * An ongoing project's health from its on-time rate: on track at 90% or
+ * better, at risk from 70%, off track below; nothing done yet = not started.
+ */
+export function ongoingHealth(s: OngoingStats): "on_track" | "at_risk" | "off_track" | "not_started" {
+  const pct = onTimePercent(s);
+  if (pct === null) return "not_started";
+  return pct >= 90 ? "on_track" : pct >= 70 ? "at_risk" : "off_track";
+}

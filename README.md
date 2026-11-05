@@ -405,6 +405,48 @@ does not restart it, you press **Resume** (the header chip offers the last thing
 - Reads `attendance` (clock rows) read-only, like the rest of the Attendance access.
 - Migration: `db/migrations/2026-10-31_work_timer.sql`.
 
+### Recurring tasks
+
+Work that comes round again — a daily check, a weekly report, a monthly filing. **Recurring**
+is in the sidebar for everyone; a project's board has **↻ Recurring**, and My Work has a
+Recurring card with what is coming next.
+
+- A recurring task is a **rule**: the task (title, owner, priority, estimate, notes), the
+  **subtasks** every copy starts with (each with its own person; a blank one is the owner's),
+  and a schedule — every working day; weekly on chosen days, every 1–4 weeks; monthly on a
+  day or the last day, every 1–12 months — with a start, an optional end, and a due offset.
+- **Anyone on a project can propose one.** It waits for an admin (it is in Approvals and on
+  the Recurring page), who approves it once and decides then whether **each copy needs
+  review** or not. An admin's own rule starts at once.
+- **Each copy is an ordinary task** in the project, with its subtasks, so it is timed, worked
+  and reviewed like any other. A copy of a *no review needed* rule finishes and is signed off
+  as soon as its work is marked complete. Copies are weighted 0: routine work never moves a
+  project's progress bar.
+- **It can live in an existing project, or ask for a project of its own** ("A new project of
+  its own" in the form), which is created when it is approved.
+- **A project of only recurring work is ↻ Ongoing.** It never finishes, so instead of
+  "% complete" and a schedule it shows the share of copies done on time in the last 60 days,
+  and its health follows that: on track at 90% or better, at risk from 70%, off track below.
+  It is never offered as "ready to close" and doesn't count in Reports' overall progress. Add an
+  ordinary task to it and it is a normal project again.
+- **Working days and holidays come from WorkLens**: the owner's shift (`employee_schedules` →
+  `shifts.working_days`) and the observed holidays (`holiday_calendar` + `holiday_observances`)
+  for every location or the owner's. A daily copy skips holidays and days off; a weekly or
+  monthly one moves to the next working day. Someone with no shift works Monday–Saturday. If
+  WorkLens can't be read, nothing is skipped.
+- **Work doesn't pile up**: while the last copy is still open, no new one is made and the owner
+  is told (a rule can be set to make it anyway). After downtime only the latest missed copy
+  is made; the rest show as missed.
+- Each rule shows its next copy (and why it moved), its last copies as dots (on time, late,
+  open, overdue, skipped), and how many were done on time. Its project's leads, whoever set it
+  up, or an admin can edit it (copies already made stay as they are), pause, skip the next copy,
+  or end it; an admin can delete it (its copies stay). If its owner leaves, it pauses until it
+  is given a new one.
+- Copies are made by the 15-minute work-updates job above (and by `/api/cron/recurring`, which
+  also advances recurring meetings), so no new cron line is needed.
+- Reads `employee_schedules`, `shifts`, `holiday_calendar` and `holiday_observances` read-only.
+- Migration: `db/migrations/2026-11-05_recurring_work.sql`.
+
 ### Personal documents (Profile → My documents)
 
 What someone uploads about themselves: ID proof, certificates, a signed contract.
