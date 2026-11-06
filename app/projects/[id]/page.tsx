@@ -4,6 +4,7 @@ import { query, DbRow } from "@/lib/db";
 import AppShell from "@/components/AppShell";
 import ProjectBoard from "@/components/project/ProjectBoard";
 import { fetchTaskRequests, fetchTasks } from "@/lib/tasks";
+import { PROJECT_ONGOING_FIELDS_SQL, ongoingOf } from "@/lib/progress";
 import type {
   Label,
   Milestone,
@@ -38,7 +39,8 @@ export default async function ProjectDetailPage({
     `SELECT p.id, p.name, p.description, p.department, p.status, p.start_date, p.due_date,
             p.approval_status, p.owner_id,
             p.requested_by, p.requested_at, p.decided_at, p.decision_note,
-            u.name AS owner_name, rq.name AS requester_name, dc.name AS decider_name
+            u.name AS owner_name, rq.name AS requester_name, dc.name AS decider_name,
+            ${PROJECT_ONGOING_FIELDS_SQL}
      FROM projects p
      LEFT JOIN users u ON u.id = p.owner_id
      LEFT JOIN users rq ON rq.id = p.requested_by
@@ -131,6 +133,7 @@ export default async function ProjectDetailPage({
           decision_note: project.decision_note,
           start_date: (project.start_date as string | null) ?? null,
           due_date: (project.due_date as string | null) ?? null,
+          ongoing: ongoingOf(project),
         }}
         initialTasks={tasks}
         initialMembers={members}

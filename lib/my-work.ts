@@ -1,6 +1,7 @@
 import { query, DbRow } from "./db";
 import { attachTaskMeta } from "./tasks";
-import { PROJECT_CREDITED_SQL, PROJECT_UNITS_SQL, projectPercent } from "./progress";
+import { PROJECT_CREDITED_SQL, PROJECT_ONGOING_FIELDS_SQL, PROJECT_UNITS_SQL, ongoingOf, projectPercent, type OngoingStats } from "./progress";
+import { pendingRules } from "./recurring";
 import type { User } from "./types";
 
 /**
@@ -29,6 +30,8 @@ export interface WorkItem {
   changes_requested: string | null;
   /** Who approves a task (the project owner); null on subtask items. */
   project_owner_name: string | null;
+  /** Part of a copy of a recurring task. */
+  recurring?: boolean;
 }
 
 export interface OwnedTask {
@@ -56,10 +59,12 @@ export interface OwnedProject {
   percent: number;
   task_count: number;
   ready_to_close: boolean;
+  /** Only recurring work: judged on copies done on time, and never "ready to close". */
+  ongoing: OngoingStats | null;
 }
 
 export interface Attention {
-  kind: "signoff" | "project_request" | "task_request" | "blocker";
+  kind: "signoff" | "project_request" | "task_request" | "blocker" | "recurring_request";
   id: number;
   project_id: number;
   project_name: string;
@@ -96,13 +101,14 @@ const SUBTASK_ITEM = `
   'subtask' AS kind, s.id, s.task_id, s.title, t.title AS task_title, t.project_id,
   p.name AS project_name, s.status, s.start_date, s.due_date,
   s.assignee_id AS person_id, u.name AS person_name, s.submitted_at, s.changes_requested,
-  NULL AS project_owner_name`;
+  NULL AS project_owner_name, t.recurring_task_id IS NOT NULL AS recurring`;
 
 const TASK_ITEM = `
   'task' AS kind, t.id, t.id AS task_id, t.title, t.title AS task_title, t.project_id,
   p.name AS project_name, t.status, t.start_date, t.due_date,
   t.assignee_id AS person_id, u.name AS person_name, NULL AS submitted_at, NULL AS changes_requested,
-  (SELECT po.name FROM users po WHERE po.id = p.owner_id) AS project_owner_name`;
+  (SELECT po.name FROM users po WHERE po.id = p.owner_id) AS project_owner_name,
+  t.recurring_task_id IS NOT NULL AS recurring`;
 
 /** A task "has subtasks" when it has any that are not cancelled. */
 const HAS_SUBTASKS = `EXISTS (SELECT 1 FROM subtasks x WHERE x.task_id = t.id AND x.status <> 'cancelled')`;
@@ -124,6 +130,7 @@ function asItems(rows: DbRow[]): WorkItem[] {
     submitted_at: r.submitted_at ?? null,
     changes_requested: r.changes_requested ?? null,
     project_owner_name: r.project_owner_name ?? null,
+    recurring: Boolean(Number(r.recurring ?? 0)),
   }));
 }
 
@@ -231,6 +238,13 @@ export async function getMyWork(user: User): Promise<MyWork> {
     attention.push({ kind: "blocker", id: r.id, project_id: r.project_id, project_name: r.project_name, title: r.title, who: r.who, at: r.at, link: `/projects/${r.project_id}/tasks/${r.id}` });
   }
 
+  // Recurring tasks proposed by staff wait for an admin's first approval.
+  if (user.role === "admin") {
+    for (const r of await pendingRules()) {
+      attention.push({ kind: "recurring_request", id: r.id, project_id: r.project_id ?? 0, project_name: r.project_name, title: r.title, who: r.who, at: r.at, link: `/recurring?rule=${r.id}` });
+    }
+  }
+
   // Tasks I own that are split into subtasks.
   const ownedRows = await query<DbRow[]>(
     `SELECT t.id, t.title, t.project_id, p.name AS project_name, t.status, t.start_date, t.due_date
@@ -273,7 +287,8 @@ export async function getMyWork(user: User): Promise<MyWork> {
             (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id) AS task_count,
             (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.signed_off_at IS NULL) AS unsigned_count,
             (SELECT COUNT(*) FROM task_requests r WHERE r.project_id = p.id AND r.status = 'pending') AS pending_requests,
-            ${PROJECT_UNITS_SQL} AS units, ${PROJECT_CREDITED_SQL} AS credited
+            ${PROJECT_UNITS_SQL} AS units, ${PROJECT_CREDITED_SQL} AS credited,
+            ${PROJECT_ONGOING_FIELDS_SQL}
        FROM projects p
       WHERE p.owner_id = ? AND ${OPEN_PROJECT}
       ORDER BY (p.due_date IS NULL), p.due_date`,
@@ -288,7 +303,9 @@ export async function getMyWork(user: User): Promise<MyWork> {
     percent: projectPercent({ units: Number(r.units), credited: Number(r.credited) }),
     task_count: Number(r.task_count),
     // The same test as "Mark completed": every task signed off, no requests open.
-    ready_to_close: Number(r.task_count) > 0 && Number(r.unsigned_count) === 0 && Number(r.pending_requests) === 0,
+    // An ongoing project's work never finishes, so it is never ready to close.
+    ready_to_close: !Number(r.is_ongoing) && Number(r.task_count) > 0 && Number(r.unsigned_count) === 0 && Number(r.pending_requests) === 0,
+    ongoing: ongoingOf(r),
   }));
 
   const recentlyApproved = asItems(

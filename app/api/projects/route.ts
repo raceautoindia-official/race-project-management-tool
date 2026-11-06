@@ -4,7 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { json, errorResponse, getPagination, badRequest } from "@/lib/http";
 import { createProjectSchema } from "@/lib/validation";
 import { logActivity, notify } from "@/lib/activity";
-import { PROJECT_UNITS_SQL, PROJECT_CREDITED_SQL } from "@/lib/progress";
+import { PROJECT_UNITS_SQL, PROJECT_CREDITED_SQL, PROJECT_ONGOING_FIELDS_SQL } from "@/lib/progress";
 import { sendEmail, emailLayout, appBaseUrl, escapeHtml } from "@/lib/mailer";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +19,8 @@ const PROJECT_SELECT = `
   (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id) AS task_count,
   (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'done') AS done_count,
   ${PROJECT_UNITS_SQL} AS progress_units,
-  ${PROJECT_CREDITED_SQL} AS progress_done
+  ${PROJECT_CREDITED_SQL} AS progress_done,
+  ${PROJECT_ONGOING_FIELDS_SQL}
 `;
 
 export async function GET(req: NextRequest) {
@@ -86,6 +87,9 @@ export async function GET(req: NextRequest) {
         done_count: Number(r.done_count),
         progress_units: Number(r.progress_units),
         progress_done: Number(r.progress_done),
+        is_ongoing: Number(r.is_ongoing),
+        copies_done: Number(r.copies_done),
+        copies_on_time: Number(r.copies_on_time),
       })),
       total: Number(countRows[0]?.total ?? 0),
       page,

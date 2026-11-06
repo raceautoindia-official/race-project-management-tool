@@ -19,6 +19,7 @@ export const TASK_SELECT = `
   t.features, t.flow, t.rules,
   t.status, t.priority, t.weight, t.weight_mode, t.position, t.outstanding, t.approval_status, t.approved_by, t.approved_at,
   t.completed_at, t.estimated_hours, t.spent_hours, t.is_additional, t.parent_task_id,
+  t.recurring_task_id, t.occurrence_date, t.auto_approve,
   t.assignee_id, t.created_by, t.due_date, t.start_date, t.created_at, t.updated_at,
   t.request_id, t.requested_by, t.request_approved_by, t.request_approved_at,
   COALESCE(tr.requested_at, ${utcSql("t.created_at")}) AS requested_at,

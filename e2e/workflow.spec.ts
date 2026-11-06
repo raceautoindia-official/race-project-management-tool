@@ -306,7 +306,8 @@ test("subtasks that fall behind the spec can be brought back up to it", async ()
   // created before this feature was in.
   // The subtask's own Delete, not the task's.
   const row = task.getByRole("listitem").filter({ hasText: "Only leads can export." });
-  await row.getByRole("button", { name: /Only leads can export\./ }).click();
+  // The row's title opens it (its ▶ Start button carries the title too).
+  await row.getByRole("button", { name: /^Only leads can export\./ }).click();
   await row.getByRole("button", { name: "Delete", exact: true }).click();
   const confirm = lead.getByRole("dialog", { name: "Delete subtask?" });
   await confirm.getByRole("button", { name: "Delete", exact: true }).click();

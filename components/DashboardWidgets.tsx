@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ProgressBar } from "@/components/ProgressBar";
-import { projectPercent } from "@/lib/progress";
+import { ongoingOf, onTimePercent, projectPercent } from "@/lib/progress";
+import OngoingSummary from "@/components/work/OngoingSummary";
 import type { ProjectProgress } from "@/lib/dashboard";
 
 type Tone = "default" | "warn" | "danger" | "good";
@@ -73,6 +74,7 @@ export function ProjectProgressList({
           units: p.progress_units,
           credited: p.progress_done,
         });
+        const ongoing = ongoingOf(p);
         return (
           <li key={p.id}>
             <div className="mb-1 flex items-center justify-between gap-2 text-sm">
@@ -82,12 +84,22 @@ export function ProjectProgressList({
               >
                 {p.name}
               </Link>
-              <span className="shrink-0 text-xs text-slate-600">
-                {done}/{total}
-                <span className="ml-1 font-medium text-slate-700">{pct}%</span>
-              </span>
+              {ongoing ? (
+                <span className="shrink-0">
+                  <OngoingSummary stats={ongoing} variant="inline" />
+                </span>
+              ) : (
+                <span className="shrink-0 text-xs text-slate-600">
+                  {done}/{total}
+                  <span className="ml-1 font-medium text-slate-700">{pct}%</span>
+                </span>
+              )}
             </div>
-            <ProgressBar value={pct} tone={pct === 100 ? "green" : "indigo"} />
+            {ongoing ? (
+              <ProgressBar value={onTimePercent(ongoing) ?? 0} tone="green" />
+            ) : (
+              <ProgressBar value={pct} tone={pct === 100 ? "green" : "indigo"} />
+            )}
           </li>
         );
       })}

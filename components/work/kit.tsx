@@ -16,6 +16,7 @@ import { useToast } from "@/components/ToastProvider";
 import { apiFetch } from "@/lib/api-client";
 import { rebalance, round1, scheduleHealth, type Health, type SubtaskStatus } from "@/lib/work-engine";
 import { todayIST } from "@/lib/work-dates";
+import { ongoingHealth, type OngoingStats } from "@/lib/progress";
 
 // ── Progress ───────────────────────────────────────────────────────────────
 
@@ -175,7 +176,33 @@ const HEALTH: Record<Health, { label: string; cls: string; hint: string }> = {
   no_dates: { label: "No dates", cls: "bg-slate-50 text-slate-500 ring-slate-200", hint: "Set a start and due date to see whether it is on schedule." },
 };
 
-export function HealthBadge({ approved, start, due }: { approved: number; start: string | null | undefined; due: string | null | undefined }) {
+const ONGOING_HINT: Record<string, string> = {
+  on_track: "At least 9 in 10 recurring copies done on time lately.",
+  at_risk: "Fewer than 9 in 10 recurring copies done on time lately.",
+  off_track: "Fewer than 7 in 10 recurring copies done on time lately.",
+  not_started: "No recurring copy finished yet.",
+};
+
+export function HealthBadge({
+  approved,
+  start,
+  due,
+  ongoing,
+}: {
+  approved: number;
+  start: string | null | undefined;
+  due: string | null | undefined;
+  /** An ongoing project (only recurring work) is judged on copies done on time. */
+  ongoing?: OngoingStats | null;
+}) {
+  if (ongoing) {
+    const oh = ongoingHealth(ongoing);
+    return (
+      <span title={ONGOING_HINT[oh]} className={`inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${HEALTH[oh].cls}`}>
+        {oh === "not_started" ? "No copies yet" : HEALTH[oh].label}
+      </span>
+    );
+  }
   const { health, expected } = scheduleHealth(approved, start ? String(start).slice(0, 10) : null, due ? String(due).slice(0, 10) : null, todayIST());
   const h = HEALTH[health];
   const title = expected !== null && (health === "on_track" || health === "at_risk" || health === "off_track")

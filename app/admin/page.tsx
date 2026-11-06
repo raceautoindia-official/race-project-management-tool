@@ -10,6 +10,7 @@ import DepartmentLoadPanel from "@/components/DepartmentLoadPanel";
 import Avatar from "@/components/Avatar";
 import { HealthBadge, WorkProgress } from "@/components/work/kit";
 import { humanizeAction, formatDate, formatRelative } from "@/lib/format";
+import OngoingSummary from "@/components/work/OngoingSummary";
 
 export const dynamic = "force-dynamic";
 
@@ -82,6 +83,7 @@ export default async function ControlCentrePage() {
                 { href: "/team?tab=updates", label: "Work updates", hint: "Everyone's daily and weekly plans and summaries" },
                 { href: "/admin/updates", label: "Update reminders", hint: "When reminders and auto-submit run" },
                 { href: "/work-hours", label: "Work hours", hint: "Attendance hours by person" },
+                { href: "/recurring", label: "Recurring", hint: "Repeating work, and proposals to approve" },
               ].map((t) => (
                 <li key={t.href}>
                   <Link
@@ -297,12 +299,16 @@ function PortfolioCard({ rows }: { rows: PortfolioRow[] }) {
                     {[p.department, p.owner_name ? `Owner ${p.owner_name}` : "No owner"].filter(Boolean).join(" · ")}
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <WorkProgress approved={p.percent} size="sm" label={`${p.name} progress`} className="flex-1" />
-                  <span className="figure w-10 shrink-0 text-right text-sm font-semibold text-slate-800">{Math.round(p.percent)}%</span>
-                </div>
+                {p.ongoing ? (
+                  <OngoingSummary stats={p.ongoing} variant="inline" />
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <WorkProgress approved={p.percent} size="sm" label={`${p.name} progress`} className="flex-1" />
+                    <span className="figure w-10 shrink-0 text-right text-sm font-semibold text-slate-800">{Math.round(p.percent)}%</span>
+                  </div>
+                )}
                 <div>
-                  <HealthBadge approved={p.percent} start={p.start_date} due={p.due_date} />
+                  <HealthBadge approved={p.percent} start={p.start_date} due={p.due_date} ongoing={p.ongoing} />
                   {p.expected !== null && p.health !== "done" && p.health !== "not_started" && (
                     <span className="figure mt-0.5 block text-[11px] text-slate-500">expected {Math.round(p.expected)}%</span>
                   )}

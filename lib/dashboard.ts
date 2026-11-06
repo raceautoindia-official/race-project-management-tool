@@ -1,7 +1,7 @@
 import "server-only";
 import { query, DbRow } from "./db";
 import type { TaskStatus } from "./types";
-import { PROJECT_UNITS_SQL, PROJECT_CREDITED_SQL } from "./progress";
+import { PROJECT_UNITS_SQL, PROJECT_CREDITED_SQL, PROJECT_ONGOING_FIELDS_SQL } from "./progress";
 
 export interface StatusCount {
   status: TaskStatus;
@@ -25,6 +25,9 @@ export interface ProjectProgress {
   /** Checklist items across the project, and how many are ticked. */
   progress_units: number;
   progress_done: number;
+  is_ongoing?: number;
+  copies_done?: number;
+  copies_on_time?: number;
 }
 
 /** One department's share of the work, for the dashboard breakdown. */
@@ -93,7 +96,8 @@ export async function getAdminDashboard(): Promise<AdminDashboard> {
             (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id) AS task_count,
             (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'done') AS done_count,
             ${PROJECT_UNITS_SQL} AS progress_units,
-            ${PROJECT_CREDITED_SQL} AS progress_done
+            ${PROJECT_CREDITED_SQL} AS progress_done,
+            ${PROJECT_ONGOING_FIELDS_SQL}
      FROM projects p
      WHERE p.status = 'active' AND p.approval_status = 'approved'
      ORDER BY task_count DESC, p.updated_at DESC
@@ -228,7 +232,8 @@ export async function getMemberDashboard(
             (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id) AS task_count,
             (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'done') AS done_count,
             ${PROJECT_UNITS_SQL} AS progress_units,
-            ${PROJECT_CREDITED_SQL} AS progress_done
+            ${PROJECT_CREDITED_SQL} AS progress_done,
+            ${PROJECT_ONGOING_FIELDS_SQL}
      FROM projects p
      JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = ?
      ORDER BY p.updated_at DESC`,

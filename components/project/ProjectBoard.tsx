@@ -35,7 +35,6 @@ import { DepartmentBadge } from "@/components/DepartmentField";
 import EditProjectModal from "./EditProjectModal";
 import ImportTasksModal from "./ImportTasksModal";
 import TimelineView from "./TimelineView";
-import RecurringTasksModal from "./RecurringTasksModal";
 import ProjectGallery from "./ProjectGallery";
 import TaskRequestsPanel from "./TaskRequestsPanel";
 import ProjectStatusBanner from "./ProjectStatusBanner";
@@ -43,6 +42,8 @@ import ProjectTree from "@/components/work/ProjectTree";
 import { ProgressLegend, WorkProgress, shortDate } from "@/components/work/kit";
 import ScheduleTrack from "@/components/work/ScheduleTrack";
 import { projectProgress } from "@/lib/work-engine";
+import OngoingSummary, { OngoingBadge } from "@/components/work/OngoingSummary";
+import type { OngoingStats } from "@/lib/progress";
 
 interface PickUser {
   id: number;
@@ -70,6 +71,8 @@ interface ProjectInfo {
   decision_note: string | null;
   start_date?: string | null;
   due_date?: string | null;
+  /** Only recurring work: shown by copies done on time, not % complete. */
+  ongoing?: OngoingStats | null;
 }
 
 const PRIORITY_ORDER: Record<TaskPriority, number> = {
@@ -166,7 +169,6 @@ export default function ProjectBoard({
   const [membersOpen, setMembersOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
-  const [recurringOpen, setRecurringOpen] = useState(false);
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [draggedId, setDraggedId] = useState<number | null>(null);
 
@@ -457,6 +459,16 @@ export default function ProjectBoard({
                 + New task
               </button>
             )}
+            {/* Repeating work: set up here or on the Recurring page; a
+                member's goes to an admin for approval. */}
+            {writable && (
+              <Link
+                href={`/recurring?project=${project.id}`}
+                className="on-band rounded-lg border px-3 py-1.5 text-sm font-medium band-set"
+              >
+                ↻ Recurring
+              </Link>
+            )}
             <ExportButton href={`/api/projects/${project.id}/tasks/export`} />
             <a
               href={`/api/projects/${project.id}/tasks/xlsx`}
@@ -477,12 +489,6 @@ export default function ProjectBoard({
                   className="on-band rounded-lg border px-3 py-1.5 text-sm font-medium band-in"
                 >
                   Import Excel
-                </button>
-                <button
-                  onClick={() => setRecurringOpen(true)}
-                  className="on-band rounded-lg border px-3 py-1.5 text-sm font-medium band-set"
-                >
-                  Recurring
                 </button>
                 <button
                   onClick={() => setMembersOpen(true)}
@@ -516,6 +522,16 @@ export default function ProjectBoard({
         {/* How far along (approved work only), and the schedule as a picture. */}
         <div className="grid gap-4 border-t border-slate-100 p-5 sm:p-6 lg:grid-cols-2">
           <div className="rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200">
+            {project.ongoing ? (
+              <>
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <OngoingBadge />
+                  <span className="text-sm text-slate-600">Recurring work — it doesn’t finish, so it’s measured by copies done on time.</span>
+                </div>
+                <OngoingSummary stats={project.ongoing} />
+              </>
+            ) : (
+              <>
             <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
               <p>
                 <span className="figure text-4xl font-bold text-slate-900">{pct}%</span>
@@ -531,6 +547,8 @@ export default function ProjectBoard({
             <div className="mt-2">
               <ProgressLegend />
             </div>
+              </>
+            )}
             <dl className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
               <Figure label="Approved" value={`${done}/${total}`} tone="bg-emerald-50 ring-emerald-200 text-emerald-700" />
               <Figure label="In review" value={counts.review} tone="bg-amber-50 ring-amber-200 text-amber-700" />
@@ -543,12 +561,28 @@ export default function ProjectBoard({
               </p>
             )}
           </div>
-          <ScheduleTrack
-            approved={projectProg.approved}
-            pending={projectProg.pending}
-            start={project.start_date}
-            due={project.due_date}
-          />
+          {project.ongoing ? (
+            <div className="rounded-xl bg-violet-50/60 p-4 ring-1 ring-violet-200">
+              <p className="text-sm font-semibold text-slate-900">↻ What repeats here</p>
+              <p className="mt-1 text-sm text-slate-600">
+                Each copy arrives on its owner’s working days with its subtasks. Its schedule, next copy and history are on
+                the Recurring page.
+              </p>
+              <Link
+                href={`/recurring?project=${project.id}`}
+                className="mt-3 inline-block rounded-lg border border-violet-300 bg-white px-3 py-1.5 text-sm font-medium text-violet-800 hover:bg-violet-50"
+              >
+                Open its recurring tasks →
+              </Link>
+            </div>
+          ) : (
+            <ScheduleTrack
+              approved={projectProg.approved}
+              pending={projectProg.pending}
+              start={project.start_date}
+              due={project.due_date}
+            />
+          )}
         </div>
       </div>
 
@@ -819,17 +853,6 @@ export default function ProjectBoard({
           onClose={() => setImportOpen(false)}
           projectId={project.id}
           onImported={reloadTasks}
-        />
-      )}
-      {canManageWritable && (
-        <RecurringTasksModal
-          // Remount per opening so it starts in its loading state.
-          key={recurringOpen ? "recurring-open" : "recurring-closed"}
-          open={recurringOpen}
-          onClose={() => setRecurringOpen(false)}
-          projectId={project.id}
-          members={members}
-          canManage={canManage}
         />
       )}
       {canManageWritable && (

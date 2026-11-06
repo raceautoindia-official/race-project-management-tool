@@ -464,15 +464,43 @@ export const createMeetingSchema = z.object({
 });
 
 // ---- Recurring tasks + project templates (Wave 12) ----
-export const createRecurringTaskSchema = z.object({
-  title: z.string().min(1).max(200),
-  description: optionalText,
-  priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
-  assigneeId: optionalId.optional(),
-  estimatedHours: optionalHours.optional(),
-  recurrence: z.enum(["daily", "weekly", "monthly"]),
-  nextRun: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD"),
-});
+const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD");
+
+/** A recurring rule as the form sends it (lib/recurring.ts RuleInput). */
+export const recurringRuleSchema = z
+  .object({
+    projectId: optionalId.optional().default(null),
+    newProjectName: z.string().trim().max(200).nullable().optional().default(null),
+    title: z.string().trim().min(1, "Give it a title").max(200),
+    description: optionalText.transform((v) => v ?? null),
+    priority: z.enum(["low", "medium", "high", "urgent"]).default("medium"),
+    ownerId: z.coerce.number().int().positive({ message: "Choose who owns each copy" }),
+    estimatedHours: optionalHours.optional().default(null),
+    frequency: z.enum(["daily", "weekly", "monthly"]),
+    interval: z.coerce.number().int().min(1).max(12).default(1),
+    weekdays: z.array(z.enum(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])).default([]),
+    monthDay: z.coerce.number().int().min(0).max(31).nullable().optional().default(null),
+    startDate: ymd,
+    endDate: ymd.nullable().optional().default(null),
+    dueAfterDays: z.coerce.number().int().min(0).max(60).default(0),
+    whenOpen: z.enum(["skip", "create"]).default("skip"),
+    reviewMode: z.enum(["review", "none"]).nullable().optional().default(null),
+    subtasks: z
+      .array(z.object({ title: z.string().trim().min(1).max(200), assigneeId: optionalId.optional().default(null) }))
+      .max(30)
+      .default([]),
+  })
+  .transform((v) => ({ ...v, newProjectName: v.projectId ? null : v.newProjectName || null }));
+
+export const recurringActionSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("pause") }),
+  z.object({ action: z.literal("resume") }),
+  z.object({ action: z.literal("skip_next") }),
+  z.object({ action: z.literal("unskip") }),
+  z.object({ action: z.literal("end") }),
+  z.object({ action: z.literal("approve"), reviewMode: z.enum(["review", "none"]), note: z.string().max(500).nullable().optional() }),
+  z.object({ action: z.literal("reject"), note: z.string().min(1, "Say why").max(500) }),
+]);
 
 export const saveTemplateSchema = z.object({
   name: z.string().min(1).max(200),

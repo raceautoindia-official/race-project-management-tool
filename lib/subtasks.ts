@@ -12,6 +12,7 @@ import {
   type SubtaskStatus,
   type TaskStatus,
 } from "./work-engine";
+import { finishRoutineCopy } from "./recurring";
 import type { User } from "./types";
 
 /**
@@ -85,6 +86,8 @@ export interface TaskRef {
   title: string;
   status: TaskStatus;
   assignee_id: number | null;
+  /** A copy of a recurring task that needs no review. */
+  auto_approve?: number;
 }
 
 /** The task, its project and the caller's place in it, ready for `can()`. */
@@ -93,7 +96,7 @@ export async function loadTaskContext(
   taskId: number
 ): Promise<{ task: TaskRef; project: DbRow; ctx: SpineContext }> {
   const rows = await query<DbRow[]>(
-    `SELECT id, project_id, title, status, assignee_id FROM tasks WHERE id = ? LIMIT 1`,
+    `SELECT id, project_id, title, status, assignee_id, auto_approve FROM tasks WHERE id = ? LIMIT 1`,
     [taskId]
   );
   if (!rows.length) throw notFound("Task not found");
@@ -189,7 +192,7 @@ export function subtaskLink(projectId: number, taskId: number, subtaskId?: numbe
  */
 export async function syncTaskAfterSubtaskChange(taskId: number, actor: User): Promise<TaskStatus | null> {
   const [task] = await query<DbRow[]>(
-    `SELECT id, project_id, title, status, assignee_id, signed_off_at FROM tasks WHERE id = ? LIMIT 1`,
+    `SELECT id, project_id, title, status, assignee_id, signed_off_at, auto_approve FROM tasks WHERE id = ? LIMIT 1`,
     [taskId]
   );
   if (!task || task.signed_off_at) return null;
@@ -199,6 +202,8 @@ export async function syncTaskAfterSubtaskChange(taskId: number, actor: User): P
     subs.map((s) => ({ status: s.status as SubtaskStatus }))
   );
   if (!next) return null;
+  // A recurring copy that needs no review is finished once its work is.
+  if (next === "review" && task.auto_approve) return (await finishRoutineCopy(taskId, actor)) ? "done" : null;
 
   const extra =
     task.status === "done" ? ", completed_at = NULL, approval_status = 'none'" : "";
