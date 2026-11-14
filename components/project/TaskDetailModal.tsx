@@ -829,6 +829,7 @@ export default function TaskDetailModal({
             title: currentTask.title,
             status: currentTask.status,
             assignee_id: currentTask.assignee_id,
+            auto_approve: currentTask.auto_approve,
           }}
           currentUser={currentUser}
           isManager={canManage}

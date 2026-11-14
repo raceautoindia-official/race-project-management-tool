@@ -425,7 +425,7 @@ export default function RecurringForm({
               <input type="radio" name="review" checked={reviewMode === "none"} onChange={() => setReviewMode("none")} className="mt-1" />
               <span>
                 No regular review needed
-                <span className="block text-xs text-slate-500">Marking a copy complete finishes and signs it off.</span>
+                <span className="block text-xs text-slate-500">Marking a copy complete finishes it. Its owner can still add to it that day; it locks overnight.</span>
               </span>
             </label>
           </fieldset>

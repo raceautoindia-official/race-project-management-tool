@@ -206,7 +206,7 @@ export default function ProjectTree({
                 {expanded && (
                   <div className="border-t border-slate-100 bg-slate-50/50 px-4 py-3 lg:pl-12">
                     <SubtasksPanel
-                      task={{ id: t.id, project_id: t.project_id, title: t.title, status: t.status, assignee_id: t.assignee_id }}
+                      task={{ id: t.id, project_id: t.project_id, title: t.title, status: t.status, assignee_id: t.assignee_id, auto_approve: t.auto_approve }}
                       currentUser={currentUser}
                       isManager={isManager}
                       people={people}

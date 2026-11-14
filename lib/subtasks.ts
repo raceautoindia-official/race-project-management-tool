@@ -4,7 +4,7 @@ import { assertProjectAccess } from "./rbac";
 import { logActivity, notify } from "./activity";
 import { projectAlertRecipients } from "./recipients";
 import { sendEmail, emailLayout, appBaseUrl, escapeHtml } from "./mailer";
-import { can, CANNOT, isManager, type SpineAction, type SpineContext } from "./permissions";
+import { can, CANNOT, isManager, isTaskOwner, type SpineAction, type SpineContext } from "./permissions";
 import {
   effectiveWeights,
   makeRoom,
@@ -136,6 +136,9 @@ export function assertCan(action: SpineAction, ctx: SpineContext): void {
  * manager may do that — the same people who may move a task out of Done.
  */
 export function assertMayReopenTask(task: TaskRef, ctx: SpineContext): void {
+  // A routine recurring copy (no review) is its owner's to add to until it
+  // locks overnight; any other approved task needs a manager to reopen it.
+  if (task.auto_approve && isTaskOwner(ctx)) return;
   if (task.status === "done" && !isManager(ctx)) {
     throw conflict("This task is already approved — ask the project owner or a lead to reopen it before adding work");
   }
