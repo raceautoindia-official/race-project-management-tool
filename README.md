@@ -419,8 +419,9 @@ Recurring card with what is coming next.
   the Recurring page), who approves it once and decides then whether **each copy needs
   review** or not. An admin's own rule starts at once.
 - **Each copy is an ordinary task** in the project, with its subtasks, so it is timed, worked
-  and reviewed like any other. A copy of a *no review needed* rule finishes and is signed off
-  as soon as its work is marked complete. Copies are weighted 0: routine work never moves a
+  and reviewed like any other. A copy of a *no review needed* rule is Done as soon as its work
+  is marked complete; its owner can still add a subtask that day (it reopens), and it is signed
+  off overnight. Copies are weighted 0: routine work never moves a
   project's progress bar.
 - **It can live in an existing project, or ask for a project of its own** ("A new project of
   its own" in the form), which is created when it is approved.

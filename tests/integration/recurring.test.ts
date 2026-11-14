@@ -22,6 +22,7 @@ vi.mock("@/lib/workdays", async (importOriginal) => {
 });
 
 import * as recurringRoute from "@/app/api/recurring/route";
+import * as subtasksRoute from "@/app/api/tasks/[id]/subtasks/route";
 import { actOnRule, createRule, runRecurringTasks, updateRule, type RuleInput } from "@/lib/recurring";
 import { applySubtaskAction } from "@/lib/subtask-actions";
 import { PROJECT_CREDITED_SQL, PROJECT_UNITS_SQL, projectPercent } from "@/lib/progress";
@@ -124,14 +125,36 @@ describe("a member's proposal", () => {
     ]);
   });
 
-  it("finishes and signs off a routine copy as soon as its work is complete", async () => {
+  it("finishes a routine copy as soon as its work is complete, but leaves it open that day", async () => {
     const [copy] = await copies(ruleId);
     const subs = await query<DbRow[]>(`SELECT id, assignee_id FROM subtasks WHERE task_id = ? ORDER BY position`, [copy.id]);
     expect(await applySubtaskAction(helper, subs[0].id, "submit")).toBe("done");
     await applySubtaskAction(doer, subs[1].id, "submit");
     const [after] = await copies(ruleId);
     expect(after.status).toBe("done");
+    expect(after.signed_off_at).toBeNull();
+  });
+
+  it("lets its owner add a subtask the same day, which reopens it", async () => {
+    const [copy] = await copies(ruleId);
+    actAs(doer);
+    const res = await call(subtasksRoute.POST, { method: "POST", id: copy.id, body: { title: "One more shelf" } });
+    expect(res.status).toBe(201);
+    expect((await copies(ruleId))[0].status).toBe("in_progress");
+    const [extra] = await query<DbRow[]>(`SELECT id FROM subtasks WHERE task_id = ? AND title = 'One more shelf'`, [copy.id]);
+    await applySubtaskAction(doer, extra.id, "submit");
+    expect((await copies(ruleId))[0].status).toBe("done");
+  });
+
+  it("signs it off overnight", async () => {
+    const [copy] = await copies(ruleId);
+    // Finished yesterday (India time); today's run locks it.
+    await query(`UPDATE tasks SET completed_at = UTC_TIMESTAMP() - INTERVAL 2 DAY WHERE id = ?`, [copy.id]);
+    await runRecurringTasks();
+    const [after] = await copies(ruleId);
     expect(after.signed_off_at).not.toBeNull();
+    const [t] = await query<DbRow[]>(`SELECT signed_off_by FROM tasks WHERE id = ?`, [copy.id]);
+    expect(t.signed_off_by).toBe(admin.id);
   });
 
   it("doesn't move the project's progress bar", async () => {

@@ -40,6 +40,8 @@ export interface PanelTask {
   title: string;
   status: "todo" | "in_progress" | "review" | "done";
   assignee_id: number | null;
+  /** A recurring copy that needs no review (its owner may still add to it the day it's done). */
+  auto_approve?: number | boolean;
 }
 
 export default function SubtasksPanel({
@@ -108,7 +110,8 @@ export default function SubtasksPanel({
     projectOwnerId: null,
     taskOwnerId: task.assignee_id,
   };
-  const approvedTask = task.status === "done";
+  // A finished routine copy stays open to its owner until it locks overnight.
+  const approvedTask = task.status === "done" && !(task.auto_approve && task.assignee_id === currentUser.id);
   const mayShape = !readOnly && can("subtask.create", base) && (!approvedTask || isManager);
   const mayWeigh = !readOnly && can("subtask.weights", base);
   const ctxFor = (s: SubtaskDto): SpineContext => ({ ...base, subtaskAssigneeId: s.assignee_id });

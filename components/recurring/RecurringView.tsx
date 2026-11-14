@@ -408,7 +408,7 @@ function ApprovePanel({ rule, busy, onAct }: { rule: RuleDto; busy: boolean; onA
           <input type="radio" name={`mode-${rule.id}`} checked={mode === "none"} onChange={() => setMode("none")} className="mt-1" />
           <span>
             <span className="font-medium text-slate-900">No regular review needed</span>
-            <span className="block text-xs text-slate-500">Marking a copy complete finishes and signs it off at once — for routine checks.</span>
+            <span className="block text-xs text-slate-500">Marking a copy complete finishes it at once — for routine checks. Its owner can still add to it that day; it locks overnight.</span>
           </span>
         </label>
       </fieldset>

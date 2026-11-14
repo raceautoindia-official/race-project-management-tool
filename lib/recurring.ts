@@ -259,6 +259,8 @@ export interface RunResult {
 export async function runRecurringTasks(opts: { now?: Date; ruleIds?: number[]; calendar?: WorkCalendar } = {}): Promise<RunResult> {
   const today = istDate(opts.now ?? new Date());
   const result: RunResult = { created: 0, skipped: 0, paused: 0, calendarUnavailable: false };
+  // Yesterday's finished routine copies lock first (every run, not per rule).
+  if (!opts.ruleIds?.length) await lockFinishedRoutineCopies(today);
   const only = opts.ruleIds?.length ? ` AND rt.id IN (${opts.ruleIds.map(() => "?").join(",")})` : "";
   const rules = await query<DbRow[]>(
     `${RULE_SELECT}
@@ -379,23 +381,24 @@ export async function runRecurringTasks(opts: { now?: Date; ruleIds?: number[]; 
 // ── Finishing copies that need no review ───────────────────────────────────
 
 /**
- * A copy of a no-review rule whose work is complete: Done and signed off at
- * once, on the authority of the admin who approved the rule.
+ * A copy of a no-review rule whose work is complete: Done at once, on the
+ * authority of the admin who approved the rule. It stays open for the rest
+ * of that day — the owner can still add a subtask (which reopens it) — and
+ * is signed off overnight by lockFinishedRoutineCopies().
  */
 export async function finishRoutineCopy(taskId: number, actor: User): Promise<boolean> {
   const [t] = await query<DbRow[]>(
-    `SELECT t.id, t.title, t.project_id, t.status, rt.decided_by
-       FROM tasks t LEFT JOIN recurring_tasks rt ON rt.id = t.recurring_task_id
+    `SELECT t.id, t.title, t.project_id, t.status
+       FROM tasks t
       WHERE t.id = ? AND t.auto_approve = 1 AND t.signed_off_at IS NULL LIMIT 1`,
     [taskId]
   );
   if (!t || t.status === "done") return false;
   const res = (await query<DbResult>(
     `UPDATE tasks SET status = 'done', approval_status = 'approved', approved_by = ?, approved_at = UTC_TIMESTAMP(),
-            completed_at = UTC_TIMESTAMP(), signed_off_by = ?, signed_off_at = UTC_TIMESTAMP(),
-            signoff_note = 'Routine recurring task — no review needed'
+            completed_at = UTC_TIMESTAMP(), outstanding = 0
       WHERE id = ? AND status = ? AND signed_off_at IS NULL`,
-    [actor.id, t.decided_by ?? actor.id, taskId, t.status]
+    [actor.id, taskId, t.status]
   )) as unknown as DbResult;
   if (!res.affectedRows) return false;
   await logActivity({
@@ -406,6 +409,23 @@ export async function finishRoutineCopy(taskId: number, actor: User): Promise<bo
     metadata: { from: t.status, to: "done", automatic: true, reason: "recurring_no_review" },
   });
   return true;
+}
+
+/**
+ * Sign off no-review copies finished before today (India time), on the
+ * authority of the admin who approved their rule — like a work update, a
+ * routine copy locks at midnight after the day it was finished.
+ */
+export async function lockFinishedRoutineCopies(today: string): Promise<number> {
+  const res = (await query<DbResult>(
+    `UPDATE tasks t LEFT JOIN recurring_tasks rt ON rt.id = t.recurring_task_id
+        SET t.signed_off_by = COALESCE(rt.decided_by, t.approved_by), t.signed_off_at = UTC_TIMESTAMP(),
+            t.signoff_note = 'Routine recurring task — no review needed'
+      WHERE t.auto_approve = 1 AND t.status = 'done' AND t.signed_off_at IS NULL
+        AND t.completed_at IS NOT NULL AND DATE(t.completed_at + INTERVAL 330 MINUTE) < ?`,
+    [today]
+  )) as unknown as DbResult;
+  return res.affectedRows ?? 0;
 }
 
 // ── Reading rules ──────────────────────────────────────────────────────────
