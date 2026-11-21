@@ -30,3 +30,28 @@ export async function projectAlertRecipients(
   );
   return rows.map((r) => ({ id: r.id, name: r.name, email: r.email }));
 }
+
+/** Where a notification about a task points: the task's own page. */
+export function taskLink(projectId: number, taskId: number): string {
+  return `/projects/${projectId}/tasks/${taskId}`;
+}
+
+/**
+ * A task was just approved (Done): ask whoever can sign it off to do so —
+ * the person who requested it, unless that is the task's own owner (who
+ * can't sign off their own work); then the project's leads and admins.
+ */
+export async function askForSignOff(
+  task: { id: number; project_id: number; title: string; requested_by?: number | null; assignee_id?: number | null },
+  actorId: number
+): Promise<void> {
+  const { notify } = await import("./activity");
+  const requesterCanSign = task.requested_by && task.requested_by !== task.assignee_id;
+  const ask = requesterCanSign
+    ? [Number(task.requested_by)]
+    : (await projectAlertRecipients(task.project_id)).map((r) => r.id);
+  for (const uid of new Set(ask)) {
+    if (uid === actorId) continue;
+    await notify(uid, "signoff_requested", `"${task.title}" is done — please verify and sign off`, taskLink(task.project_id, task.id));
+  }
+}

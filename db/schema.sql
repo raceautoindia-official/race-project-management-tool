@@ -384,7 +384,7 @@ CREATE TABLE IF NOT EXISTS recurring_skips (
   id                INT AUTO_INCREMENT PRIMARY KEY,
   recurring_task_id INT NOT NULL,
   occurrence_date   DATE NOT NULL,
-  reason            ENUM('holiday','day_off','still_open','missed','skipped') NOT NULL,
+  reason            ENUM('holiday','day_off','absent','still_open','missed','skipped') NOT NULL,
   moved_to          DATE NULL,
   created_by        INT NULL,
   created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

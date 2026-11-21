@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ToastProvider";
@@ -9,6 +9,7 @@ import type { ItemTime } from "@/lib/time-data";
 import DoActions from "./DoActions";
 import { ItemContext, itemHref, utcAgo } from "./items";
 import { elapsedSeconds, formatClock, formatMins, isRunningOn, liveTrackedMinutes, startTimer, useWorkTimer, type TimerState } from "./work-timer-store";
+import { DueLabel } from "./kit";
 
 /**
  * My Work › Working on: everything I have started and not yet sent for
@@ -37,7 +38,9 @@ function keyOf(i: Pick<WorkItem, "kind" | "id">) {
   return `${i.kind}-${i.id}`;
 }
 
-function matches(timer: TimerState | null, i: WorkItem) {
+function matches(timer: TimerState | null, i: WorkItem & { time?: ItemTime | null }) {
+  // Until the timer has been read, go by what the server saw: a stretch started and not ended.
+  if (!timer) return Boolean(i.time?.lastStartedAt && !i.time.lastEndedAt);
   return i.kind === "subtask" ? isRunningOn(timer, i.task_id, i.id) : isRunningOn(timer, i.id, null);
 }
 
@@ -52,8 +55,20 @@ export default function WorkingOnPanel({
   todayStartUtc: string;
 }) {
   const timer = useWorkTimer();
+  const router = useRouter();
   const [, tick] = useState(0);
   const running = timer?.running ?? null;
+
+  // The rows' times and pause reasons come from the server. Whenever the
+  // timer starts, stops or moves — from here, the header chip, another tab,
+  // or a clock-out — fetch them again so the list matches.
+  const sessionKey = timer ? String(running?.sessionId ?? "none") : null;
+  const lastSession = useRef<string | null>(null);
+  useEffect(() => {
+    if (sessionKey === null) return;
+    if (lastSession.current !== null && lastSession.current !== sessionKey) router.refresh();
+    lastSession.current = sessionKey;
+  }, [sessionKey, router]);
 
   useEffect(() => {
     if (!running) return;
@@ -93,13 +108,13 @@ export default function WorkingOnPanel({
   const pausedCount = list.filter((i) => !matches(timer, i)).length;
 
   return (
-    <section aria-labelledby="working-on" className="mb-6 rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <section aria-labelledby="working-on" className="mb-6 scroll-mt-4 rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-slate-100 px-4 py-3">
         <h2 id="working-on" className="text-base font-semibold text-slate-900">
           Working on
         </h2>
         <span className="text-xs text-slate-500">
-          {running ? "1 active" : "Nothing active"}
+          {list.some((i) => matches(timer, i)) ? "1 active" : "Nothing active"}
           {pausedCount > 0 && ` · ${pausedCount} paused`}
         </span>
         <span className="ml-auto text-xs text-slate-500">
@@ -124,7 +139,9 @@ export default function WorkingOnPanel({
 
       {list.length === 0 ? (
         <p className="px-4 py-4 text-sm text-slate-500">
-          You haven’t started anything yet. Pick something below — its timer runs while you’re clocked in.
+          {notStarted.length > 0
+            ? "You haven’t started anything yet. Pick something below — its timer runs while you’re clocked in."
+            : "Nothing is assigned to you right now. Work you’re given shows up here, ready to start."}
         </p>
       ) : (
         <ul className="divide-y divide-slate-100">
@@ -176,6 +193,8 @@ function Row({ item, timer, active, todayStartUtc }: { item: WorkingOnItem; time
         <p className="mt-0.5 text-xs text-slate-500">
           {active && timer?.running ? (
             <span className="figure font-medium text-emerald-700">Running {formatClock(runSecs)}</span>
+          ) : active ? (
+            <span className="font-medium text-emerald-700">Running</span>
           ) : t?.lastEndedAt ? (
             <>
               Paused {utcAgo(t.lastEndedAt)}
@@ -189,6 +208,12 @@ function Row({ item, timer, active, todayStartUtc }: { item: WorkingOnItem; time
           )}
         </p>
       </div>
+
+      {item.due_date && (
+        <span className="shrink-0">
+          <DueLabel date={item.due_date} />
+        </span>
+      )}
 
       <span className="figure flex w-full items-baseline gap-2 text-xs text-slate-500 sm:block sm:w-28 sm:shrink-0 sm:text-right">
         <span className="text-sm font-semibold text-slate-900 sm:block">{formatMins(today)} today</span>

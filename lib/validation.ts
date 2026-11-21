@@ -148,6 +148,23 @@ export const decisionSchema = z
     }
   });
 
+/**
+ * A project request's decision. An admin approving it may also name the
+ * project's lead and add members in the same step.
+ */
+export const projectDecisionSchema = z
+  .object({
+    decision: z.enum(["approve", "reject"]),
+    note: z.string().trim().max(1000).optional().nullable(),
+    leadId: optionalId.optional(),
+    memberIds: z.array(z.coerce.number().int().positive()).max(200).optional(),
+  })
+  .superRefine((d, ctx) => {
+    if (d.decision === "reject" && !d.note) {
+      ctx.addIssue({ code: "custom", path: ["note"], message: "Give a reason for rejecting" });
+    }
+  });
+
 export const updateProjectSchema = z
   .object({
     name: z.string().min(1).max(150).optional(),

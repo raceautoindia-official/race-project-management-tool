@@ -126,6 +126,10 @@ export async function getCurrentUser(): Promise<User | null> {
     import("./work-timer")
       .then((m) => m.reconcileTimers({ userIds: [row.id] }))
       .catch((err) => console.error("[work-timer] check failed:", (err as Error).message));
+    // …and make any recurring copy that was waiting for them to clock in.
+    import("./recurring")
+      .then((m) => m.runRecurringFor(row.id))
+      .catch((err) => console.error("[recurring] check failed:", (err as Error).message));
     if (fresh) {
       if (!fresh.is_active) return null;
       row.role = fresh.role;

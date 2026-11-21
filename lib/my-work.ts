@@ -203,12 +203,18 @@ export async function getMyWork(user: User): Promise<MyWork> {
 
   // The workflows the app already had.
   const attention: Attention[] = [];
+  // Done tasks I can sign off (lib/workflow.ts canSignOff): any in a project
+  // I manage, and ones I requested that aren't my own work. Routine recurring
+  // copies sign themselves off overnight, so they aren't asked for.
   for (const r of await query<DbRow[]>(
     `SELECT t.id, t.project_id, p.name AS project_name, t.title, u.name AS who, t.completed_at AS at
        FROM tasks t JOIN projects p ON p.id = t.project_id LEFT JOIN users u ON u.id = t.assignee_id
-      WHERE t.status = 'done' AND t.signed_off_at IS NULL AND t.requested_by = ? AND p.approval_status = 'approved'
+      WHERE t.status = 'done' AND t.signed_off_at IS NULL AND t.auto_approve = 0
+        AND p.approval_status = 'approved' AND p.status <> 'completed'
+        AND (t.project_id IN (${managed.sql})
+             OR (t.requested_by = ? AND (t.assignee_id IS NULL OR t.assignee_id <> ?)))
       ORDER BY t.completed_at ASC`,
-    [user.id]
+    [...managed.params, user.id, user.id]
   )) {
     attention.push({ kind: "signoff", id: r.id, project_id: r.project_id, project_name: r.project_name, title: r.title, who: r.who, at: r.at, link: `/projects/${r.project_id}/tasks/${r.id}` });
   }

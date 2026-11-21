@@ -28,6 +28,7 @@ const LATER_MIGRATIONS = [
   "2026-10-31_retired_staff.sql",
   "2026-10-31_work_timer.sql",
   "2026-11-05_recurring_work.sql",
+  "2026-11-21_recurring_absent.sql",
 ].map((f) =>
   readFileSync(new URL(`../../db/migrations/${f}`, import.meta.url), "utf8")
 );

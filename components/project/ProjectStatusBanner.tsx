@@ -6,7 +6,12 @@ import { apiFetch, isConflict } from "@/lib/api-client";
 import { useToast } from "@/components/ToastProvider";
 import { formatIst } from "@/lib/tz";
 import { canDecideProject } from "@/lib/workflow";
-import type { ProjectStatus, RequestStatus, Role } from "@/lib/types";
+import type { ProjectMember, ProjectStatus, RequestStatus, Role } from "@/lib/types";
+
+interface Person {
+  id: number;
+  name: string;
+}
 
 export interface BannerProject {
   id: number;
@@ -25,7 +30,9 @@ export interface BannerProject {
 
 /**
  * The project's lifecycle state above the board:
- *  - pending request → nominated lead/admin approves or rejects; requester can withdraw
+ *  - pending request → nominated lead/admin approves or rejects; requester can withdraw.
+ *    An admin approving it picks the project's lead (whoever asked for it, by
+ *    default) and can add members in the same step.
  *  - rejected request → reason; requester/admin can delete it
  *  - completed → read-only; an admin can reopen
  *  - every task signed off → prompt the lead to mark the project completed
@@ -36,12 +43,19 @@ export default function ProjectStatusBanner({
   canManage,
   readyToComplete,
   onProjectChange,
+  members = [],
+  allUsers = [],
+  onMembersChange,
 }: {
   project: BannerProject;
   currentUser: { id: number; role: Role; name: string };
   canManage: boolean;
   readyToComplete: boolean;
   onProjectChange: (patch: Partial<BannerProject>) => void;
+  /** Who is on the project now, and everyone who could be (for an admin's approval). */
+  members?: ProjectMember[];
+  allUsers?: Person[];
+  onMembersChange?: (members: ProjectMember[]) => void;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -49,6 +63,10 @@ export default function ProjectStatusBanner({
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // An admin's approval step: the lead (whoever asked for it, by default) and extra members.
+  const [staffing, setStaffing] = useState(false);
+  const [leadId, setLeadId] = useState<number | null>(project.requested_by ?? project.owner_id);
+  const [added, setAdded] = useState<number[]>([]);
 
   const isAdmin = currentUser.role === "admin";
   const isRequester = project.requested_by === currentUser.id;
@@ -82,7 +100,11 @@ export default function ProjectStatusBanner({
         `/api/projects/${project.id}/decision`,
         {
           method: "POST",
-          body: JSON.stringify({ decision, note: decision === "reject" ? reason : null }),
+          body: JSON.stringify({
+            decision,
+            note: decision === "reject" ? reason : null,
+            ...(decision === "approve" && isAdmin && staffing ? { leadId, memberIds: added } : {}),
+          }),
         }
       );
       onProjectChange({
@@ -90,7 +112,16 @@ export default function ProjectStatusBanner({
         decided_at: res.project.decided_at ?? null,
         decision_note: res.project.decision_note ?? null,
         decider_name: currentUser.name,
+        ...(res.project.owner_id !== undefined ? { owner_id: res.project.owner_id, owner_name: res.project.owner_name ?? null } : {}),
       });
+      if (decision === "approve" && onMembersChange) {
+        try {
+          onMembersChange((await apiFetch<{ members: ProjectMember[] }>(`/api/projects/${project.id}/members`)).members);
+        } catch {
+          // the page refresh below brings them
+        }
+      }
+      setStaffing(false);
       setRejecting(false);
       toast(decision === "approve" ? "Project approved" : "Project request rejected");
       router.refresh();
@@ -132,6 +163,11 @@ export default function ProjectStatusBanner({
   );
 
   if (project.approval_status === "pending") {
+    const nameOf = (id: number) => allUsers.find((u) => u.id === id)?.name ?? members.find((m) => m.user_id === id)?.name ?? "—";
+    const onProject = new Set([...members.map((m) => m.user_id), ...added]);
+    // The lead can be whoever asked for it, the admin approving, or anyone on the project.
+    const leadChoices = [...new Set([project.requested_by, project.owner_id, currentUser.id, ...onProject].filter((x): x is number => x != null))];
+    const addable = allUsers.filter((u) => !onProject.has(u.id));
     return (
       <section className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
         <h2 className="font-semibold text-amber-900">Awaiting lead approval</h2>
@@ -156,12 +192,97 @@ export default function ProjectStatusBanner({
             />
           </div>
         )}
-        {errorLine}
-        <div className="mt-3 flex flex-wrap gap-2">
-          {mayDecide && !rejecting && (
-            <>
+        {staffing && isAdmin && (
+          <div className="mt-3 rounded-lg border border-amber-200 bg-white p-3">
+            <p className="text-sm font-semibold text-slate-900">Before you approve: who runs it, and who is on it</p>
+            <div className="mt-2 grid gap-3 sm:grid-cols-2">
+              <label className="block text-xs font-medium text-slate-700">
+                Project lead
+                <select
+                  value={leadId ?? ""}
+                  onChange={(e) => setLeadId(Number(e.target.value) || null)}
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-900"
+                >
+                  {leadChoices.map((id) => (
+                    <option key={id} value={id}>
+                      {id === currentUser.id ? `${currentUser.name} (me)` : nameOf(id)}
+                      {id === project.requested_by ? " — asked for it" : id === project.owner_id ? " — nominated on the request" : ""}
+                    </option>
+                  ))}
+                </select>
+                <span className="mt-1 block font-normal text-slate-500">
+                  The lead owns the project: they approve its tasks and sign them off. Add someone below to choose them here.
+                </span>
+              </label>
+              <div>
+                <label htmlFor="approve-add-member" className="block text-xs font-medium text-slate-700">
+                  Members
+                </label>
+                <select
+                  id="approve-add-member"
+                  value=""
+                  onChange={(e) => {
+                    const id = Number(e.target.value);
+                    if (id) setAdded((a) => [...a, id]);
+                  }}
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-900"
+                >
+                  <option value="">Add a member…</option>
+                  {addable.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name}
+                    </option>
+                  ))}
+                </select>
+                <ul className="mt-2 flex flex-wrap gap-1.5">
+                  {members.map((m) => (
+                    <li key={m.user_id} className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700">
+                      {m.name}
+                    </li>
+                  ))}
+                  {added.map((id) => (
+                    <li key={id} className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-800 ring-1 ring-emerald-200">
+                      {nameOf(id)}
+                      <button
+                        type="button"
+                        aria-label={`Remove ${nameOf(id)}`}
+                        onClick={() => {
+                          setAdded((a) => a.filter((x) => x !== id));
+                          if (leadId === id) setLeadId(project.requested_by ?? project.owner_id);
+                        }}
+                        className="text-emerald-600 hover:text-red-600"
+                      >
+                        ✕
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
               <button
                 onClick={() => decide("approve")}
+                disabled={busy || !leadId}
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+              >
+                {busy ? "Approving…" : "Approve with this team"}
+              </button>
+              <button
+                onClick={() => setStaffing(false)}
+                disabled={busy}
+                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+        {errorLine}
+        <div className="mt-3 flex flex-wrap gap-2">
+          {mayDecide && !rejecting && !staffing && (
+            <>
+              <button
+                onClick={() => (isAdmin ? setStaffing(true) : decide("approve"))}
                 disabled={busy}
                 className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
               >
@@ -194,7 +315,7 @@ export default function ProjectStatusBanner({
               </button>
             </>
           )}
-          {isRequester && !rejecting && (
+          {isRequester && !rejecting && !staffing && (
             <button
               onClick={removeRequest}
               disabled={busy}

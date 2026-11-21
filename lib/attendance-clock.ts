@@ -106,22 +106,46 @@ export function clockStateFrom(row: ClockRow | undefined | null, now: Date): Clo
  *   proves they left in between. If the clock-out itself is no longer on the
  *   row (they clocked out again since), the timer stops at that clock-in at
  *   the latest — off by at most the gap between two checks.
- * - Not clocked in with nothing after the start (marked away, a stale
- *   stretch): no time is credited past the start.
+ * - They never clocked out (the stretch was left open and went stale, or
+ *   the next thing on record is a clock-in on a later day): the timer stops
+ *   at midnight, India time, of the day it started — never days later, and
+ *   never with the whole day's work thrown away.
+ * - Not clocked in at all, or marked away: no time is credited past the
+ *   start.
  */
 export function timerStopAt(rows: ClockRow[], startedAt: string, now: Date): string | null {
   const start = parseUtc(startedAt);
-  const stops: string[] = [];
+  const cap = endOfIndiaDay(start);
+  let stop: { at: string; left: boolean } | null = null;
+  const consider = (at: string, left: boolean) => {
+    if (!stop || parseUtc(at) < parseUtc(stop.at)) stop = { at, left };
+  };
   for (const r of rows) {
-    if (r.clock_out_utc && parseUtc(r.clock_out_utc) >= start) stops.push(r.clock_out_utc);
-    if (r.clock_in_utc && parseUtc(r.clock_in_utc) > start) stops.push(r.clock_in_utc);
+    if (r.clock_out_utc && parseUtc(r.clock_out_utc) >= start) consider(r.clock_out_utc, true);
+    if (r.clock_in_utc && parseUtc(r.clock_in_utc) > start) consider(r.clock_in_utc, false);
   }
-  if (stops.length) {
-    return stops.reduce((a, b) => (parseUtc(a) <= parseUtc(b) ? a : b));
+  if (stop) {
+    const found = stop as { at: string; left: boolean };
+    // A clock-out is when they left. A later clock-in only proves they left
+    // some time before it: past midnight, midnight is the fairer guess.
+    return !found.left && parseUtc(found.at) > cap ? toSqlUtc(cap) : found.at;
   }
   const latest = latestRow(rows);
   if (clockStateFrom(latest, now).clockedIn) return null;
+  // Left open and gone stale: they worked, then forgot to clock out.
+  if (latest?.clock_in_utc && parseUtc(latest.clock_in_utc) <= start) {
+    const out = latest.clock_out_utc ? parseUtc(latest.clock_out_utc) : null;
+    const away = latest.status === "leave" || latest.status === "holiday" || latest.status === "absent";
+    if (!away && (!out || out < parseUtc(latest.clock_in_utc))) return toSqlUtc(cap < now ? cap : now);
+  }
   return startedAt;
+}
+
+/** Midnight (India time) at the end of the day an instant falls in. */
+function endOfIndiaDay(at: Date): Date {
+  const IST_MS = 330 * 60_000;
+  const DAY_MS = 86_400_000;
+  return new Date(Math.floor((at.getTime() + IST_MS) / DAY_MS) * DAY_MS + DAY_MS - IST_MS);
 }
 
 /** The row for the most recent working day. */

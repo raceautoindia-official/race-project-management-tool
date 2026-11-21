@@ -105,7 +105,7 @@ describe("sign-off", () => {
       })
     ).toEqual([
       "The task must be marked Done first",
-      "Requested by is missing",
+      "Requested by is missing — a project lead can sign it off",
       "Approved by is missing — a project lead can sign it off",
       "An assigned owner is missing",
     ]);
@@ -122,11 +122,17 @@ describe("sign-off", () => {
     expect(canSignOff(member(4), false, { requested_by: null })).toBe(false);
   });
 
-  it("never lets the assigned owner sign off their own work — unless they're an admin", () => {
+  it("never lets a member sign off their own work, but a lead or admin always can in their project", () => {
     const ownWork = { requested_by: 4, assignee_id: 4 };
     expect(canSignOff({ id: 4, role: "member" }, false, ownWork)).toBe(false); // requester + owner
-    expect(canSignOff({ id: 4, role: "member" }, true, ownWork)).toBe(false); // lead + owner
+    expect(canSignOff({ id: 4, role: "member" }, true, ownWork)).toBe(true); // lead + owner
     expect(canSignOff({ id: 4, role: "admin" }, true, ownWork)).toBe(true);
+  });
+
+  it("a lead's sign-off isn't blocked by a missing requester or approver", () => {
+    const bare = { status: "done" as const, requested_by: null, request_approved_by: null, assignee_id: 4 };
+    expect(signOffBlockers(bare, { signerIsManager: true })).toEqual([]);
+    expect(signOffBlockers(bare)).toHaveLength(2);
   });
 });
 

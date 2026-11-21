@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
       const recipients = await projectAlertRecipients(t.project_id);
       const emails = recipients.map((r) => r.email);
       if (t.assignee_email) emails.push(t.assignee_email);
-      const link = `${base}/projects/${t.project_id}`;
+      const link = `${base}/projects/${t.project_id}/tasks/${t.id}`;
       await sendEmail({
         to: emails,
         subject: `Task due soon: ${t.title}`,
@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
           t.assignee_id,
           "task_due_soon",
           `Task "${t.title}" is due on ${t.due_date}`,
-          `/projects/${t.project_id}`
+          `/projects/${t.project_id}/tasks/${t.id}`
         );
       }
       await query(`UPDATE tasks SET due_alert_sent = 1 WHERE id = ?`, [t.id]);
@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
           t.assignee_id,
           "task_overdue",
           `Your task "${t.title}" is overdue`,
-          `/projects/${t.project_id}`
+          `/projects/${t.project_id}/tasks/${t.id}`
         );
       }
       overdueCount++;

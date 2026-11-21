@@ -80,6 +80,16 @@ describe("where a timer stops", () => {
     expect(timerStopAt(rows, started, at("2026-11-01 04:00:00"))).toBe("2026-10-31 12:30:00");
   });
 
+  it("stops at midnight when they never clocked out", () => {
+    // Started 10:30 IST on the 31st; the stretch was left open and is now stale.
+    expect(timerStopAt([row()], started, at("2026-11-01 05:00:00"))).toBe("2026-10-31 18:30:00");
+    // Or the next thing on record is the next day's clock-in.
+    const rows = [row(), row({ work_date: "2026-11-01", first_clock_in_utc: "2026-11-01 03:30:00", clock_in_utc: "2026-11-01 03:30:00" })];
+    expect(timerStopAt(rows, started, at("2026-11-01 04:00:00"))).toBe("2026-10-31 18:30:00");
+    // On leave with a row but no clock-in to speak of: nothing past the start.
+    expect(timerStopAt([row({ status: "leave" })], started, at("2026-10-31 06:00:00"))).toBe(started);
+  });
+
   it("credits nothing past the start when they are not clocked in at all", () => {
     expect(timerStopAt([], started, at("2026-10-31 06:00:00"))).toBe(started);
   });

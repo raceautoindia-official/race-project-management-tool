@@ -17,10 +17,12 @@ import { DateRange, DueLabel, HealthBadge, ProgressLegend, SubtaskStatusBadge, W
 import ScheduleTrack from "@/components/work/ScheduleTrack";
 import DoActions from "@/components/work/DoActions";
 import WorkingOnPanel from "@/components/work/WorkingOnPanel";
+import AutoRefresh from "@/components/work/AutoRefresh";
 import { itemTimeKey, myItemTimes } from "@/lib/time-data";
 import { istDayBounds } from "@/lib/time-metrics";
 import { upcomingForMe } from "@/lib/recurring";
 import OngoingSummary from "@/components/work/OngoingSummary";
+import CollapsibleCard from "@/components/work/CollapsibleCard";
 
 export const dynamic = "force-dynamic";
 
@@ -87,6 +89,8 @@ export default async function MyWorkPage({ searchParams }: { searchParams: Promi
         <MyTasksTab user={user} />
       ) : (
         <>
+          {/* New work, review results and timer changes arrive without a reload. */}
+          <AutoRefresh seconds={60} />
           <IntroStrip />
 
           <WorkingOnPanel items={workingOn} notStarted={notStarted} todayStartUtc={todayStartUtc} />
@@ -94,15 +98,21 @@ export default async function MyWorkPage({ searchParams }: { searchParams: Promi
           {/* At-a-glance counters */}
           <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Counter icon="⧗" label="To review" value={toReview} tone="amber" href="/reviews" />
-            <Counter icon="⚠" label="Overdue" value={overdue.length} tone="red" href="#my-todo" />
-            <Counter icon="📅" label="Due this week" value={thisWeek.length} tone="indigo" href="#my-todo" />
+            <Counter icon="⚠" label="Overdue" value={overdue.length} tone="red" href={overdue.some((i) => i.status === "todo") ? "#my-todo" : "#working-on"} />
+            <Counter icon="📅" label="Due this week" value={thisWeek.length} tone="indigo" href={thisWeek.some((i) => i.status === "todo") ? "#my-todo" : "#working-on"} />
             <Counter icon="↗" label="Waiting on others" value={work.submitted.length} tone="sky" href="/reviews?tab=sent" />
           </div>
 
           <div className="grid gap-6 lg:grid-cols-3">
             <div className="min-w-0 space-y-6 lg:col-span-2">
               <NeedsAttention work={work} changes={changes} readyToClose={readyToClose} />
-              <MyTodo overdue={overdue} thisWeek={thisWeek} later={later} submitted={work.submitted} />
+              <MyTodo
+                overdue={overdue.filter((i) => i.status === "todo")}
+                thisWeek={thisWeek.filter((i) => i.status === "todo")}
+                later={later.filter((i) => i.status === "todo")}
+                submitted={work.submitted}
+                started={workingOn.length}
+              />
               <OwnedTasks work={work} />
               <OwnedProjects work={work} />
             </div>
@@ -183,7 +193,11 @@ function NeedsAttention({
                 🏁
               </span>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-slate-900">{p.name} is ready to close</p>
+                <p className="text-xs font-medium text-slate-500">Project ready to close</p>
+                <p className="text-sm font-medium text-slate-900">
+                  <span className="font-normal text-slate-400">Project </span>
+                  {p.name}
+                </p>
                 <p className="text-xs text-slate-500">Every task is signed off and no requests are open.</p>
               </div>
               <Link href={`/projects/${p.id}`} className="shrink-0 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50">
@@ -199,6 +213,7 @@ function NeedsAttention({
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-medium text-slate-500">{i.kind === "subtask" ? "Subtask" : "Task"} to review</p>
                 <Link href={itemHref(i)} className="block truncate text-sm font-medium text-slate-900 hover:text-indigo-700">
+                  <span className="font-normal text-slate-400">{i.kind === "subtask" ? "Subtask " : "Task "}</span>
                   {i.title}
                 </Link>
                 <p className="text-xs text-slate-500">
@@ -220,6 +235,7 @@ function NeedsAttention({
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-medium text-orange-700">Changes requested</p>
                 <Link href={itemHref(i)} className="block truncate text-sm font-medium text-slate-900 hover:text-indigo-700">
+                  <span className="font-normal text-slate-400">{i.kind === "subtask" ? "Subtask " : "Task "}</span>
                   {i.title}
                 </Link>
                 <p className="text-xs text-orange-800">“{i.changes_requested}”</p>
@@ -236,13 +252,39 @@ function NeedsAttention({
   );
 }
 
-function MyTodo({ overdue, thisWeek, later, submitted }: { overdue: WorkItem[]; thisWeek: WorkItem[]; later: WorkItem[]; submitted: WorkItem[] }) {
+function MyTodo({
+  overdue,
+  thisWeek,
+  later,
+  submitted,
+  started,
+}: {
+  overdue: WorkItem[];
+  thisWeek: WorkItem[];
+  later: WorkItem[];
+  submitted: WorkItem[];
+  /** How many more are already started — those are in Working on, above. */
+  started: number;
+}) {
   const count = overdue.length + thisWeek.length + later.length;
   return (
     <section id="my-todo" className="scroll-mt-4">
-      <SectionCard title={`My to-do${count ? ` · ${count}` : ""}`}>
+      <SectionCard
+        title={`Not started yet${count ? ` · ${count}` : ""}`}
+        action={
+          started > 0 ? (
+            <a href="#working-on" className="text-sm font-medium text-indigo-600 hover:underline">
+              {started} started ↑
+            </a>
+          ) : undefined
+        }
+      >
         {count === 0 ? (
-          <Empty icon="🎉" title="You're all clear" body="Nothing is assigned to you right now. New work appears here as soon as someone gives you some." />
+          started > 0 ? (
+            <Empty icon="👍" title="Everything you have is under way" body="What you’ve started is in Working on, at the top. New work appears here as soon as someone gives you some." />
+          ) : (
+            <Empty icon="🎉" title="You're all clear" body="Nothing is assigned to you right now. New work appears here as soon as someone gives you some." />
+          )
         ) : (
           <div className="space-y-4">
             <TodoGroup title="Overdue" tone="text-red-600" items={overdue} />
@@ -309,7 +351,7 @@ function TodoGroup({ title, tone, items }: { title: string; tone: string; items:
 function OwnedTasks({ work }: { work: Awaited<ReturnType<typeof getMyWork>> }) {
   if (work.ownedTasks.length === 0) return null;
   return (
-    <SectionCard title={`Tasks I own · ${work.ownedTasks.length}`} action={<span className="hidden sm:block"><ProgressLegend /></span>}>
+    <CollapsibleCard id="my-work.tasks-i-own" title={`Tasks I own · ${work.ownedTasks.length}`} action={<span className="hidden sm:block"><ProgressLegend /></span>}>
       <ul className="-my-3 divide-y divide-slate-100">
         {work.ownedTasks.map((t) => (
           <li key={t.id} className="py-3">
@@ -333,14 +375,14 @@ function OwnedTasks({ work }: { work: Awaited<ReturnType<typeof getMyWork>> }) {
           </li>
         ))}
       </ul>
-    </SectionCard>
+    </CollapsibleCard>
   );
 }
 
 function OwnedProjects({ work }: { work: Awaited<ReturnType<typeof getMyWork>> }) {
   if (work.ownedProjects.length === 0) return null;
   return (
-    <SectionCard title={`Projects I own · ${work.ownedProjects.length}`}>
+    <CollapsibleCard id="my-work.projects-i-own" title={`Projects I own · ${work.ownedProjects.length}`}>
       <div className="grid gap-3 sm:grid-cols-2">
         {work.ownedProjects.map((p) => (
           <Link key={p.id} href={`/projects/${p.id}`} className="rounded-xl border border-slate-200 border-t-4 border-t-violet-400 p-3 transition hover:border-violet-300 hover:shadow-sm">
@@ -369,7 +411,7 @@ function OwnedProjects({ work }: { work: Awaited<ReturnType<typeof getMyWork>> }
           </Link>
         ))}
       </div>
-    </SectionCard>
+    </CollapsibleCard>
   );
 }
 

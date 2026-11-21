@@ -6,6 +6,7 @@ import { useToast } from "@/components/ToastProvider";
 import { apiFetch } from "@/lib/api-client";
 import { reviewsChanged } from "./review-count";
 import WorkButton from "./WorkButton";
+import { refreshTimer } from "./work-timer-store";
 
 /**
  * Start (the work timer) / Mark complete for one item on my to-do list,
@@ -45,6 +46,9 @@ export default function DoActions({
       }
       toast(message);
       reviewsChanged();
+      // Finishing work stops its timer on the server; tell the chip and the
+      // Working on panel now rather than at their next poll.
+      await refreshTimer();
       router.refresh();
     } catch (e) {
       toast(e instanceof Error ? e.message : "That didn't work — please try again", "error");

@@ -23,8 +23,9 @@ const HISTORY: Record<HistoryItem["state"], { cls: string; label: string }> = {
   review: { cls: "bg-sky-400", label: "Waiting for review" },
   open: { cls: "bg-white ring-2 ring-inset ring-indigo-400", label: "Open" },
   overdue: { cls: "bg-red-500", label: "Open and overdue" },
-  holiday: { cls: "bg-slate-200", label: "Holiday — no copy" },
+  holiday: { cls: "bg-slate-200", label: "Holiday or day off — no copy" },
   day_off: { cls: "bg-slate-200", label: "Day off — no copy" },
+  absent: { cls: "bg-slate-200", label: "Owner not at work — no copy" },
   still_open: { cls: "bg-orange-300", label: "No copy — the last one was still open" },
   missed: { cls: "bg-slate-400", label: "Missed — the app was down" },
   skipped: { cls: "bg-slate-300", label: "Skipped by hand" },
@@ -163,7 +164,7 @@ export default function RecurringView({
 }
 
 function Legend() {
-  const shown: HistoryItem["state"][] = ["done", "late", "review", "open", "overdue", "still_open", "holiday", "skipped"];
+  const shown: HistoryItem["state"][] = ["done", "late", "review", "open", "overdue", "still_open", "holiday", "absent", "skipped"];
   return (
     <p className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
       {shown.map((k) => (

@@ -5,6 +5,7 @@ import { json, errorResponse, ApiError, conflict } from "@/lib/http";
 import { assertProjectManage, assertTaskWritable } from "@/lib/rbac";
 import { approvalSchema } from "@/lib/validation";
 import { logActivity, notify } from "@/lib/activity";
+import { askForSignOff, taskLink } from "@/lib/recipients";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -72,7 +73,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       metadata: { title: task.title, note: note ?? null },
     });
 
-    const link = `/projects/${task.project_id}?task=${taskId}`;
+    const link = taskLink(task.project_id, taskId);
     if (task.assignee_id && task.assignee_id !== user.id) {
       await notify(
         task.assignee_id,
@@ -83,14 +84,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         link
       );
     }
-    if (decision === "approve" && task.requested_by && task.requested_by !== user.id) {
-      await notify(
-        task.requested_by,
-        "signoff_requested",
-        `"${task.title}" is done — please review and sign it off`,
-        link
-      );
-    }
+    if (decision === "approve") await askForSignOff({ id: taskId, project_id: task.project_id, title: task.title, requested_by: task.requested_by, assignee_id: task.assignee_id }, user.id);
 
     return json({ ok: true, decision });
   } catch (err) {

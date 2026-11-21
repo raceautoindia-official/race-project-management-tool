@@ -233,13 +233,17 @@ describe("review fixes", () => {
 });
 
 describe("separation of duties and small fixes", () => {
-  it("the assigned owner can't sign off their own work; an admin can", async () => {
-    const t = await createTask({ ...correction("Own work"), requestedById: lead.id, assigneeId: lead.id });
+  it("a member can't sign off their own work; the project's lead always can, even a task they own", async () => {
+    const t = await createTask({ ...correction("Own work"), requestedById: alice.id, assigneeId: alice.id });
     await markDone(t.id);
-    const own = await signOff(t.id, lead);
+    const own = await signOff(t.id, alice);
     expect(own.status).toBe(403);
     expect(own.body.error).toMatch(/can't sign off your own work/);
-    expect((await signOff(t.id, admin)).status).toBe(200);
+    expect((await signOff(t.id, lead)).status).toBe(200);
+
+    const mine = await createTask({ ...correction("Lead's own task"), requestedById: lead.id, assigneeId: lead.id });
+    await markDone(mine.id);
+    expect((await signOff(mine.id, lead)).status).toBe(200);
   });
 
   it("a lead can't decide their own task request; an admin can", async () => {

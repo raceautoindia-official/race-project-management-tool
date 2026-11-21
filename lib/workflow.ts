@@ -164,8 +164,8 @@ export interface SignOffCandidate {
 
 /**
  * The mandatory things still missing before a task can be signed off. A
- * missing approver doesn't block an admin/lead: their sign-off records them as
- * the approver too.
+ * missing requester or approver doesn't block an admin/lead: their sign-off
+ * records them in the empty place.
  */
 export function signOffBlockers(
   t: SignOffCandidate,
@@ -174,7 +174,9 @@ export function signOffBlockers(
   const blockers: string[] = [];
   if (t.signed_off_at) blockers.push("The task is already signed off");
   if (t.status !== "done") blockers.push("The task must be marked Done first");
-  if (!t.requested_by) blockers.push("Requested by is missing");
+  if (!t.requested_by && !opts.signerIsManager) {
+    blockers.push("Requested by is missing — a project lead can sign it off");
+  }
   if (!t.request_approved_by && !opts.signerIsManager) {
     blockers.push("Approved by is missing — a project lead can sign it off");
   }
@@ -188,16 +190,19 @@ export interface SignOffActor {
 }
 
 /**
- * Sign-off is done by the person who requested the work, or an admin/lead —
- * but never by the task's own assigned owner (unless they are an admin).
+ * Sign-off is done by an admin or the project's owner / a lead — always, in
+ * their own project, including a task they own themselves (they hand its
+ * subtasks to others) — or by the person who requested the work, unless that
+ * person is the task's own assigned owner.
  */
 export function canSignOff(
   user: SignOffActor,
   manager: boolean,
   t: { requested_by?: number | null; assignee_id?: number | null }
 ): boolean {
+  if (manager) return true;
   if (isOwnWork(user, t)) return false;
-  return manager || (t.requested_by != null && t.requested_by === user.id);
+  return t.requested_by != null && t.requested_by === user.id;
 }
 
 /** The user is the task's assigned owner and not an admin. */

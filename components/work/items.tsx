@@ -26,14 +26,16 @@ export function utcAgo(at: string | null | undefined): string {
 /** Project › task, each a link. For a task, only the project. */
 export function ItemContext({ item }: { item: WorkItem }) {
   return (
-    <span className="flex min-w-0 flex-wrap items-center gap-x-1 text-xs text-slate-500">
-      <Link href={`/projects/${item.project_id}`} className="truncate hover:text-indigo-700 hover:underline">
+    <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-xs text-slate-500">
+      <span className="text-slate-400">Project</span>
+      <Link href={`/projects/${item.project_id}`} className="truncate font-medium text-slate-600 hover:text-indigo-700 hover:underline">
         {item.project_name}
       </Link>
       {item.kind === "subtask" && (
         <>
-          <span aria-hidden>›</span>
-          <Link href={`/projects/${item.project_id}/tasks/${item.task_id}`} className="truncate hover:text-indigo-700 hover:underline">
+          <span aria-hidden className="text-slate-300">·</span>
+          <span className="text-slate-400">Task</span>
+          <Link href={`/projects/${item.project_id}/tasks/${item.task_id}`} className="truncate font-medium text-slate-600 hover:text-indigo-700 hover:underline">
             {item.task_title}
           </Link>
         </>
@@ -47,12 +49,13 @@ export function ItemContext({ item }: { item: WorkItem }) {
   );
 }
 
-export const ATTENTION_LABELS: Record<Attention["kind"], { icon: string; label: string; action: string }> = {
-  signoff: { icon: "✍", label: "Ready for your sign-off", action: "Sign off" },
-  project_request: { icon: "▢", label: "New project request", action: "Review request" },
-  task_request: { icon: "＋", label: "Task request", action: "Review request" },
-  blocker: { icon: "⛔", label: "Blocker request", action: "Open task" },
-  recurring_request: { icon: "↻", label: "Recurring task to approve", action: "Review" },
+/** `what` names the thing in the title: a task, a project, a recurring task. */
+export const ATTENTION_LABELS: Record<Attention["kind"], { icon: string; label: string; action: string; what: string }> = {
+  signoff: { icon: "✍", label: "Ready for your sign-off", action: "Sign off", what: "Task" },
+  project_request: { icon: "▢", label: "New project request", action: "Review request", what: "Project" },
+  task_request: { icon: "＋", label: "Task request", action: "Review request", what: "Requested task" },
+  blocker: { icon: "⛔", label: "Blocker request", action: "Open task", what: "Task" },
+  recurring_request: { icon: "↻", label: "Recurring task to approve", action: "Review", what: "Recurring task" },
 };
 
 /** One item from the existing workflows (sign-offs, requests, blockers). */
@@ -66,12 +69,21 @@ export function AttentionRow({ a }: { a: Attention }) {
       <div className="min-w-0 flex-1">
         <p className="text-xs font-medium text-slate-500">{l.label}</p>
         <Link href={a.link} className="block truncate text-sm font-medium text-slate-900 hover:text-indigo-700">
+          <span className="font-normal text-slate-400">{l.what} </span>
           {a.title}
         </Link>
-        <p className="text-xs text-slate-500">
-          {a.kind !== "project_request" && <>{a.project_name} · </>}
-          {a.who ? `from ${a.who}` : ""}
-          {a.at ? ` · ${utcAgo(a.at)}` : ""}
+        <p className="flex flex-wrap gap-x-1.5 text-xs text-slate-500">
+          {a.kind !== "project_request" && a.project_name && (
+            <>
+              <span className="text-slate-400">Project</span>
+              <span className="font-medium text-slate-600">{a.project_name}</span>
+              <span aria-hidden className="text-slate-300">·</span>
+            </>
+          )}
+          <span>
+            {a.who ? `${a.kind === "signoff" ? "done by" : "from"} ${a.who}` : ""}
+            {a.at ? ` · ${utcAgo(a.at)}` : ""}
+          </span>
         </p>
       </div>
       <Link

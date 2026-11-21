@@ -84,6 +84,56 @@ export async function POST(req: NextRequest, { params }: Params) {
   }
 }
 
+/**
+ * PATCH { userId, roleInProject } — make someone already on the project a
+ * lead or an ordinary member again (admin / lead / owner). The owner always
+ * stays a lead; give the project a new owner first (PATCH /api/projects/:id).
+ */
+export async function PATCH(req: NextRequest, { params }: Params) {
+  try {
+    const user = await requireUser();
+    const { id } = await params;
+    const projectId = Number(id);
+    if (!Number.isInteger(projectId)) throw new ApiError(400, "Invalid id");
+
+    const project = await assertProjectManage(user, projectId);
+    assertProjectWritable(project);
+    const data = addMemberSchema.parse(await req.json().catch(() => ({})));
+    const role = data.roleInProject ?? "member";
+    if (data.userId === project.owner_id && role !== "lead") {
+      throw new ApiError(400, "The project owner must stay a lead — make someone else the owner first");
+    }
+    const [member] = await query<DbRow[]>(
+      `SELECT role_in_project FROM project_members WHERE project_id = ? AND user_id = ? LIMIT 1`,
+      [projectId, data.userId]
+    );
+    if (!member) throw new ApiError(404, "That person isn't on this project");
+    if (member.role_in_project !== role) {
+      await query(`UPDATE project_members SET role_in_project = ? WHERE project_id = ? AND user_id = ?`, [role, projectId, data.userId]);
+      await logActivity({
+        userId: user.id,
+        action: "project.member_role_changed",
+        entityType: "project",
+        entityId: projectId,
+        metadata: { userId: data.userId, from: member.role_in_project, to: role },
+      });
+      if (data.userId !== user.id) {
+        await notify(
+          data.userId,
+          "project_role_changed",
+          role === "lead"
+            ? `You are now a lead of "${project.name}" — you can approve its tasks and sign them off`
+            : `You are now a member (no longer a lead) of "${project.name}"`,
+          `/projects/${projectId}`
+        );
+      }
+    }
+    return json({ ok: true });
+  } catch (err) {
+    return errorResponse(err);
+  }
+}
+
 export async function DELETE(req: NextRequest, { params }: Params) {
   try {
     const user = await requireUser();

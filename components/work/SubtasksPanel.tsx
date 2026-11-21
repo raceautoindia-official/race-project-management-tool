@@ -114,6 +114,14 @@ export default function SubtasksPanel({
   const approvedTask = task.status === "done" && !(task.auto_approve && task.assignee_id === currentUser.id);
   const mayShape = !readOnly && can("subtask.create", base) && (!approvedTask || isManager);
   const mayWeigh = !readOnly && can("subtask.weights", base);
+  // When "+ Add subtask" isn't offered, say why — it otherwise looks random.
+  const whyNoAdd = mayShape
+    ? null
+    : readOnly
+      ? "🔒 Locked — subtasks can’t be added to a signed-off task or a read-only project."
+      : !can("subtask.create", base)
+        ? `Subtasks are added by the task’s owner (${taskOwnerName ?? "not set yet"}) or a project lead.`
+        : "This task is already approved — a project lead can add more work, which reopens it.";
   const ctxFor = (s: SubtaskDto): SpineContext => ({ ...base, subtaskAssigneeId: s.assignee_id });
   const iOwnTask = task.assignee_id === currentUser.id;
   const ownerLabel = iOwnTask ? "you" : taskOwnerName ?? "the task owner";
@@ -233,6 +241,7 @@ export default function SubtasksPanel({
           )}
         </div>
       </div>
+      {whyNoAdd && <p className="mb-2 rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs text-slate-600 ring-1 ring-slate-200">{whyNoAdd}</p>}
 
       <p className="mb-2 text-xs text-slate-500">
         The person assigned does a subtask and marks it complete → <strong className="font-medium text-slate-700">{ownerLabel}</strong>{" "}

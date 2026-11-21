@@ -416,6 +416,7 @@ try {
 
   await step("6c exports download (CSV, Excel, template)", async () => {
     for (const name of ["Export CSV", "Export Excel", "Template"]) {
+      await admin.locator("summary", { hasText: "More" }).click();
       const [dl] = await Promise.all([
         admin.waitForEvent("download"),
         admin.locator(`a:has-text("${name}"), button:has-text("${name}")`).first().click(),
@@ -441,6 +442,7 @@ try {
 
   await step("6e the project can be saved as a template and reused", async () => {
     admin.answer = TEMPLATE;
+    await admin.locator("summary", { hasText: "More" }).click();
     await admin.getByRole("button", { name: "Save as template" }).click();
     await admin.waitForTimeout(1500);
     admin.answer = "";
