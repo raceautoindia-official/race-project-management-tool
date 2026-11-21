@@ -28,7 +28,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
     await assertProjectAccess(user, task.project_id);
     if (!task.due_date) throw new ApiError(400, "This task has no due date");
 
-    const link = `${appBaseUrl()}/projects/${task.project_id}`;
+    const link = `${appBaseUrl()}/projects/${task.project_id}/tasks/${task.id}`;
     const body = buildIcs([
       {
         uid: `task-${task.id}@pmapp`,

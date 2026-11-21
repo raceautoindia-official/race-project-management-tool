@@ -14,7 +14,8 @@ import WorkButton from "./WorkButton";
  * SubtasksPanel):
  *
  *   task owner (or a manager):  ▶ Start · Send for review
- *   project owner / lead / admin, task waiting for review:  ✓ Approve · ↩ Send back (with a note)
+ *   project owner / lead / admin, task waiting for review:  ✓ Approve · ✓ Approve & sign off
+ *     (both steps at once, after a confirmation — sign-off locks the task) · ↩ Send back (with a note)
  *   everyone else:  "Waiting for … to approve" / "Goes for review when every subtask is approved"
  *
  * Approve / send back use /api/tasks/:id/approval; start / send use
@@ -49,6 +50,7 @@ export default function TaskActions({
   const { toast } = useToast();
   const [busy, setBusy] = useState(false);
   const [sendingBack, setSendingBack] = useState(false);
+  const [confirmingBoth, setConfirmingBoth] = useState(false);
   const [note, setNote] = useState("");
   const [files, setFiles] = useState<File[]>([]);
 
@@ -82,10 +84,42 @@ export default function TaskActions({
 
   const parts: React.ReactNode[] = [];
   if (task.status === "review") {
-    if (isManager) {
+    if (isManager && confirmingBoth) {
+      parts.push(
+        <span key="both" className="flex flex-wrap items-center gap-2 rounded-lg bg-emerald-50 px-2.5 py-1.5 text-xs text-slate-700 ring-1 ring-emerald-200">
+          Approve it and sign it off now? Signing off locks the task for good.
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() =>
+              void run(async () => {
+                await decide("approve");
+                await apiFetch(`/api/tasks/${task.id}/signoff`, { method: "POST", body: JSON.stringify({ note: null }) });
+              }, `Approved and signed off “${task.title}”`).then(() => setConfirmingBoth(false))
+            }
+            className="rounded-lg bg-emerald-600 px-2.5 py-1 font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+          >
+            Yes, approve & sign off
+          </button>
+          <button type="button" onClick={() => setConfirmingBoth(false)} className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 font-medium text-slate-600">
+            Cancel
+          </button>
+        </span>
+      );
+    } else if (isManager) {
       parts.push(
         <button key="approve" type="button" disabled={busy} onClick={() => run(() => decide("approve"), `Approved — “${task.title}” now counts toward the project`)} className={`rounded-lg bg-emerald-600 font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 ${btn}`}>
           ✓ Approve task
+        </button>,
+        <button
+          key="approve-sign"
+          type="button"
+          disabled={busy}
+          onClick={() => setConfirmingBoth(true)}
+          title="Approve it and sign it off in one step. Signing off locks the task for good."
+          className={`rounded-lg border border-emerald-300 bg-white font-semibold text-emerald-800 hover:bg-emerald-50 disabled:opacity-50 ${btn}`}
+        >
+          ✓ Approve & sign off
         </button>,
         <button key="back" type="button" disabled={busy} onClick={() => setSendingBack(true)} className={`rounded-lg border border-slate-300 bg-white font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 ${btn}`}>
           ↩ Send back
@@ -128,7 +162,7 @@ export default function TaskActions({
       );
     }
   } else if (task.status === "done") {
-    parts.push(<span key="done" className="text-xs text-green-700">✓ Approved — waiting for the requester to sign off</span>);
+    parts.push(<span key="done" className="text-xs text-green-700">✓ Approved — waiting for sign-off (its requester or a project lead)</span>);
   }
 
   return (

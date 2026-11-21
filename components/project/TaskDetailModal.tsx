@@ -16,9 +16,7 @@ import { ProgressBar } from "@/components/ProgressBar";
 import { formatDate, formatRelative, isOverdue } from "@/lib/format";
 import { formatHM, formatMinutes, formatIst } from "@/lib/tz";
 import {
-  canSignOff,
   pendingChecklistItems,
-  signOffBlockers,
   specFieldsFor,
 } from "@/lib/workflow";
 import { SpecView } from "./WorkSpec";
@@ -26,6 +24,9 @@ import SubtasksPanel from "@/components/work/SubtasksPanel";
 import TaskActions from "@/components/work/TaskActions";
 import TaskTimeBreakdown from "@/components/work/TaskTimeBreakdown";
 import RecurringBadge from "@/components/work/RecurringBadge";
+import SignOffBanner from "@/components/work/SignOffBanner";
+import TaskSteps from "@/components/work/TaskSteps";
+import Link from "next/link";
 
 interface TimeLog {
   id: number;
@@ -139,8 +140,6 @@ export default function TaskDetailModal({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [signOffOpen, setSignOffOpen] = useState(false);
-  const [signOffNote, setSignOffNote] = useState("");
   const [downloading, setDownloading] = useState(false);
 
   // The parent keys this modal by task id and open state, so it remounts each
@@ -239,13 +238,8 @@ export default function TaskDetailModal({
     }
   }
   const isTyped = specFieldsFor(currentTask.task_type).length > 0;
-  const signOffMissing = signOffBlockers(currentTask, { signerIsManager: canManage });
   // Only an admin/lead can move a task out of Done (it's awaiting sign-off).
   const canChangeStatus = canEditExecution && (canManage || currentTask.status !== "done");
-  const maySignOff =
-    !readOnly &&
-    currentTask.status === "done" &&
-    canSignOff(currentUser, canManage, currentTask);
   const overdue = isOverdue(currentTask.due_date, currentTask.status);
   // What the specification asks for but the subtasks don't have yet.
   // A task created before its spec was seeded — or whose spec was written
@@ -577,26 +571,6 @@ export default function TaskDetailModal({
     }
   }
 
-  async function signOff() {
-    if (signOffMissing.length) return;
-    setBusy(true);
-    setError("");
-    try {
-      const res = await apiFetch<{ task: Task }>(
-        `/api/tasks/${currentTask.id}/signoff`,
-        { method: "POST", body: JSON.stringify({ note: signOffNote || null }) }
-      );
-      onChanged(res.task);
-      setSignOffOpen(false);
-      toast("Signed off — this task is now read-only");
-    } catch (e) {
-      void reloadIfChanged(e);
-      setError(e instanceof Error ? e.message : "Could not sign off");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function remove() {
     if (!confirm("Delete this task?")) return;
     setBusy(true);
@@ -616,6 +590,31 @@ export default function TaskDetailModal({
       {error && (
         <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
           {error}
+        </div>
+      )}
+
+      {/* The sign-off step, where nobody has to look for it. The task page
+          shows it above its header instead. */}
+      {variant === "modal" && (
+        <SignOffBanner
+          task={currentTask}
+          currentUser={currentUser}
+          canManage={canManage}
+          readOnly={Boolean(projectReadOnlyReason)}
+          onSigned={onChanged}
+        />
+      )}
+
+      {/* Where it stands, and a way to the task's own page (the pop-up is the quick look). */}
+      {variant === "modal" && (
+        <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+          <TaskSteps status={currentTask.status} signedOff={Boolean(currentTask.signed_off_at)} />
+          <Link
+            href={`/projects/${currentTask.project_id}/tasks/${currentTask.id}`}
+            className="shrink-0 rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-50"
+          >
+            Open full page →
+          </Link>
         </div>
       )}
 
@@ -682,15 +681,6 @@ export default function TaskDetailModal({
               size="md"
             />
           )}
-          {maySignOff && (
-            <button
-              onClick={() => setSignOffOpen((v) => !v)}
-              aria-expanded={signOffOpen}
-              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700"
-            >
-              Sign off
-            </button>
-          )}
           {canManage && !projectReadOnlyReason && currentTask.status === "done" && (
             <button
               onClick={() => onAddFollowUp(currentTask)}
@@ -739,59 +729,6 @@ export default function TaskDetailModal({
               {currentTask.signoff_note ? ` — “${currentTask.signoff_note}”` : ""}
             </>
           )}
-        </div>
-      )}
-
-      {signOffOpen && maySignOff && (
-        <div className="mt-4 rounded-lg border border-emerald-200 bg-white p-3">
-          <h3 className="text-sm font-semibold text-slate-800">Sign off this task</h3>
-          {signOffMissing.length > 0 ? (
-            <>
-              <p className="mt-1 text-sm text-slate-600">
-                These are mandatory before sign-off:
-              </p>
-              <ul className="mt-1 list-disc pl-5 text-sm text-red-700">
-                {signOffMissing.map((b) => (
-                  <li key={b}>{b}</li>
-                ))}
-              </ul>
-            </>
-          ) : (
-            <>
-              <p className="mt-1 text-sm text-slate-600">
-                Confirm the work meets its{" "}
-                {currentTask.task_type === "correction" ? "acceptance criteria" : "specification"}.
-                Signing off makes this task and everything on it{" "}
-                <strong>permanently read-only</strong>.
-              </p>
-              <label htmlFor="signoff-note" className="mt-2 block text-xs text-slate-600">
-                Note (optional)
-              </label>
-              <textarea
-                id="signoff-note"
-                rows={2}
-                maxLength={1000}
-                value={signOffNote}
-                onChange={(e) => setSignOffNote(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-              />
-            </>
-          )}
-          <div className="mt-2 flex justify-end gap-2">
-            <button
-              onClick={() => setSignOffOpen(false)}
-              className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={signOff}
-              disabled={busy || signOffMissing.length > 0}
-              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
-            >
-              {busy ? "Signing off…" : "Confirm sign-off"}
-            </button>
-          </div>
         </div>
       )}
 

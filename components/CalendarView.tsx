@@ -20,7 +20,9 @@ import { TASK_STATUS_LABELS, type TaskStatus } from "@/lib/types";
 
 export interface CalEvent {
   id: string;
-  kind: "task" | "meeting" | "reminder";
+  kind: "task" | "subtask" | "recurring" | "milestone" | "deadline" | "meeting" | "reminder";
+  /** What to call it in a list ("Subtask", "Project deadline"); the kind, if unset. */
+  label?: string;
   title: string;
   date: string; // YYYY-MM-DD
   time?: string | null; // HH:MM (meetings/reminders)
@@ -47,6 +49,9 @@ function eventColor(e: CalEvent): string {
   if (e.kind === "reminder")
     return REMINDER_COLORS[e.category ?? "general"] ?? "#0d9488";
   if (e.kind === "meeting") return MEETING_COLOR;
+  if (e.kind === "recurring") return "#a78bfa"; // violet-400: still to come
+  if (e.kind === "milestone") return "#b45309"; // amber-700
+  if (e.kind === "deadline") return "#be123c"; // rose-700
   return STATUS_CHART_COLORS[(e.status ?? "todo") as TaskStatus];
 }
 
@@ -56,17 +61,19 @@ export default function CalendarView({ events }: { events: CalEvent[] }) {
   const [showTasks, setShowTasks] = useState(true);
   const [showMeetings, setShowMeetings] = useState(true);
   const [showReminders, setShowReminders] = useState(true);
+  const [showDates, setShowDates] = useState(true);
   const [selected, setSelected] = useState<string | null>(null);
 
   const filtered = useMemo(
     () =>
       events.filter(
         (e) =>
-          (e.kind === "task" && showTasks) ||
+          ((e.kind === "task" || e.kind === "subtask" || e.kind === "recurring") && showTasks) ||
+          ((e.kind === "milestone" || e.kind === "deadline") && showDates) ||
           (e.kind === "meeting" && showMeetings) ||
           (e.kind === "reminder" && showReminders)
       ),
-    [events, showTasks, showMeetings, showReminders]
+    [events, showTasks, showMeetings, showReminders, showDates]
   );
 
   const byDate = useMemo(() => {
@@ -127,7 +134,16 @@ export default function CalendarView({ events }: { events: CalEvent[] }) {
               onChange={(e) => setShowTasks(e.target.checked)}
               className="h-4 w-4 rounded border-slate-300"
             />
-            Tasks
+            Tasks &amp; subtasks
+          </label>
+          <label className="flex items-center gap-1.5 text-sm text-slate-600">
+            <input
+              type="checkbox"
+              checked={showDates}
+              onChange={(e) => setShowDates(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300"
+            />
+            Milestones &amp; deadlines
           </label>
           <label className="flex items-center gap-1.5 text-sm text-slate-600">
             <input
@@ -249,6 +265,18 @@ export default function CalendarView({ events }: { events: CalEvent[] }) {
           />
           Reminder
         </span>
+        {(
+          [
+            ["#a78bfa", "↻ Recurring, still to come"],
+            ["#b45309", "◆ Milestone"],
+            ["#be123c", "⚑ Project deadline"],
+          ] as const
+        ).map(([color, label]) => (
+          <span key={label} className="flex items-center gap-1">
+            <span className="inline-block h-2 w-2 rounded-sm" style={{ background: color }} />
+            {label}
+          </span>
+        ))}
       </div>
 
       {/* Selected-day detail */}
@@ -280,8 +308,8 @@ export default function CalendarView({ events }: { events: CalEvent[] }) {
                       {e.time ? `${e.time} · ` : ""}
                       {e.title}
                     </span>
-                    <span className="ml-auto text-xs capitalize text-slate-500">
-                      {e.kind}
+                    <span className="ml-auto text-xs text-slate-500 first-letter:uppercase">
+                      {e.label ?? e.kind}
                       {e.projectName ? ` · ${e.projectName}` : ""}
                     </span>
                   </Link>
@@ -328,8 +356,8 @@ function AgendaView({ byDate }: { byDate: Map<string, CalEvent[]> }) {
                     {e.time ? `${e.time} · ` : ""}
                     {e.title}
                   </span>
-                  <span className="ml-auto text-xs capitalize text-slate-500">
-                    {e.kind}
+                  <span className="ml-auto text-xs text-slate-500 first-letter:uppercase">
+                    {e.label ?? e.kind}
                     {e.projectName ? ` · ${e.projectName}` : ""}
                   </span>
                 </Link>

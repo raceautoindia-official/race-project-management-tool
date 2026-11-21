@@ -16,6 +16,7 @@ import {
   type Weekday,
 } from "./recurrence";
 import { forPerson, loadWorkCalendar, type WorkCalendar } from "./workdays";
+import { fetchClockRows } from "./attendance";
 import type { User } from "./types";
 
 /**
@@ -36,6 +37,11 @@ import type { User } from "./types";
  * - Copies follow the owner's working days and holidays in WorkLens
  *   (lib/workdays.ts). Copies are weighted 0, so routine work never moves a
  *   project's progress bar.
+ * - A copy is made only when its owner is at work: a daily copy once they
+ *   have clocked in on WorkLens that day (a day they never clock in is
+ *   skipped as "absent"); a weekly or monthly one on the first day they are
+ *   in, up to the next scheduled date. If WorkLens can't be read, or the rule
+ *   has no owner, the copy is made anyway.
  * - If the last copy is still open (To do / In progress), the rule makes no
  *   new one by default and says so — work doesn't pile up; a rule can be set
  *   to make one anyway.
@@ -48,7 +54,30 @@ import type { User } from "./types";
 
 export type WhenOpen = "skip" | "create";
 export type ReviewMode = "review" | "none";
-export type SkipReason = "holiday" | "day_off" | "still_open" | "missed" | "skipped";
+export type SkipReason = "holiday" | "day_off" | "absent" | "still_open" | "missed" | "skipped";
+
+/** Was this person (Attendance employee id) at work on this India date? */
+export type WasPresent = (employeeId: number, date: string) => boolean;
+
+/**
+ * Who clocked in on which days since `from`, from WorkLens. If it can't be
+ * read, everyone counts as present: better a copy for someone away than
+ * routine work silently not made.
+ */
+async function loadPresence(employeeIds: number[], from: string): Promise<WasPresent> {
+  const ids = [...new Set(employeeIds.filter((n) => Number.isInteger(n) && n > 0))];
+  if (!ids.length) return () => true;
+  try {
+    const rows = await fetchClockRows(ids, from);
+    const seen = new Set(
+      rows.filter((r) => r.first_clock_in_utc || r.clock_in_utc).map((r) => `${r.employee_id}|${String(r.work_date).slice(0, 10)}`)
+    );
+    return (employeeId, date) => seen.has(`${employeeId}|${date}`);
+  } catch (err) {
+    console.warn("[recurring] WorkLens attendance unavailable:", (err as Error).message);
+    return () => true;
+  }
+}
 
 export interface RuleInput {
   projectId: number | null;
@@ -256,7 +285,9 @@ export interface RunResult {
  * Make every copy that is due by today (India time). Safe to run as often
  * as you like.
  */
-export async function runRecurringTasks(opts: { now?: Date; ruleIds?: number[]; calendar?: WorkCalendar } = {}): Promise<RunResult> {
+export async function runRecurringTasks(
+  opts: { now?: Date; ruleIds?: number[]; calendar?: WorkCalendar; presence?: WasPresent } = {}
+): Promise<RunResult> {
   const today = istDate(opts.now ?? new Date());
   const result: RunResult = { created: 0, skipped: 0, paused: 0, calendarUnavailable: false };
   // Yesterday's finished routine copies lock first (every run, not per rule).
@@ -284,6 +315,8 @@ export async function runRecurringTasks(opts: { now?: Date; ruleIds?: number[]; 
       addDays(today, 31)
     ));
   result.calendarUnavailable = calendar.unavailable;
+  const lookBack = earliest < addDays(today, -60) ? addDays(today, -60) : earliest;
+  const presence = opts.presence ?? (await loadPresence(rules.map((r) => Number(r.owner_employee)).filter(Boolean), lookBack));
 
   for (const rule of rules) {
     // The owner has left: stop, and say why, rather than make copies nobody owns.
@@ -327,10 +360,37 @@ export async function runRecurringTasks(opts: { now?: Date; ruleIds?: number[]; 
         handledTo = addDays(d, -1);
         break;
       }
-      if (p.on !== d) {
-        await recordSkip(rule.id, d, calendar.holidayName(rule.owner_employee ? Number(rule.owner_employee) : null, d) ? "holiday" : "day_off", p.on);
+      // The owner has to be at work: a daily copy on its own day only; a
+      // weekly / monthly one on their first day in before the next date.
+      const emp = rule.owner_employee ? Number(rule.owner_employee) : null;
+      let on: string | null = p.on;
+      if (emp) {
+        const nextDate = upcoming(s, addDays(d, 1), 1)[0] ?? null;
+        let until = s.frequency === "daily" ? p.on : addDays(p.on, 13);
+        if (s.frequency !== "daily" && nextDate && addDays(nextDate, -1) < until) until = addDays(nextDate, -1);
+        on = null;
+        for (let x = p.on; x <= until && x <= today; x = addDays(x, 1)) {
+          if (works(x) && presence(emp, x)) {
+            on = x;
+            break;
+          }
+        }
+        if (!on) {
+          if (until >= today) {
+            // They may still clock in: come back to this date.
+            handledTo = addDays(d, -1);
+            break;
+          }
+          await recordSkip(rule.id, d, "absent");
+          result.skipped++;
+          continue;
+        }
       }
-      due.push({ date: d, on: p.on });
+      if (on !== d) {
+        const reason = p.on !== d ? (calendar.holidayName(emp, d) ? "holiday" : "day_off") : "absent";
+        await recordSkip(rule.id, d, reason, on);
+      }
+      due.push({ date: d, on });
     }
 
     if (due.length) {
@@ -376,6 +436,22 @@ export async function runRecurringTasks(opts: { now?: Date; ruleIds?: number[]; 
     }
   }
   return result;
+}
+
+/**
+ * Make the copies waiting on one person — those of rules they own that
+ * haven't been dealt with today. Called from the sign-in heartbeat, so a
+ * copy held until its owner clocked in appears as they open the app rather
+ * than at the next 15-minute job. Does nothing (one small query) otherwise.
+ */
+export async function runRecurringFor(userId: number, now = new Date()): Promise<void> {
+  const rows = await query<DbRow[]>(
+    `SELECT id FROM recurring_tasks
+      WHERE assignee_id = ? AND is_active = 1 AND approval_status = 'approved'
+        AND project_id IS NOT NULL AND (last_run IS NULL OR last_run < ?)`,
+    [userId, istDate(now)]
+  );
+  if (rows.length) await runRecurringTasks({ now, ruleIds: rows.map((r) => Number(r.id)) });
 }
 
 // ── Finishing copies that need no review ───────────────────────────────────
@@ -571,7 +647,9 @@ export async function listRules(user: User, opts: { projectId?: number; ruleId?:
       subtasks,
       next: active ? placed?.on ?? null : null,
       nextNote:
-        active && placed && firstLive && placed.on !== firstLive
+        active && placed?.on === today && emp
+          ? `made once ${String(r.owner_name ?? "its owner").split(" ")[0]} clocks in on WorkLens`
+          : active && placed && firstLive && placed.on !== firstLive
           ? `moved from ${prettyDate(firstLive)}${holiday ? ` — ${holiday}` : " (day off)"}`
           : active && placed && !placed.on
             ? "skipped — holiday or day off"
@@ -920,6 +998,39 @@ export async function upcomingForMe(user: User, now = new Date()) {
     .map((r) => ({ id: r.id, title: r.title, projectName: r.projectName, next: r.next!, schedule: r.schedule }))
     .sort((a, b) => a.next.localeCompare(b.next))
     .slice(0, 6);
+}
+
+/**
+ * Copies still to come in the next `days` days, for the Calendar: an admin
+ * sees every running rule's, anyone else those that come to them. Dates
+ * allow for holidays and days off; today's is left out (it is a real task
+ * once made).
+ */
+export async function upcomingCopies(user: User, days = 45, now = new Date()) {
+  const today = istDate(now);
+  const rules = (await listRules(user, { now })).filter(
+    (r) => r.isActive && r.approvalStatus === "approved" && r.projectId && (user.role === "admin" || r.mine)
+  );
+  if (!rules.length) return [];
+  const owners = await query<DbRow[]>(
+    `SELECT rt.id, u.employee_id FROM recurring_tasks rt LEFT JOIN users u ON u.id = rt.assignee_id
+      WHERE rt.id IN (${rules.map(() => "?").join(",")})`,
+    rules.map((r) => r.id)
+  );
+  const empOf = new Map(owners.map((o) => [Number(o.id), o.employee_id == null ? null : Number(o.employee_id)]));
+  const until = addDays(today, days);
+  const calendar = await loadWorkCalendar([...empOf.values()].filter((x): x is number => Boolean(x)), today, addDays(until, 14));
+  const out: { ruleId: number; title: string; date: string; projectId: number; projectName: string | null }[] = [];
+  for (const r of rules) {
+    const s: Schedule = { frequency: r.frequency, interval: r.interval, weekdays: r.weekdays, monthDay: r.monthDay, startDate: r.startDate, endDate: r.endDate };
+    const works = forPerson(calendar, empOf.get(r.id) ?? null);
+    for (let d = addDays(today, 1); d <= until; d = addDays(d, 1)) {
+      if (!fallsOn(s, d)) continue;
+      const p = place(s, d, works);
+      if (p.on && p.on <= until) out.push({ ruleId: r.id, title: r.title, date: p.on, projectId: r.projectId!, projectName: r.projectName });
+    }
+  }
+  return out;
 }
 
 /** Pending proposals, for an admin's Approvals list. */

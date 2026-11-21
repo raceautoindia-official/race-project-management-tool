@@ -82,7 +82,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           WHERE pm.project_id = ? AND u.is_active = TRUE AND u.id IN (${placeholders})`,
         [task.project_id, ...ids]
       );
-      const link = `/projects/${task.project_id}`;
+      const link = `/projects/${task.project_id}/tasks/${task.id}`;
       for (const m of members) {
         await notify(
           m.id,
@@ -114,7 +114,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         task.assignee_id,
         "task_comment",
         `${user.name} commented on "${task.title}"`,
-        `/projects/${task.project_id}`
+        `/projects/${task.project_id}/tasks/${task.id}`
       );
     }
 

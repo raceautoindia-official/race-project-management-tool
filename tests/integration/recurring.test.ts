@@ -230,6 +230,38 @@ describe("copies over time", () => {
   });
 });
 
+describe("the owner has to be at work", () => {
+  const emp = async (u: User) => Number((await query<DbRow[]>(`SELECT employee_id FROM users WHERE id = ?`, [u.id]))[0].employee_id);
+  /** Present only on these dates. */
+  const presentOn = (id: number, ...dates: string[]) => (e: number, d: string) => e === id && dates.includes(d);
+
+  it("holds a daily copy until they clock in, and skips a day they never do", async () => {
+    const id = await createRule(admin, input({ title: "Presence check", reviewMode: "none", whenOpen: "create", startDate: "2027-03-15" }), at("2027-03-15"));
+    const who = await emp(doer);
+    // Tuesday morning, not clocked in yet: nothing, and it will be tried again.
+    await runRecurringTasks({ now: at("2027-03-16"), ruleIds: [id], presence: presentOn(who) });
+    expect((await copies(id)).map((c) => c.occurrence_date)).toEqual(["2027-03-15"]);
+    // They clock in: the copy arrives.
+    await runRecurringTasks({ now: at("2027-03-16"), ruleIds: [id], presence: presentOn(who, "2027-03-16") });
+    expect((await copies(id)).map((c) => c.occurrence_date)).toEqual(["2027-03-15", "2027-03-16"]);
+    // Away all Wednesday, back on Thursday: Wednesday is skipped as absent.
+    await runRecurringTasks({ now: at("2027-03-17"), ruleIds: [id], presence: presentOn(who, "2027-03-16") });
+    await runRecurringTasks({ now: at("2027-03-18"), ruleIds: [id], presence: presentOn(who, "2027-03-16", "2027-03-18") });
+    expect((await copies(id)).map((c) => c.occurrence_date)).toEqual(["2027-03-15", "2027-03-16", "2027-03-18"]);
+    expect((await skips(id)).map((k) => `${k.occurrence_date} ${k.reason}`)).toEqual(["2027-03-17 absent"]);
+  });
+
+  it("moves a weekly copy to their first day back", async () => {
+    const id = await createRule(admin, input({ title: "Presence weekly", frequency: "weekly", weekdays: ["Mon"], reviewMode: "review", startDate: "2027-03-22" }), at("2027-03-19"));
+    const who = await emp(doer);
+    await runRecurringTasks({ now: at("2027-03-22"), ruleIds: [id], presence: presentOn(who) });
+    expect(await copies(id)).toHaveLength(0);
+    await runRecurringTasks({ now: at("2027-03-23"), ruleIds: [id], presence: presentOn(who, "2027-03-23") });
+    expect((await copies(id)).map((c) => c.occurrence_date)).toEqual(["2027-03-23"]);
+    expect((await skips(id)).map((k) => ({ ...k }))).toEqual([{ occurrence_date: "2027-03-22", reason: "absent", moved_to: "2027-03-23" }]);
+  });
+});
+
 describe("a project of its own", () => {
   it("is created, with its people on it, when the proposal is approved", async () => {
     const id = await createRule(

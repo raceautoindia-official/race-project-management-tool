@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ProjectStatusBadge, RequestStatusBadge } from "@/components/Badge";
 import LabelChip from "@/components/LabelChip";
 import Avatar from "@/components/Avatar";
 import Calendar from "@/components/Calendar";
-import ExportButton from "@/components/ExportButton";
 import { apiFetch, isConflict } from "@/lib/api-client";
 import { useToast } from "@/components/ToastProvider";
 import { projectPercent, projectUnitsOf, statusCounts } from "@/lib/progress";
@@ -128,6 +127,7 @@ export default function ProjectBoard({
   const [project, setProject] = useState(initialProject);
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
   const [members, setMembers] = useState<ProjectMember[]>(initialMembers);
+  const moreRef = useRef<HTMLDetailsElement>(null);
   const [labels, setLabels] = useState<Label[]>(initialLabels);
   const [milestones, setMilestones] = useState<Milestone[]>(initialMilestones);
   const [newMs, setNewMs] = useState("");
@@ -469,27 +469,8 @@ export default function ProjectBoard({
                 ↻ Recurring
               </Link>
             )}
-            <ExportButton href={`/api/projects/${project.id}/tasks/export`} />
-            <a
-              href={`/api/projects/${project.id}/tasks/xlsx`}
-              className="on-band rounded-lg border px-3 py-1.5 text-sm font-medium band-sheet"
-            >
-              Export Excel
-            </a>
             {canManageWritable && (
               <>
-                <a
-                  href={`/api/projects/${project.id}/tasks/template`}
-                  className="on-band rounded-lg border px-3 py-1.5 text-sm font-medium band-sheet"
-                >
-                  Template
-                </a>
-                <button
-                  onClick={() => setImportOpen(true)}
-                  className="on-band rounded-lg border px-3 py-1.5 text-sm font-medium band-in"
-                >
-                  Import Excel
-                </button>
                 <button
                   onClick={() => setMembersOpen(true)}
                   className="on-band rounded-lg border px-3 py-1.5 text-sm font-medium band-people"
@@ -504,17 +485,49 @@ export default function ProjectBoard({
                 </button>
               </>
             )}
-            {/* Anyone on the project may write its shape down — the people
-                doing the work know it best. Only an admin deletes one. */}
-            {project.approval_status === "approved" && (
-              <button
-                onClick={saveAsTemplate}
-                disabled={savingTemplate}
-                className="on-band rounded-lg border px-3 py-1.5 text-sm font-medium band-in disabled:opacity-40"
+            {/* The occasional tools, out of the way of the everyday ones. */}
+            <details ref={moreRef} className="relative">
+              <summary className="on-band band-out cursor-pointer list-none rounded-lg border px-3 py-1.5 text-sm font-medium [&::-webkit-details-marker]:hidden">
+                More ▾
+              </summary>
+              <div
+                className="absolute right-0 z-20 mt-1 w-56 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg"
+                onClick={() => {
+                  if (moreRef.current) moreRef.current.open = false;
+                }}
               >
-                Save as template
-              </button>
-            )}
+                <p className="px-3 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Take out</p>
+                <a href={`/api/projects/${project.id}/tasks/export`} className="block w-full rounded-md px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100">
+                  Export CSV
+                </a>
+                <a href={`/api/projects/${project.id}/tasks/xlsx`} className="block w-full rounded-md px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100">
+                  Export Excel
+                </a>
+                {canManageWritable && (
+                  <>
+                    <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Bring in</p>
+                    <a href={`/api/projects/${project.id}/tasks/template`} className="block w-full rounded-md px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100">
+                      Template
+                      <span className="block text-xs text-slate-500">An empty Excel sheet to fill in</span>
+                    </a>
+                    <button type="button" onClick={() => setImportOpen(true)} className="block w-full rounded-md px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100">
+                      Import Excel
+                    </button>
+                  </>
+                )}
+                {/* Anyone on the project may write its shape down — the people
+                    doing the work know it best. Only an admin deletes one. */}
+                {project.approval_status === "approved" && (
+                  <>
+                    <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Reuse</p>
+                    <button type="button" onClick={saveAsTemplate} disabled={savingTemplate} className="block w-full rounded-md px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100 disabled:opacity-40">
+                      Save as template
+                      <span className="block text-xs text-slate-500">Start another project from this one’s shape</span>
+                    </button>
+                  </>
+                )}
+              </div>
+            </details>
           </div>
         </div>
         </div>
@@ -592,6 +605,9 @@ export default function ProjectBoard({
         canManage={canManage}
         readyToComplete={readyToComplete}
         onProjectChange={(patch) => setProject((prev) => ({ ...prev, ...patch }))}
+        members={members}
+        allUsers={allUsers}
+        onMembersChange={setMembers}
       />
 
       <TaskRequestsPanel
@@ -865,6 +881,8 @@ export default function ProjectBoard({
             members={members}
             allUsers={allUsers}
             onChanged={setMembers}
+            canChangeOwner={currentUser.role === "admin" || project.owner_id === currentUser.id}
+            onOwnerChanged={(o) => setProject((prev) => ({ ...prev, owner_id: o.id, owner_name: o.name }))}
           />
           <EditProjectModal
             // Remount per opening so a cancelled change isn't resubmitted later.

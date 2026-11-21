@@ -9,6 +9,7 @@ import {
 } from "@/lib/rbac";
 import { bulkTaskSchema } from "@/lib/validation";
 import { logActivity, notify } from "@/lib/activity";
+import { askForSignOff, taskLink } from "@/lib/recipients";
 
 export const dynamic = "force-dynamic";
 
@@ -69,14 +70,11 @@ export async function POST(req: NextRequest, { params }: Params) {
              WHERE id IN (${idPh}) AND status <> 'done'`,
           [user.id, ...ids]
         );
-        const link = `/projects/${projectId}`;
         for (const t of newlyDone) {
           if (t.assignee_id && t.assignee_id !== user.id) {
-            await notify(t.assignee_id, "task_approved", `Your task "${t.title}" was approved and marked done`, link);
+            await notify(t.assignee_id, "task_approved", `Your task "${t.title}" was approved and marked done`, taskLink(projectId, Number(t.id)));
           }
-          if (t.requested_by && t.requested_by !== user.id) {
-            await notify(t.requested_by, "signoff_requested", `"${t.title}" is done — please verify and sign off`, link);
-          }
+          await askForSignOff({ id: Number(t.id), project_id: projectId, title: String(t.title), requested_by: t.requested_by, assignee_id: t.assignee_id }, user.id);
         }
       } else {
         await query(

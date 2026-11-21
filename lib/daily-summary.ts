@@ -23,10 +23,11 @@ export type { DailySummary, SummaryTask } from "@/lib/planner-summary-shape";
 
 const IST = "+05:30";
 
+/** Recurring work is marked ↻ wherever a summary names it. */
 function mapTask(r: DbRow): SummaryTask {
   return {
     id: r.id as number,
-    title: r.title as string,
+    title: `${Number(r.recurring ?? 0) ? "↻ " : ""}${r.title as string}`,
     project_name: (r.project_name as string) ?? null,
     minutes: Number(r.minutes ?? 0),
     is_additional: Boolean(r.is_additional),
@@ -40,24 +41,35 @@ export async function dailySummary(
 ): Promise<DailySummary> {
   const worked = await query<DbRow[]>(
     `SELECT t.id, t.title, t.is_additional, p.name AS project_name,
-            SUM(l.minutes) AS minutes
+            SUM(l.minutes) AS minutes, t.recurring_task_id IS NOT NULL AS recurring
        FROM task_time_logs l
        JOIN tasks t ON t.id = l.task_id
        LEFT JOIN projects p ON p.id = t.project_id
       WHERE l.user_id = ? AND DATE(CONVERT_TZ(l.logged_at, '+00:00', ?)) = ?
-      GROUP BY t.id, t.title, t.is_additional, p.name
+      GROUP BY t.id, t.title, t.is_additional, p.name, t.recurring_task_id
       ORDER BY minutes DESC`,
     [userId, IST, date]
   );
 
+  // Tasks they own that were finished, and — where most people's work is —
+  // the subtasks they marked complete (ids negative, to stay apart from tasks).
   const completed = await query<DbRow[]>(
-    `SELECT t.id, t.title, t.is_additional, p.name AS project_name, 0 AS minutes
+    `SELECT t.id, t.title, t.is_additional, p.name AS project_name, 0 AS minutes,
+            t.recurring_task_id IS NOT NULL AS recurring
        FROM tasks t
        LEFT JOIN projects p ON p.id = t.project_id
       WHERE t.assignee_id = ? AND t.completed_at IS NOT NULL
         AND DATE(CONVERT_TZ(t.completed_at, '+00:00', ?)) = ?
-      ORDER BY t.title`,
-    [userId, IST, date]
+     UNION ALL
+     SELECT -s.id, s.title, 0, CONCAT(COALESCE(p.name, ''), ' › ', t.title), 0,
+            t.recurring_task_id IS NOT NULL
+       FROM subtasks s
+       JOIN tasks t ON t.id = s.task_id
+       LEFT JOIN projects p ON p.id = t.project_id
+      WHERE s.assignee_id = ? AND s.status IN ('review', 'done') AND s.submitted_at IS NOT NULL
+        AND DATE(CONVERT_TZ(s.submitted_at, '+00:00', ?)) = ?
+      ORDER BY title`,
+    [userId, IST, date, userId, IST, date]
   );
 
   // Follow-up work raised after something was already finished: the app's own
@@ -137,11 +149,18 @@ export async function dailySummaryLines(
     [...userIds, IST, date]
   );
   const done = await query<DbRow[]>(
-    `SELECT assignee_id AS user_id, COUNT(*) AS n FROM tasks
-      WHERE assignee_id IN (${list}) AND completed_at IS NOT NULL
-        AND DATE(CONVERT_TZ(completed_at, '+00:00', ?)) = ?
-      GROUP BY assignee_id`,
-    [...userIds, IST, date]
+    `SELECT user_id, SUM(n) AS n FROM (
+       SELECT assignee_id AS user_id, COUNT(*) AS n FROM tasks
+        WHERE assignee_id IN (${list}) AND completed_at IS NOT NULL
+          AND DATE(CONVERT_TZ(completed_at, '+00:00', ?)) = ?
+        GROUP BY assignee_id
+       UNION ALL
+       SELECT assignee_id, COUNT(*) FROM subtasks
+        WHERE assignee_id IN (${list}) AND status IN ('review', 'done') AND submitted_at IS NOT NULL
+          AND DATE(CONVERT_TZ(submitted_at, '+00:00', ?)) = ?
+        GROUP BY assignee_id
+     ) x GROUP BY user_id`,
+    [...userIds, IST, date, ...userIds, IST, date]
   );
   const extra = await query<DbRow[]>(
     `SELECT assignee_id AS user_id, COUNT(*) AS n FROM tasks

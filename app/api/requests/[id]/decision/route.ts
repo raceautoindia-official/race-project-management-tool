@@ -175,7 +175,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         data.assigneeId,
         "task_assigned",
         `You were assigned: "${request.title}"`,
-        taskId ? `${link}?task=${taskId}` : link
+        taskId ? `${link}/tasks/${taskId}` : link
       );
     }
 

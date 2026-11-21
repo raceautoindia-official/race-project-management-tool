@@ -394,6 +394,7 @@ does not restart it, you press **Resume** (the header chip offers the last thing
   in Attendance, admins everyone.
 - A task's **Time** panel splits timer and hand-typed time, by person and by subtask,
   against the estimate, and shows who is on it now.
+- If someone never clocks out, their timer stops at midnight of the day it started.
 - If Attendance can't be reached, timers can't start (PM can't confirm a clock-in) and
   running ones keep going until it can check again.
 - Stopping on clock-out happens on the next page load (once a minute), the chip's poll,
@@ -435,6 +436,10 @@ Recurring card with what is coming next.
   for every location or the owner's. A daily copy skips holidays and days off; a weekly or
   monthly one moves to the next working day. Someone with no shift works Monday–Saturday. If
   WorkLens can't be read, nothing is skipped.
+- **A copy is made only when its owner is at work.** A daily copy appears once they clock in
+  on WorkLens that day (a day they never clock in is skipped, shown as "owner not at work"); a
+  weekly or monthly one arrives on their first day in, up to the next scheduled date. If
+  WorkLens can't be read, the copy is made anyway.
 - **Work doesn't pile up**: while the last copy is still open, no new one is made and the owner
   is told (a rule can be set to make it anyway). After downtime only the latest missed copy
   is made; the rest show as missed.
@@ -446,7 +451,8 @@ Recurring card with what is coming next.
 - Copies are made by the 15-minute work-updates job above (and by `/api/cron/recurring`, which
   also advances recurring meetings), so no new cron line is needed.
 - Reads `employee_schedules`, `shifts`, `holiday_calendar` and `holiday_observances` read-only.
-- Migration: `db/migrations/2026-11-05_recurring_work.sql`.
+- Migrations: `db/migrations/2026-11-05_recurring_work.sql`, then
+  `db/migrations/2026-11-21_recurring_absent.sql`.
 
 ### Personal documents (Profile → My documents)
 

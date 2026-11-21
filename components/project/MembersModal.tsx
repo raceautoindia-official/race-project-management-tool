@@ -29,6 +29,8 @@ export default function MembersModal({
   members,
   allUsers,
   onChanged,
+  canChangeOwner = false,
+  onOwnerChanged,
 }: {
   open: boolean;
   onClose: () => void;
@@ -37,12 +39,16 @@ export default function MembersModal({
   members: ProjectMember[];
   allUsers: PickUser[];
   onChanged: (members: ProjectMember[]) => void;
+  /** The project's owner or an admin may hand the project to someone else. */
+  canChangeOwner?: boolean;
+  onOwnerChanged?: (owner: { id: number; name: string }) => void;
 }) {
   const { toast } = useToast();
   const [userId, setUserId] = useState<number | null>(null);
   const [role, setRole] = useState("member");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [handingTo, setHandingTo] = useState<number | null>(null);
 
   const memberIds = new Set(members.map((m) => m.user_id));
   const candidates = allUsers.filter((u) => !memberIds.has(u.id));
@@ -75,6 +81,39 @@ export default function MembersModal({
     }
   }
 
+  async function changeRole(memberUserId: number, roleInProject: string) {
+    setError("");
+    setBusy(true);
+    try {
+      await apiFetch(`/api/projects/${projectId}/members`, {
+        method: "PATCH",
+        body: JSON.stringify({ userId: memberUserId, roleInProject }),
+      });
+      await refresh();
+      toast(roleInProject === "lead" ? "Now a lead of this project" : "Now a member of this project");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not change the role");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function makeOwner(m: ProjectMember) {
+    setError("");
+    setBusy(true);
+    try {
+      await apiFetch(`/api/projects/${projectId}`, { method: "PATCH", body: JSON.stringify({ ownerId: m.user_id }) });
+      await refresh();
+      onOwnerChanged?.({ id: m.user_id, name: m.name });
+      setHandingTo(null);
+      toast(`${m.name} now owns this project`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not change the owner");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function remove(memberUserId: number) {
     setError("");
     setBusy(true);
@@ -100,6 +139,11 @@ export default function MembersModal({
         </div>
       )}
 
+      <p className="mb-2 text-xs text-slate-500">
+        A <strong className="font-medium text-slate-700">lead</strong> can add tasks, approve finished work and sign it off. A{" "}
+        <strong className="font-medium text-slate-700">member</strong> does the work given to them. The <strong className="font-medium text-slate-700">owner</strong>{" "}
+        is the lead who runs the project.
+      </p>
       <ul className="mb-4 divide-y divide-slate-100">
         {members.map((m) => (
           <li key={m.user_id} className="flex items-center justify-between py-2">
@@ -112,11 +156,38 @@ export default function MembersModal({
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <RoleBadge role={m.role_in_project} />
-              {m.user_id === ownerId ? (
-                <span className="text-xs text-slate-500">Owner</span>
-              ) : (
+            {m.user_id === ownerId ? (
+              <div className="flex items-center gap-3">
+                <RoleBadge role={m.role_in_project} />
+                <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-800">Owner</span>
+              </div>
+            ) : handingTo === m.user_id ? (
+              <div className="flex flex-wrap items-center justify-end gap-2 text-xs text-slate-700">
+                Make {m.name.split(" ")[0]} the owner? They’ll run the project; the current owner stays a lead.
+                <button onClick={() => makeOwner(m)} disabled={busy} className="rounded-lg bg-indigo-600 px-2.5 py-1 font-semibold text-white disabled:opacity-50">
+                  Yes
+                </button>
+                <button onClick={() => setHandingTo(null)} className="rounded-lg border border-slate-300 px-2.5 py-1 font-medium text-slate-600">
+                  No
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3">
+                <select
+                  aria-label={`${m.name}'s role in this project`}
+                  value={m.role_in_project}
+                  disabled={busy}
+                  onChange={(e) => changeRole(m.user_id, e.target.value)}
+                  className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700"
+                >
+                  <option value="member">Member</option>
+                  <option value="lead">Lead</option>
+                </select>
+                {canChangeOwner && (
+                  <button onClick={() => setHandingTo(m.user_id)} disabled={busy} className="text-xs font-medium text-indigo-600 hover:underline disabled:opacity-50">
+                    Make owner
+                  </button>
+                )}
                 <button
                   onClick={() => remove(m.user_id)}
                   disabled={busy}
@@ -124,8 +195,8 @@ export default function MembersModal({
                 >
                   Remove
                 </button>
-              )}
-            </div>
+              </div>
+            )}
           </li>
         ))}
       </ul>

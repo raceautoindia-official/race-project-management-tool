@@ -114,8 +114,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
       uid: `task-${t.id}@pmapp`,
       summary: `Due: ${t.title}`,
       date: String(t.due_date).slice(0, 10),
-      description: `${t.project_name} · ${t.status}\n${base}/projects/${t.project_id}`,
-      url: `${base}/projects/${t.project_id}`,
+      description: `${t.project_name} · ${t.status}\n${base}/projects/${t.project_id}/tasks/${t.id}`,
+      url: `${base}/projects/${t.project_id}/tasks/${t.id}`,
     });
   }
 

@@ -36,8 +36,8 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (!canSignOff(user, manager, trail)) {
       throw forbidden(
         isOwnWork(user, trail)
-          ? "You can't sign off your own work — ask the requester, a project lead or an admin"
-          : "Only the person who requested this task or an admin/project lead can sign it off"
+          ? "You can't sign off your own work — ask a project lead or an admin"
+          : "Only the person who requested this task, a project lead or an admin can sign it off"
       );
     }
     await assertTaskWritable(taskId);
@@ -61,10 +61,11 @@ export async function POST(req: NextRequest, { params }: Params) {
     const res = (await query<DbResult>(
       `UPDATE tasks
           SET signed_off_by = ?, signed_off_at = UTC_TIMESTAMP(), signoff_note = ?,
+              requested_by = COALESCE(requested_by, ?),
               request_approved_by = COALESCE(request_approved_by, ?),
               request_approved_at = COALESCE(request_approved_at, UTC_TIMESTAMP())
         WHERE id = ? AND signed_off_at IS NULL AND status = 'done'`,
-      [user.id, note || null, user.id, taskId]
+      [user.id, note || null, user.id, user.id, taskId]
     )) as unknown as DbResult;
     if (res.affectedRows === 0) {
       throw conflict("This task was changed or signed off by someone else — reload and try again.");
@@ -77,7 +78,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       entityId: taskId,
       metadata: { title: task.title, note: note || null },
     });
-    const link = `/projects/${task.project_id}`;
+    const link = `/projects/${task.project_id}/tasks/${taskId}`;
     const notified = new Set<number>([user.id]);
     for (const uid of [task.assignee_id, task.requested_by, task.request_approved_by]) {
       if (!uid || notified.has(uid)) continue;

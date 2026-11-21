@@ -11,6 +11,8 @@ import ScheduleTrack from "./ScheduleTrack";
 import type { Label, ProjectMember, Role, Task, TaskStatus } from "@/lib/types";
 import { DateRange, PersonLine, ProgressLegend, WorkProgress, weightLabel } from "./kit";
 import RecurringBadge from "@/components/work/RecurringBadge";
+import SignOffBanner from "./SignOffBanner";
+import TaskSteps from "./TaskSteps";
 
 /**
  * The task page: who owns it and who reviews it, its dates, how much it
@@ -81,7 +83,7 @@ export default function TaskPageView({
     task.signed_off_at
       ? "Signed off — this task is finished and read-only."
       : task.status === "done"
-        ? "Approved. It now counts toward the project; its requester can sign it off."
+        ? "Approved. It now counts toward the project; its requester or a project lead signs it off."
         : task.status === "review"
           ? `Waiting for ${project.owner_name ?? "the project owner"} (or a lead) to approve it.`
           : hasSubtasks
@@ -97,6 +99,18 @@ export default function TaskPageView({
         <span aria-hidden>›</span>
         <span className="truncate text-slate-700">{task.title}</span>
       </nav>
+
+      {/* The sign-off step first, so nobody arriving from a notification has to look for it. */}
+      <SignOffBanner
+        task={task}
+        currentUser={currentUser}
+        canManage={canManage}
+        readOnly={Boolean(projectReadOnlyReason)}
+        onSigned={(t) => {
+          setTask(t);
+          router.refresh();
+        }}
+      />
 
       <section className="mb-5 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
         <div className="h-1.5 bg-gradient-to-r from-indigo-500 via-violet-500 to-fuchsia-500" aria-hidden />
@@ -114,6 +128,8 @@ export default function TaskPageView({
                 Counts for <strong className="figure text-slate-700">{weightLabel(weight)}</strong> of the project
               </span>
             </div>
+            {/* The same five steps on every task, with who acts next. */}
+            <TaskSteps status={task.status} signedOff={Boolean(task.signed_off_at)} next={next} className="mt-3" />
           </div>
           <Link href={`/projects/${project.id}`} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50">
             ← Back to project

@@ -25,8 +25,10 @@ export async function weekSummary(
   const to = days[6];
 
   // Due this week, or overdue and still open — both are this week's problem.
+  // Tasks they own, and the subtasks given to them (ids negative, to stay
+  // apart from tasks); recurring work is marked ↻.
   const upcoming = await query<DbRow[]>(
-    `SELECT t.id, t.title, t.status, t.priority, t.estimated_hours,
+    `SELECT t.id, CONCAT(IF(t.recurring_task_id IS NULL, '', '↻ '), t.title) AS title, t.status, t.priority, t.estimated_hours,
             DATE_FORMAT(t.due_date, '%Y-%m-%d') AS due_date,
             p.name AS project_name,
             (t.due_date < ?) AS overdue
@@ -39,19 +41,43 @@ export async function weekSummary(
         AND t.due_date <= ?
         AND p.approval_status = 'approved'
         AND p.status <> 'archived'
-      ORDER BY t.due_date, FIELD(t.priority, 'urgent', 'high', 'medium', 'low')`,
-    [from, userId, to]
+     UNION ALL
+     SELECT -s.id, CONCAT(IF(t.recurring_task_id IS NULL, '', '↻ '), s.title), s.status, t.priority, NULL,
+            DATE_FORMAT(COALESCE(s.due_date, t.due_date), '%Y-%m-%d'),
+            CONCAT(COALESCE(p.name, ''), ' › ', t.title),
+            (COALESCE(s.due_date, t.due_date) < ?)
+       FROM subtasks s
+       JOIN tasks t ON t.id = s.task_id
+       LEFT JOIN projects p ON p.id = t.project_id
+      WHERE s.assignee_id = ? AND (t.assignee_id IS NULL OR t.assignee_id <> s.assignee_id)
+        AND s.status IN ('todo', 'in_progress')
+        AND t.signed_off_at IS NULL
+        AND COALESCE(s.due_date, t.due_date) IS NOT NULL
+        AND COALESCE(s.due_date, t.due_date) <= ?
+        AND p.approval_status = 'approved'
+        AND p.status <> 'archived'
+      ORDER BY due_date, FIELD(priority, 'urgent', 'high', 'medium', 'low')`,
+    [from, userId, to, from, userId, to]
   );
 
   const completed = await query<DbRow[]>(
-    `SELECT t.id, t.title, p.name AS project_name,
-            DATE_FORMAT(CONVERT_TZ(t.completed_at, '+00:00', ?), '%Y-%m-%d') AS completed_on
+    `SELECT t.id, CONCAT(IF(t.recurring_task_id IS NULL, '', '↻ '), t.title) AS title, p.name AS project_name,
+            DATE_FORMAT(CONVERT_TZ(t.completed_at, '+00:00', ?), '%Y-%m-%d') AS completed_on,
+            t.completed_at AS at
        FROM tasks t
        LEFT JOIN projects p ON p.id = t.project_id
       WHERE t.assignee_id = ? AND t.completed_at IS NOT NULL
         AND DATE(CONVERT_TZ(t.completed_at, '+00:00', ?)) BETWEEN ? AND ?
-      ORDER BY t.completed_at`,
-    [IST, userId, IST, from, to]
+     UNION ALL
+     SELECT -s.id, CONCAT(IF(t.recurring_task_id IS NULL, '', '↻ '), s.title), CONCAT(COALESCE(p.name, ''), ' › ', t.title),
+            DATE_FORMAT(CONVERT_TZ(s.submitted_at, '+00:00', ?), '%Y-%m-%d'), s.submitted_at
+       FROM subtasks s
+       JOIN tasks t ON t.id = s.task_id
+       LEFT JOIN projects p ON p.id = t.project_id
+      WHERE s.assignee_id = ? AND s.status IN ('review', 'done') AND s.submitted_at IS NOT NULL
+        AND DATE(CONVERT_TZ(s.submitted_at, '+00:00', ?)) BETWEEN ? AND ?
+      ORDER BY at`,
+    [IST, userId, IST, from, to, IST, userId, IST, from, to]
   );
 
   const extra = await query<DbRow[]>(

@@ -14,7 +14,7 @@ import { logActivity, notify } from "@/lib/activity";
 import { stopWorkOn } from "@/lib/work-sessions";
 import { finishRoutineCopy } from "@/lib/recurring";
 import { fetchTasks, syncTaskLabels } from "@/lib/tasks";
-import { projectAlertRecipients } from "@/lib/recipients";
+import { askForSignOff, projectAlertRecipients, taskLink } from "@/lib/recipients";
 import { sendEmail, emailLayout, appBaseUrl, escapeHtml } from "@/lib/mailer";
 import {
   missingSpecFields,
@@ -229,7 +229,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     // Submit for review → notify the project lead(s) + admins (in-app + email).
     if (submittingReview && !routine) {
       const recipients = await projectAlertRecipients(task.project_id);
-      const link = `/projects/${task.project_id}`;
+      const link = taskLink(task.project_id, taskId);
       for (const r of recipients.filter((r) => r.id !== user.id)) {
         await notify(
           r.id,
@@ -254,24 +254,18 @@ export async function PATCH(req: NextRequest, { params }: Params) {
         task.assignee_id,
         "task_approved",
         `Your task "${task.title}" was approved and marked done`,
-        `/projects/${task.project_id}`
+        taskLink(task.project_id, taskId)
       );
     }
-    // Done → the requester is asked to verify and sign off.
-    if (approving && task.requested_by && task.requested_by !== user.id) {
-      await notify(
-        task.requested_by,
-        "signoff_requested",
-        `"${task.title}" is done — please verify and sign off`,
-        `/projects/${task.project_id}`
-      );
-    }
+    // Done → whoever can sign it off is asked to: the requester, unless that
+    // is the task's own owner (who can't) — then the project's leads and admins.
+    if (approving) await askForSignOff({ id: taskId, project_id: task.project_id, title: task.title, requested_by: task.requested_by, assignee_id: task.assignee_id }, user.id);
     if (sendingBack && task.assignee_id && task.assignee_id !== user.id) {
       await notify(
         task.assignee_id,
         "task_sent_back",
         `"${task.title}" was sent back for changes`,
-        `/projects/${task.project_id}`
+        taskLink(task.project_id, taskId)
       );
     }
     if (data.labelIds !== undefined) {
